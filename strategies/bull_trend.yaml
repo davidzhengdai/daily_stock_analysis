@@ -1,13 +1,18 @@
 # Default Bull Trend Strategy / 默认多头趋势
+# Optimized v2: Trend phase classification, sector alignment, relative strength,
+# adaptive position sizing, and trend health scoring.
 
 name: bull_trend
 display_name: 默认多头趋势
-description: 默认个股分析优先策略，识别多头排列、趋势延续与回踩低吸机会。
+description: 默认个股分析优先策略，含趋势阶段分类、板块共振校验、相对强度评估与自适应仓位管理。
 category: trend
-core_rules: [1, 2, 3]
+core_rules: [1, 2, 3, 4, 7]
 required_tools:
   - get_daily_history
   - analyze_trend
+  - get_realtime_quote
+  - get_sector_rankings
+  - search_stock_news
 aliases: [趋势, 趋势分析, 多头趋势]
 default_active: true
 default_router: true
@@ -15,35 +20,106 @@ default_priority: 10
 market_regimes: [trending_up]
 
 instructions: |
-  **默认多头趋势（Default Bull Trend Strategy）**
-
-  适用场景：
-  - 常规个股分析的默认策略。
-  - 优先寻找“趋势向上 + 风险可控 + 不追高”的机会。
-
-  分析框架：
-
-  1. **趋势确认（优先级最高）**
-     - 使用 `analyze_trend` 判断 MA5/MA10/MA20 排列。
-     - MA5 >= MA10 >= MA20 且 MA20 斜率向上，视为多头结构。
-     - 若价格显著跌破 MA20，则降低看多权重。
-
-  2. **位置与节奏**
-     - 优先“回踩不破”而非“高位追涨”。
-     - 当价格距离 MA5/MA10 过远时，提示等待回踩。
-     - 放量突破有效阻力时可提高胜率评级。
-
-  3. **量价验证**
-     - 使用 `get_daily_history` 检查突破日/反弹日是否放量。
-     - 缩量上涨需谨慎，放量滞涨需警惕分歧。
-
-  4. **交易建议输出**
-     - 输出明确的“买入/观望/减仓”倾向及触发条件。
-     - 必须给出止损参考（如 MA20 下方或结构低点）。
-     - 若无清晰优势，明确写“暂不出手”，避免过度交易。
-
-  评分调整建议：
-  - 多头排列 + 趋势强度良好：`sentiment_score +12`
-  - 回踩关键均线后企稳：`sentiment_score +8`
-  - 放量突破关键阻力：`sentiment_score +10`
-  - 跌破 MA20 或趋势转弱：`sentiment_score -12`
+  **默认多头趋势 v2（Default Bull Trend — Expert Enhanced）**
+  
+  核心升级：Trend Phase Classification + 板块共振 + 相对强度排序 + 趋势健康度评分 + 自适应仓位。
+  
+  ---
+  
+  ## Step 1: Trend Phase Classification（四阶段模型）
+  
+  使用 `get_daily_history`（90 日）+ `analyze_trend`：
+  
+  | 阶段 | 特征 | 操作优先级 |
+  |------|------|-----------|
+  | 初期启动 | MA5 上穿 MA20 < 10 日，MACD 刚金叉，量能温和放大 | 最佳 |
+  | 中期加速 | 均线多头发散，斜率 > 20°，MACD 强势区运行 | 可追 |
+  | 后期冲刺 | 乖离率 > 8%，MACD 顶背离预警，量能滞涨 | 只卖不买 |
+  | 高位震荡 | MA5 走平，均线收敛，缩量横盘 | 等待方向 |
+  
+  **关键判断**：
+  - 趋势强度 = (现价 - MA60) / MA60 × 100%，正值越大趋势越强。
+  - 趋势健康度 = 过去 20 日中收盘 > MA20 的天数占比，> 80% 为健康。
+  - **健康度 < 60% → 趋势有衰减风险，降低仓位至 1/2。**
+  
+  ---
+  
+  ## Step 2: Sector Resonance Verification（新增）
+  
+  使用 `get_sector_rankings`：
+  - 该股所在板块近 5 日涨幅排名是否在前 30%？ → 板块顺风。
+  - 该股在板块内近 5 日涨幅排名是否在前 20%？ → 个股领涨。
+  - **板块顺风 + 个股领涨 = 最强组合，可正常仓位。**
+  - **板块逆风 + 个股独涨 = 警惕孤军深入，减半仓位。**
+  
+  ---
+  
+  ## Step 3: 相对强度评估（RS Rating）
+  
+  使用 `get_daily_history`（60 日）：
+  - 计算该股 60 日涨幅 vs 大盘（上证/创业板）60 日涨幅：
+    - RS > 1.2（跑赢大盘 20% 以上）→ 强势股，可适当放宽乖离率。
+    - RS 0.8-1.2 → 跟随大盘，标准策略。
+    - RS < 0.8 → 弱势股，即使大盘涨它也涨不动，回避。
+  
+  ---
+  
+  ## Step 4: Entry Timing Matrix
+  
+  | 乖离率(MA5) | 趋势阶段 | 量能 | 操作 |
+  |------------|----------|------|------|
+  | < 2% | 初期/中期 | 缩量企稳 | 重仓买入 |
+  | < 2% | 初期/中期 | 放量反弹 | 标准买入 |
+  | 2-5% | 初期/中期 | — | 轻仓试探 |
+  | 2-5% | 后期 | — | 不买 |
+  | > 5% | 任何 | — | 坚决不追 |
+  | 回踩 MA20 | 中期 | 缩量获支撑 | 黄金坑 |
+  | 跌破 MA20 | 任何 | 放量 | 减仓/离场 |
+  
+  ---
+  
+  ## Step 5: Adaptive Position Management
+  
+  | 综合评分 | 仓位建议 | 止损 |
+  |----------|----------|------|
+  | ≥ 8/10 | 5-7 成 | MA20 或 -5% |
+  | 5-7/10 | 3-5 成 | MA20 或 -4% |
+  | 3-4/10 | 1-2 成试探 | MA10 或 -3% |
+  | < 3/10 | 0 成（观望） | — |
+  
+  综合评分 = 趋势阶段分 + 板块共振分 + RS分 + Entry Timing分（每项 0-2.5 分）
+  
+  ---
+  
+  ## Step 6: 风险排查清单
+  
+  使用 `search_stock_news`，近 7 日：
+  - [ ] 减持公告 → 一票否决
+  - [ ] 业绩预亏/下滑 → 一票否决
+  - [ ] 监管问询/处罚 → 一票否决
+  - [ ] 大额解禁（> 总股本 5%）→ 一票否决
+  - [ ] 行业政策利空 → 降低一档仓位
+  
+  ---
+  
+  ## Output Requirements
+  
+  必须输出：
+  - 趋势阶段（初期/中期/后期/震荡）及健康度百分比
+  - 板块共振结论（顺风/中性/逆风）
+  - RS Rating（vs 大盘）
+  - 当前乖离率及Entry Timing评分
+  - 综合评分及建议仓位
+  - 止损位（具体价格）
+  - 若不符合条件 → 明确写「暂不出手」，避免过度交易。
+  
+  ---
+  
+  **Score Adjustments:**
+  - 初期启动 + 板块顺风 + 乖离 < 2%：`sentiment_score +15`
+  - 中期加速 + 回踩 MA10 企稳：`sentiment_score +12`
+  - 中期加速 + 乖离 2-5%：`sentiment_score +8`
+  - 后期冲刺 / 乖离 > 8%：`sentiment_score -10`（提示风险）
+  - 跌破 MA20 且无支撑信号：`sentiment_score -12`
+  - 板块逆风：`sentiment_score -5`
+  
