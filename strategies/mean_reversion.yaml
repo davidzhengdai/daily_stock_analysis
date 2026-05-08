@@ -1,0 +1,137 @@
+# Mean Reversion Strategy / 均值回归
+# Statistical approach: buy oversold, sell overbought. Uses Bollinger Bands,
+# RSI, and Z-score to identify extreme deviations from mean.
+
+name: mean_reversion
+display_name: 均值回归
+description: 统计学均值回归策略，基于布林带、RSI与Z分数识别极端偏离后的回归机会。
+category: reversal
+core_rules: [1, 5]
+required_tools:
+  - get_daily_history
+  - analyze_trend
+  - get_realtime_quote
+  - search_stock_news
+aliases: [回归, 均值回归, 超跌反弹]
+default_priority: 85
+market_regimes: [sideways, volatile]
+
+instructions: |
+  **均值回归策略（Mean Reversion Strategy）**
+  
+  Core Idea：价格围绕均值波动，极端偏离后大概率回归。在超卖区买入，在超买区卖出。
+  
+  ---
+  
+  ## Step 1: Multi-Indicator Extreme Deviation Detection
+  
+  使用 `get_daily_history`（60 日）+ `analyze_trend`：
+  
+  ### Indicator 1：布林带位置
+  - 价格触及/跌破布林下轨（2σ）→ 超卖 +3
+  - 价格在布林下轨至中轨之间下部 1/3 → 偏卖 +2
+  - 价格在布林中轨附近 → 中性 +1
+  - 价格在布林上轨至中轨之间上部 1/3 → 偏买 -1
+  - 价格触及/突破布林上轨（2σ）→ 超买 -3
+  
+  ### Indicator 2：RSI 位置
+  - RSI < 25 → 极度超卖 +3
+  - RSI 25-35 → 超卖 +2
+  - RSI 35-45 → 偏弱 +1
+  - RSI 45-55 → 中性 0
+  - RSI 55-65 → 偏强 -1
+  - RSI 65-75 → 超买 -2
+  - RSI > 75 → 极度超买 -3
+  
+  ### Indicator 3：价格偏离度（Z-Score）
+  ```
+  Z = (当日收盘价 - 20日均价) / 20日标准差
+  ```
+  - Z < -2.0 → 极端超卖 +3
+  - Z -1.5 ~ -2.0 → 显著超卖 +2
+  - Z -1.0 ~ -1.5 → 偏弱 +1
+  - Z -1.0 ~ +1.0 → 正常 0
+  - Z +1.0 ~ +1.5 → 偏强 -1
+  - Z +1.5 ~ +2.0 → 显著超买 -2
+  - Z > +2.0 → 极端超买 -3
+  
+  ### Indicator 4：连跌/连涨天数
+  - 连跌 ≥ 5 日 → 超卖 +2
+  - 连跌 3-4 日 → 偏弱 +1
+  - 连涨 3-4 日 → 偏强 -1
+  - 连涨 ≥ 5 日 → 超买 -2
+  
+  ---
+  
+  ## Step 2: Composite Reversion Score
+  
+  | 总分范围 | 状态 | 操作 |
+  |----------|------|------|
+  | +8 ~ +11 | 极度超卖 | 超强 重仓做多回归 |
+  | +4 ~ +7 | 超卖区 | 强 逐步买入 |
+  | -3 ~ +3 | 正常区间 | 正常 观望/持有 |
+  | -7 ~ -4 | 超买区 | 弱 减仓 |
+  | -11 ~ -8 | 极度超买 | 极弱 清仓/做空 |
+  
+  ---
+  
+  ## Step 3: Reversion Confirmation Signal（必须等待！）
+  
+  超卖不等于立即反弹。必须等待以下确认信号：
+  
+  ### Buy Confirmation（超卖后）：
+  - **启明星/K线反转**：超卖后出现阳线吞没前一日阴线。
+  - **放量反弹**：超卖后单日量比 > 1.5 且收阳。
+  - **下影线**：日内创新低后大幅收回（下影 > 实体 2 倍）。
+  - **RSI 底背驰**：价格新低但 RSI 不创新低。
+  - **无确认信号 → 继续等待**，不在超卖中接飞刀。
+  
+  ### Sell Confirmation（超买后）：
+  - **超买后放量滞涨**：量比 > 1.5 但涨幅 < 1%。
+  - **RSI 顶背驰**。
+  - **上影线 > 实体**。
+  
+  ---
+  
+  ## Step 4: 回归目标与止损
+  
+  | 入场点 | 第一目标 | 第二目标 | 止损 |
+  |--------|----------|----------|------|
+  | 布林下轨 + Z < -2 | 布林中轨 | MA20 | 布林下轨 -2% |
+  | RSI < 25 超卖 | RSI 回升至 40 | RSI 回升至 50 | 近期低点 -2% |
+  | 连跌 5 日 + 缩量 | 跌幅的 38.2% 回撤 | 跌幅的 50% 回撤 | 低点 -1% |
+  
+  ---
+  
+  ## Step 5: When NOT to Use Mean Reversion（关键过滤！）
+  
+  以下情况即使超卖也不适用：
+  - **趋势市（单边上涨/下跌）**：布林带开口扩大，价格沿轨道运行。回归策略只在震荡市有效。
+  - **基本面恶化**：使用 `search_stock_news`，若有利空（业绩暴雷、ST 风险、退市风险）→ 一票否决。
+  - **放量暴跌**：下跌时量比 > 2.0，恐慌抛售中，不接飞刀。
+  - **布林收窄后突破**：布林带极度收窄后选择方向，不应用回归策略。
+  
+  **判断是否趋势市**：布林带宽度（上轨-下轨）/ 中轨 > 15% 且持续扩大 → 趋势市，禁用回归策略。
+  
+  ---
+  
+  ## Output Requirements
+  
+  - 布林带位置、RSI 值、Z-Score、连涨/跌天数。
+  - 四项指标各自得分及总回归评分。
+  - 趋势市 vs 震荡市判定。
+  - 是否出现Reversion Confirmation Signal。
+  - 回归目标及止损。
+  - 基本面一票否决检查。
+  
+  ---
+  
+  **Score Adjustments:**
+  - 极度超卖 + 确认信号 + 震荡市：`sentiment_score +15`
+  - 超卖区 + 确认信号：`sentiment_score +10`
+  - 超卖但无确认信号：`sentiment_score +3`（等待）
+  - 极度超买 + 放量滞涨：`sentiment_score -10`
+  - 趋势市环境（不适用）：`sentiment_score 0`，注明"不适用均值回归"
+  - 基本面恶化：`sentiment_score -15`
+  - 在 `buy_reason` 中注明"均值回归"及回归评分。
+  

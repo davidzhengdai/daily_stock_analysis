@@ -1,46 +1,139 @@
 # Shrink Volume Pullback Strategy / 缩量回踩
 # Volume shrinks during pullback to MA5/MA10, then price bounces.
+# Optimized v2: Fibonacci retracement integration, pullback health scoring,
+# five-support-level hierarchy, and dynamic stop management.
 
 name: shrink_pullback
 display_name: 缩量回踩
-description: 检测缩量回踩均线支撑信号，趋势延续的理想入场点。
+description: 检测缩量回踩均线支撑信号，含斐波那契回撤校验、回踩健康度评分与五级支撑体系，趋势延续理想入场点。
 category: trend
-core_rules: [1, 2, 4]
+core_rules: [1, 2, 3, 4]
 required_tools:
   - get_daily_history
   - analyze_trend
   - get_realtime_quote
+  - search_stock_news
 aliases: [缩量回踩, 回踩]
 default_router: true
 default_priority: 40
-market_regimes: [trending_down, sideways]
+market_regimes: [trending_up]
 
 instructions: |
-  **缩量回踩（Shrink Volume Pullback Strategy）**
-
-  入场判定标准：
-
-  1. **前提条件**（关联理念2：趋势交易）：
-     - 股票必须处于上升趋势（MA5 > MA10 > MA20）。
-     - 使用 `analyze_trend` 确认多头排列。
-
-  2. **回踩检测**（关联理念4：买点偏好）：
-     - 使用 `get_daily_history` 和 `get_realtime_quote`。
-     - 价格回踩至 MA5 附近（误差 1% 以内）或 MA10 附近（误差 2% 以内）。
-     - 回调期间成交量 < 5 日均量的 70%（缩量特征）。
-     - `analyze_trend` → volume_status 应显示缩量。
-
-  3. **反弹信号**（关联理念1：严进策略）：
-     - 当前价格守住均线支撑位。
-     - MA5 乖离率 < 2% — 最佳买入区间。
-
-  4. **确认条件**（关联理念5：风险排查）：
-     - `search_stock_news` 无利空消息。
-     - 筹码分布健康（获利比例 50-80%）。
-
-  评分调整：
-  - 缩量回踩 MA5：sentiment_score +10
-  - 缩量回踩 MA10 且量能 < 0.6 倍均量：sentiment_score +8
-  - 理想买点设在 MA5 水平，次优买点设在 MA10。
-  - 止损设在 MA20 水平。
-  - 在 `buy_reason` 中注明"缩量回踩"。
+  **缩量回踩 v2（Shrink Volume Pullback — Expert Enhanced）**
+  
+  核心升级：五级支撑体系 + 斐波那契回撤 + Pullback Health 8-Dimension Scorecard + Bounce Confirmation信号。
+  
+  ---
+  
+  ## Step 1: Trend Prerequisite Check
+  
+  使用 `analyze_trend`，必须同时满足：
+  - MA5 > MA10 > MA20（多头排列）。
+  - MA20 斜率 > 0（向上）。
+  - 过去 10 日中至少 7 日收盘 > MA20（趋势健康）。
+  - 若 MA20 走平或向下 → 不适用此策略。
+  
+  ---
+  
+  ## Step 2: 五级支撑体系（按可靠性排序）
+  
+  | 级别 | 支撑位 | 可靠性 | 仓位 |
+  |------|--------|--------|------|
+  | L1 | MA5 | 5星 | 5-7 成 |
+  | L2 | MA10 | 4星 | 3-5 成 |
+  | L3 | MA20 | 3星 | 2-3 成 |
+  | L4 | 斐波那契 38.2% 回撤 | 4星 | 3-5 成 |
+  | L5 | 斐波那契 61.8% 回撤（黄金坑） | 5星 | 5-7 成 |
+  
+  **斐波那契回撤计算**（使用 `get_daily_history` 60 日）：
+  - 取最近一轮上涨的起点（波段低点）和终点（波段高点）。
+  - 计算：38.2%、50%、61.8% 回撤位。
+  - 若当前回踩至 61.8% 且缩量企稳 → 「黄金坑」最强买点。
+  
+  ---
+  
+  ## Step 3: Pullback Health 8-Dimension Scorecard（总分 16 分）
+  
+  ### A. 量能收缩度（0-3 分）
+  - 回踩日量比 < 0.5（极度缩量）→ +3
+  - 回踩日量比 0.5-0.7 → +2
+  - 回踩日量比 0.7-1.0 → +1
+  - 回踩日量比 > 1.0（非缩量）→ +0
+  
+  ### B. 价格精准度（0-3 分）
+  - 价格在支撑位 ± 1% 以内获得支撑 → +3
+  - 价格在支撑位 ± 2% 以内 → +2
+  - 价格在支撑位 ± 3% 以内 → +1
+  - 价格远离支撑位 → +0
+  
+  ### C. 下跌K线质量（0-2 分）
+  - 回踩日收小阴/十字星（下影线 > 实体）→ +2
+  - 回踩日收中阴但缩量 → +1
+  - 回踩日收大阴（> 3%）→ +0（恐慌抛售）
+  
+  ### D. Bounce Confirmation（0-3 分）
+  - 回踩后次日收阳线 → +3
+  - 回踩后次日下探后回升（下影线）→ +2
+  - 回踩后次日继续下跌 → -2（支撑无效）
+  
+  ### E. 趋势位置（0-2 分）
+  - 回踩发生在上漲初期（距起点 < 15%）→ +2
+  - 回踩发生在中期（15-30%）→ +1
+  - 回踩发生在后期（> 30%）→ +0（警惕反转）
+  
+  ### F. 多级支撑共振（0-3 分）
+  - 价格同时触及 L1+L4（MA5 + 斐波 38.2%）→ +3
+  - 价格同时触及任意两个支撑 → +2
+  - 单一支撑 → +1
+  
+  ---
+  
+  ## Step 4: 回踩等级与仓位
+  
+  | 总分 | 等级 | 操作 |
+  |------|------|------|
+  | ≥ 12 | 极品回踩 | 重仓 5-7 成 |
+  | 9-11 | 优质回踩 | 标准 3-5 成 |
+  | 6-8 | 合格回踩 | 轻仓 2-3 成 |
+  | 3-5 | 弱回踩 | 试探 1 成 |
+  | < 3 | 无效回踩 | 放弃 |
+  
+  ---
+  
+  ## Step 5: Dynamic Stop-Loss Management
+  
+  - **初始止损**：支撑位下方 -3%（如 MA5 下方 3%）。
+  - **移动止损**：持仓后价格创新高，止损上移至开仓价（保本）。
+  - **趋势止损**：若 MA5 下穿 MA10（死叉），无条件离场。
+  - **时间止损**：回踩后 5 日内未反弹 → 离场（时间成本）。
+  
+  ---
+  
+  ## Step 6: 风险一票否决
+  
+  使用 `search_stock_news`：
+  - [ ] 近 7 日有利空新闻 → 一票否决。
+  - [ ] 业绩预告亏损或大幅下滑 → 一票否决。
+  - [ ] 大股东减持进行中 → 一票否决。
+  
+  ---
+  
+  ## Output Requirements
+  
+  - 五级支撑体系中当前有效支撑位及价格距离。
+  - 斐波那契回撤位（38.2%/50%/61.8%）。
+  - 八维评分明细及总分。
+  - 回踩等级及建议仓位。
+  - 多层止损位（初始/移动/趋势/时间）。
+  - 风险否决项检查结果。
+  
+  ---
+  
+  **Score Adjustments:**
+  - 极品回踩（≥ 12 分 + 多级共振）：`sentiment_score +15`
+  - 优质回踩（9-11 分）：`sentiment_score +12`
+  - 合格回踩（6-8 分）：`sentiment_score +8`
+  - 弱回踩 / 无反弹：`sentiment_score -3`
+  - 黄金坑（61.8% + 缩量 + 下影线）：额外 `+5`
+  - 在 `buy_reason` 中注明"缩量回踩 v2"及支撑级别。
+  

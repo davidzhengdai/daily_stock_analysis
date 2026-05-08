@@ -1,44 +1,111 @@
 # Dragon Head Strategy / 龙头策略
 # Identifies sector leaders during sector rotation cycles.
+# Optimized v2: Leader verification scoring, sustainability analysis,
+# capital flow tracking, and dynamic position sizing.
 
 name: dragon_head
 display_name: 龙头策略
-description: 板块轮动中识别龙头股。适用于板块启动或行业催化剂出现时。
+description: 板块轮动中识别龙头股，含领涨验证评分、持续性分析与资金流向追踪。
 category: trend
 core_rules: [2, 7]
 required_tools:
   - get_realtime_quote
   - get_sector_rankings
   - search_stock_news
+  - get_daily_history
 aliases: [龙头, 龙头战法]
-default_priority: 90
+default_priority: 80
 market_regimes: [sector_hot]
 
 instructions: |
-  **龙头策略（Dragon Head Strategy）**
-
-  评估标准：
-
-  1. **板块领涨地位**：
-     - 使用 `get_sector_rankings` 检查该股所在板块是否为近期涨幅前列。
-     - 确认该股是否在板块启动周期中率先上涨或涨停。
-
-  2. **换手率与动能**（关联理念7：强势趋势股放宽）：
-     - 使用 `get_realtime_quote` 检查换手率。龙头股换手率通常 > 5%。
-     - 量比 > 1.5 说明有活跃的交易兴趣。
-
-  3. **相对强度**：
-     - 对比个股涨跌幅与板块平均值。
-     - 真正的龙头在上涨日应跑赢板块 2% 以上。
-
-  4. **新闻催化**：
-     - 使用 `search_stock_news` 搜索板块级催化剂（政策、事件、业绩）。
-     - 龙头行情常伴随板块整体催化。
-
-  5. **乖离率检查**（关联理念1：严进策略）：
-     - 龙头股可适当放宽乖离率至 7%，但超过 10% 仍需谨慎。
-
-  评分调整：
-  - 确认为龙头股：sentiment_score +10
-  - 板块正处于主动轮动期：额外 +5
-  - 在 `buy_reason` 中注明"龙头策略"判断结果。
+  **龙头策略 v2（Dragon Head Strategy — Expert Enhanced）**
+  
+  核心升级：6-Dimension Leadership Scorecard + Leader Sustainability Assessment + Capital Flow Verification + Phased Position Management。
+  
+  ---
+  
+  ## 1. Sector Heat Verification
+  
+  使用 `get_sector_rankings`：
+  - 该股所在板块近 5 日涨幅排名在全市场前 20% → 板块有效。
+  - 该板块近 5 日成交额较前 10 日均值放大 > 30% → 资金涌入确认。
+  - **若板块涨幅前 20% 但成交额未放大 → 警惕无量空涨，龙头不可持续。**
+  
+  ---
+  
+  ## 2. 6-Dimension Leadership Scorecard（总分 12 分）
+  
+  | 维度 | 满分条件 | 得分 |
+  |------|----------|------|
+  | 日内领涨 | 该股当日涨幅为板块第1 | +3 |
+  | 5日领涨 | 近5日累计涨幅板块前3 | +2 |
+  | 涨停/连板 | 近3日出现过涨停 | +2 |
+  | 成交额 | 该股日成交额 > 板块日均 3 倍 | +2 |
+  | 换手率 | 换手率在5-15%之间（活跃但非过度） | +1 |
+  | 新闻催化 | 近3日有板块级或个股级利好新闻 | +2 |
+  
+  - **≥ 8 分 → 确认龙头**，标准仓位。
+  - **5-7 分 → 潜力龙头**，轻仓试探。
+  - **< 5 分 → 非龙头**，不适用此策略。
+  
+  ---
+  
+  ## 3. Leader Sustainability Assessment
+  
+  使用 `get_daily_history`（20 日）：
+  
+  | 持续性指标 | 健康 | 警示 |
+  |-----------|------|------|
+  | 连涨天数 | 3-6 日 | > 7 日（过热） |
+  | 日均换手率 | 5-12% | > 20%（主力出货嫌疑） |
+  | 筹码集中度 | 90%成本集中 < 15% | 集中度快速发散 |
+  | 量价关系 | 量增价涨 | 量缩价涨 / 量增价滞 |
+  
+  **Leader Lifecycle Assessment**：
+  - 启动期（前 3 日）：刚确认龙头，性价比最高。
+  - 主升期（3-8 日）：持续上涨，可持有加仓。
+  - 高潮期（8-15 日）：涨幅已大，只卖不买。
+  - 退潮期（> 15 日）：换手率下降，资金流出 → 清仓。
+  
+  ---
+  
+  ## 4. Capital Flow Verification
+  
+  - 使用 `get_realtime_quote`：大单净流入 / 小单净流入 → 主力资金方向。
+  - 若近 3 日主力资金持续净流入 → 龙头可持续。
+  - 若主力净流出但股价仍涨 → **诱多出货**，一票否决！
+  
+  ---
+  
+  ## 5. Phased Position Management
+  
+  | 阶段 | 仓位 | 止损 | 止盈 |
+  |------|------|------|------|
+  | 启动期 + 评分 ≥ 8 | 3-5 成 | -5% 或破5日线 | +15% 或龙头退潮 |
+  | 主升期 + 评分 ≥ 8 | 维持 + 可浮盈加仓 1 成 | -5% | +20% 分批 |
+  | 高潮期 | 减至 1-2 成 | -3% | 随时清仓 |
+  | 退潮期 | 0 | — | — |
+  
+  ---
+  
+  ## 6. Timing the Entry（关键增强）
+  
+  龙头不是任何时候都可以追：
+  - **最佳Entry Timing**：板块启动第 2-3 日，龙头首次分歧（开盘低开/盘中急跌但未破 5 日线）。
+  - **次优Entry Timing**：龙头缩量回踩 5 日线获得支撑。
+  - **禁止Entry Timing**：当日高开 > 5% → 放弃，等次日机会。
+  - **禁止Entry Timing**：连续 3 日涨停后开板 → 主力出货概率大。
+  
+  使用 `get_realtime_quote` 检查当日开盘价 vs 前日收盘价。
+  
+  ---
+  
+  **Score Adjustments:**
+  - 六维评分 ≥ 10 分 + 启动期：`sentiment_score +15`
+  - 六维评分 8-9 分 + 主升期：`sentiment_score +12`
+  - 六维评分 5-7 分（潜力龙头）：`sentiment_score +6`
+  - 六维评分 < 5 分：不调整（非龙头）
+  - 高潮期 / 退潮期：`sentiment_score -5` 至 `-10`
+  - 主力资金持续流出：`sentiment_score -8`
+  - 在 `buy_reason` 中注明"龙头策略 v2"及领涨评分。
+  

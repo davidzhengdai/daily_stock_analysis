@@ -1,46 +1,132 @@
 # MA Golden Cross Strategy / 均线金叉
 # MA5 crosses above MA10 (or MA10 above MA20) with volume confirmation.
+# Optimized v2: Golden cross quality scoring, false-signal filtering,
+# multi-timeframe alignment, and post-cross validation.
 
 name: ma_golden_cross
 display_name: 均线金叉
-description: 检测均线金叉配合量能确认信号，经典的趋势反转/延续信号。
+description: 检测均线金叉配合量能确认，含质量评分、假信号过滤与多周期共振校验。
 category: trend
 core_rules: [1, 2, 3]
 required_tools:
   - get_daily_history
   - analyze_trend
+  - get_realtime_quote
 aliases: [均线金叉, 金叉]
 default_priority: 20
 market_regimes: [trending_up]
 
 instructions: |
-  **均线金叉（MA Golden Cross Strategy）**
-
-  信号判定标准：
-
-  1. **金叉检测**（关联理念2：趋势交易）：
-     - 使用 `analyze_trend` 检查均线排列和 MACD 状态。
-     - 主信号：MA5 在最近 3 个交易日内上穿 MA10。
-     - 强信号：MA10 上穿 MA20（更慢但更可靠）。
-     - 检查 MACD 状态是否为金叉或零轴上方金叉。
-
-  2. **量能确认**（关联理念3：效率优先）：
-     - 金叉日成交量应高于 5 日均量。
-     - 使用 `get_daily_history` 验证。
-     - 金叉日量比 > 1.2 为积极信号。
-
-  3. **趋势背景**：
-     - 盘整后金叉：最强信号。
-     - 上升趋势中金叉：延续信号。
-     - 深度下跌中金叉：弱信号，需更多确认。
-
-  4. **价格位置**（关联理念1：严进策略）：
-     - 价格应在交叉均线附近或上方。
-     - 乖离率 < 5% — 避免追高延迟入场。
-
-  评分调整：
-  - MA5 × MA10 金叉配合量能：sentiment_score +10
-  - MA10 × MA20 金叉：sentiment_score +8
-  - MACD 零轴上方金叉：额外 +5
-  - 在 `ma_analysis` 和 `buy_reason` 中注明"均线金叉"。
-  - 理想买点设在交叉均线水平附近。
+  **均线金叉 v2（MA Golden Cross — Expert Enhanced）**
+  
+  核心升级：金叉质量9-Dimension Scorecard + Fake Signal Triple Filter + Multi-Timeframe Resonance + 交叉后验证。
+  
+  ---
+  
+  ## 1. 金叉质量9-Dimension Scorecard（总分 18 分）
+  
+  ### A. 均线排列背景（0-3 分）
+  - 金叉时 MA5/MA10/MA20 已多头排列 → +3
+  - 金叉时均线粘合后发散 → +2
+  - 金叉时均线空头排列（底部金叉）→ +1
+  - 金叉时均线空头且 MA20 向下 → +0
+  
+  ### B. 金叉角度（0-3 分）
+  交叉时 MA5 斜率 - MA10 斜率（差值越大，金叉越有力）：
+  - 差值 > 0.5%/日 → +3（陡峭金叉，力度强）
+  - 差值 0.2-0.5%/日 → +2
+  - 差值 0-0.2%/日 → +1（平缓金叉，力度弱）
+  
+  ### C. 成交量确认（0-3 分）
+  - 金叉日量比 > 2.0 → +3
+  - 金叉日量比 1.5-2.0 → +2
+  - 金叉日量比 1.0-1.5 → +1
+  - 金叉日量比 < 1.0 → +0（无量金叉，不可靠）
+  
+  ### D. MACD 配合（0-3 分）
+  - MACD 零轴上方金叉 → +3
+  - MACD 零轴附近金叉 → +2
+  - MACD 零轴下方金叉 → +1
+  - MACD 仍死叉中 → +0
+  
+  ### E. Price Confirmation（0-3 分）
+  - 金叉次日收盘 > 金叉日收盘 → +3
+  - 金叉次日收盘 = 金叉日收盘（±0.5%）→ +2
+  - 金叉次日收盘 < 金叉日收盘 → +0（金叉即跌，假信号）
+  
+  ### F. 乖离率安全（0-3 分）
+  - 乖离率(MA5) < 2% → +3
+  - 乖离率 2-5% → +2
+  - 乖离率 > 5% → +0（追高风险）
+  
+  ---
+  
+  ## 2. Golden Cross Grade & Position
+  
+  | 总分 | 等级 | 可靠性 | 仓位 |
+  |------|------|--------|------|
+  | ≥ 14 | 超级金叉 | 极高 | 5-7 成 |
+  | 11-13 | 强金叉 | 高 | 3-5 成 |
+  | 8-10 | 标准金叉 | 中 | 2-3 成 |
+  | 5-7 | 弱金叉 | 低 | 0.5-1 成试探 |
+  | < 5 | 无效金叉 | 忽略 | 0 |
+  
+  ---
+  
+  ## 3. Fake Signal Triple Filter
+  
+  ### Filter 1：交叉后3日法则
+  - 金叉后 3 日内价格不得跌破 MA10（否则假金叉）。
+  - 金叉后 3 日内量能不能持续萎缩（量比持续 < 0.8）。
+  
+  ### Filter 2：Trend Background过滤
+  - **盘整后金叉**（前期横盘 ≥ 15 日）→ 最强，直接接受。
+  - **上涨中继金叉**（前期上涨 + 回调后交叉）→ 接受。
+  - **下跌中金叉**（前期跌幅 > 15%，反弹金叉）→ 需额外验证：等待 5 日不创新低。
+  
+  ### Filter 3：周线验证
+  - 若周线也出现 MA5 上穿 MA10（或即将交叉）→ Multi-Timeframe Resonance，信号翻倍可靠。
+  - 若周线仍死叉 → 日线金叉可靠性折半。
+  
+  ---
+  
+  ## 4. Golden Cross Type & Action Priority
+  
+  | 金叉类型 | 可靠性 | 操作 |
+  |----------|--------|------|
+  | MA5 × MA10（盘整后） | 超强 | 立即买入 |
+  | MA5 × MA10（上涨中） | 强 | 买入 |
+  | MA10 × MA20（中期金叉） | 强 | 加仓信号 |
+  | MA5 × MA10（下跌中） | 弱 | 观望或极轻仓 |
+  | MA20 × MA60（长期金叉） | 超强 | 重仓长期 |
+  
+  ---
+  
+  ## 5. Multi-Timeframe Resonance Bonus
+  
+  - 日线金叉 + 周线多头排列 → 额外 +3 分。
+  - 日线金叉 + 周线金叉 → 额外 +5 分（极强信号）。
+  - 日线金叉 + 周线死叉 → -2 分（周期冲突）。
+  
+  ---
+  
+  ## Output Requirements
+  
+  - 金叉类型（MA5×MA10 / MA10×MA20 / MA20×MA60）。
+  - 九维评分明细及总分。
+  - 金叉等级及建议仓位。
+  - 假信号滤网检查结果。
+  - Multi-Timeframe Resonance结论。
+  - 止损位（交叉均线下方 -2%）。
+  
+  ---
+  
+  **Score Adjustments:**
+  - 超级金叉（≥ 14 分 + 周线共振）：`sentiment_score +18`
+  - 强金叉（11-13 分）：`sentiment_score +12`
+  - 标准金叉（8-10 分）：`sentiment_score +8`
+  - 弱金叉（5-7 分）：`sentiment_score +4`
+  - MACD 零轴上方金叉：额外 `+3`
+  - 无量金叉 / 金叉即跌：`sentiment_score -5`
+  - 在 `ma_analysis` 和 `buy_reason` 中注明金叉质量评分。
+  

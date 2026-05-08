@@ -1,49 +1,103 @@
 # Bottom Volume Surge Strategy / 底部放量
 # After extended decline, price stabilizes and volume spikes. Potential reversal.
+# Optimized v2: Added multi-timeframe confirmation, dead-cat-bounce filter,
+# sector context, and quality scoring system.
 
 name: bottom_volume
 display_name: 底部放量
-description: 检测长期下跌后底部放量信号，潜在趋势反转信号。
+description: 检测长期下跌后底部放量信号，含假反弹过滤、多周期确认与质量评分，潜在趋势反转信号。
 category: reversal
-core_rules: [2, 5]
+core_rules: [2, 3, 5]
 required_tools:
   - get_daily_history
+  - get_realtime_quote
   - analyze_trend
+  - search_stock_news
 aliases: [地量见底, 底部放量]
 default_priority: 60
 market_regimes: [trending_down]
 
 instructions: |
-  **底部放量（Bottom Volume Surge Strategy）**
-
-  反转判定标准：
-
-  1. **持续下跌确认**：
-     - 使用 `get_daily_history`（30日）。
-     - 股价从 20 日高点到近期低点跌幅 > 15%。
-     - `analyze_trend` → trend_status 应为 BEAR 或 STRONG_BEAR。
-
-  2. **量能异动**：
-     - 当日成交量 > 5 日均量的 3 倍。
-     - 使用 `get_realtime_quote` → volume_ratio > 3.0。
-     - 该异动应出现在前期极度缩量之后。
-
-  3. **价格企稳**：
-     - 当日K线收阳（收盘价 > 开盘价）。
-     - 价格守住近期低点。
-     - 最好出现长下影线，显示买方支撑。
-
-  4. **确认因素**（关联理念5：风险排查）：
-     - 通过 `search_stock_news` 确认是否有基本面催化。
-     - 筹码分布：平均成本接近现价（成本收敛）。
-
-  5. **风险提示**（关联理念2：趋势交易）：
-     - 这是反转信号，风险高于趋势跟踪。
-     - 仓位建议较小（最多 2-3 成）。
-     - 止损必须严格（设在近期低点下方）。
-
-  评分调整：
-  - 底部放量确认：sentiment_score +8
-  - 配合阳线 + 新闻催化：额外 +5
-  - 在 `buy_reason` 和 `pattern_analysis` 中注明"底部放量"。
-  - 止损设在近期低点。
+  **底部放量 v2（Bottom Volume Surge Strategy — Expert Enhanced）**
+  
+  Core Idea：真正的底部反转需要「跌幅到位 + 缩量衰竭 + 放量确认 + 连续验证」四步完整。
+  
+  ---
+  
+  ## Step 1: 跌幅与时间到位（前置过滤）
+  
+  使用 `get_daily_history`（90 日），计算三项：
+  
+  | 指标 | 阈值 | 权重 |
+  |------|------|------|
+  | 最大回撤（90日高点→低点） | > 20% | 必须 |
+  | 距高点交易日数 | > 30 个交易日 | 加分 |
+  | 近 20 日日均振幅 | < 前 40 日均值的 70%（衰竭信号） | 加分 |
+  
+  **死猫反弹过滤**：
+  - 若近 60 日内曾出现过单日涨幅 > 5% 但 5 日后又创新低 → 标记为假反弹历史，降低信任度。
+  - 若出现 ≥ 2 次假反弹 → 该股不适合底部反转策略，跳过。
+  
+  ---
+  
+  ## Step 2: 缩量衰竭确认
+  
+  - 近 10 日均量 < 近 60 日均量的 50%（成交量萎缩过半）。
+  - 使用 `get_daily_history` 验证：最近 5 个交易日中至少 3 日缩量（量比 < 0.6）。
+  - 换手率降至近 60 日最低 20% 分位 → 无人关注，底部特征。
+  
+  ---
+  
+  ## Step 3: 放量异动 + K线质量评分
+  
+  | 条件 | 得分 |
+  |------|------|
+  | 当日成交量 > 10 日均量的 2.5 倍 | +2 |
+  | 当日成交量 > 10 日均量的 4 倍（爆量） | +3 |
+  | 收阳线且实体 > 振幅的 60%（强势收盘） | +2 |
+  | 下影线 > 实体长度（多方反击） | +2 |
+  | 收盘价站上 5 日均线 | +1 |
+  | 当日涨幅 > 3% | +1 |
+  
+  - **总得分 ≥ 5** → 有效底部放量信号。
+  - **总得分 3-4** → 弱信号，需次日确认。
+  - **总得分 < 3** → 不成立，疑似诱多。
+  
+  ---
+  
+  ## Step 4: 次日/次周连续验证（关键！）
+  
+  - 次日收盘价不得低于放量日开盘价（否则诱多概率高）。
+  - 次周（5日）内不得再创新低。
+  - 若连续 3 日站稳 5 日均线上方 → 反转确认，可逐步加仓。
+  
+  ---
+  
+  ## Step 5: 板块与基本面确认
+  
+  使用 `search_stock_news`：
+  - 搜索近 7 日是否有基本面催化（业绩预告、政策利好、产品突破）。
+  - 搜索近 30 日是否有利空未消化（减持、监管、诉讼）→ 一票否决。
+  - 使用 `get_sector_rankings` 确认该股所在板块是否也出现止跌信号（板块共振）。
+  
+  ---
+  
+  ## Position & Stop-Loss Rules
+  
+  | 信号强度 | 首仓 | 加仓条件 | 止损 |
+  |----------|------|----------|------|
+  | 强信号（得分 ≥ 7） | 2 成 | 3 日站稳 MA5 后加 1 成 | 放量日最低价 |
+  | 标准信号（得分 5-6） | 1 成 | 5 日不创新低后加 1 成 | 近期低点 -2% |
+  | 弱信号（得分 3-4） | 0.5 成试探 | 7 日验证后加仓 | 近期低点 -1% |
+  
+  ---
+  
+  ## **Score Adjustments:**
+  
+  - 底部放量得分 ≥ 7 + 板块共振：`sentiment_score +12`
+  - 底部放量得分 5-6 + 阳线确认：`sentiment_score +8`
+  - 底部放量得分 3-4（弱信号）：`sentiment_score +4`
+  - 连续验证失败（次日跌回）：`sentiment_score -5`
+  - 存在假反弹历史：`sentiment_score -3`
+  - 在 `buy_reason` 和 `pattern_analysis` 中注明"底部放量 v2"及质量得分。
+  

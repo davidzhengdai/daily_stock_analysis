@@ -1,0 +1,116 @@
+# Momentum Rotation Strategy / 动量轮动
+# Sector-level momentum rotation: rotate into leading sectors, rotate out of lagging ones.
+
+name: momentum_rotation
+display_name: 动量轮动
+description: 基于板块动量排序与资金流向的轮动策略，追强弃弱、动态切换。
+category: trend
+core_rules: [2, 3, 7]
+required_tools:
+  - get_daily_history
+  - analyze_trend
+  - get_realtime_quote
+  - get_sector_rankings
+  - search_stock_news
+aliases: [轮动, 动量轮动, 板块轮动]
+default_priority: 75
+market_regimes: [trending_up, sideways]
+
+instructions: |
+  **动量轮动策略（Momentum Rotation Strategy）**
+  
+  Core Idea：市场资金在不同板块间轮动。买入动量最强板块中的领涨股，卖出动量衰减板块的持仓。
+  
+  ---
+  
+  ## Step 1: Sector Momentum Ranking
+  
+  使用 `get_sector_rankings` 获取全市场板块排名：
+  
+  | 排名指标 | 权重 | 数据来源 |
+  |----------|------|----------|
+  | 近 5 日涨幅排名 | 40% | sector_rankings |
+  | 近 10 日涨幅排名 | 30% | sector_rankings |
+  | 近 5 日成交额变化 | 20% | 计算增量 |
+  | 涨停家数占比 | 10% | sector_rankings |
+  
+  **动量评分** = Σ(排名倒序 × 权重)，得分越高动量越强。
+  
+  ---
+  
+  ## Step 2: Capital Flow Confirmation
+  
+  - 板块近 5 日成交额 / 近 20 日均成交额 > 1.3 → 资金持续流入。
+  - 若板块涨幅靠前但成交额未放大 → 无量空涨，轮动不可持续。
+  - 若板块成交额放大但涨幅靠后 → 资金在出货，回避。
+  
+  ---
+  
+  ## Step 3: Intra-Sector Stock Selection
+  
+  在动量前 5 的板块中，挑选个股：
+  
+  | Stock Selection Criteria | 阈值 |
+  |----------|------|
+  | 近 5 日涨幅 > 板块均值 | 必须 |
+  | 近 5 日成交额 > 板块成分股中位数 | 必须 |
+  | 换手率在自身 120 日中位数 ± 50% | 排除异常 |
+  | 乖离率(MA5) < 5% | 不追高 |
+  | MA5 > MA10 | 短期趋势向上 |
+  
+  ---
+  
+  ## Step 4: Rotation Signal Identification
+  
+  ### 买入信号（轮入）：
+  - 板块从排名 10+ 跃升至前 3（突破性轮入） → 最强。
+  - 板块连续 3 日排名上升（稳步轮入） → 强。
+  - 板块排名前 5 且资金持续流入 → 正常。
+  
+  ### 卖出信号（轮出）：
+  - 板块从排名前 3 跌出前 10 → 立即轮出。
+  - 板块排名连续 3 日下降 → 准备轮出。
+  - 板块成交额连续 3 日萎缩（< 均量 80%）→ 热度退潮。
+  
+  ---
+  
+  ## Step 5: Position Rotation Management
+  
+  | 持仓板块排名 | 操作 |
+  |-------------|------|
+  | 前 3 | 维持/加仓 |
+  | 4-6 | 持有不加仓 |
+  | 7-10 | 减仓 1/2 |
+  | > 10 | 清仓轮出 |
+  | 板块排名日降 > 3 位 | 减仓 1/2 |
+  | 板块排名日降 > 5 位 | 直接清仓 |
+  
+  ---
+  
+  ## Step 6: 风控规则
+  
+  - 单板块最大仓位不超过总仓位 40%。
+  - 同时持有不超过 3 个板块。
+  - 若市场整体下跌（大盘日跌 > 2%），暂停所有轮入操作。
+  - 轮入后 3 日不涨反跌 → 止损轮出（判断错误）。
+  
+  ---
+  
+  ## Output Requirements
+  
+  - 当前动量前 5 板块及得分。
+  - 该股所在板块的动量排名及轮动方向。
+  - 该股在板块内的选股符合度。
+  - 轮入/轮出信号。
+  - 建议仓位及板块集中度。
+  
+  ---
+  
+  **Score Adjustments:**
+  - 板块动量前 3 + 突破性轮入 + 个股领涨：`sentiment_score +15`
+  - 板块动量前 3 + 稳步轮入：`sentiment_score +12`
+  - 板块动量 4-6 + 资金流入：`sentiment_score +8`
+  - 板块排名下降 / 轮出信号：`sentiment_score -10`
+  - 市场整体下跌环境：全局 `-5`
+  - 在 `buy_reason` 中注明"动量轮动"及板块排名。
+  

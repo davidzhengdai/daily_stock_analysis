@@ -1,37 +1,126 @@
 # One Yang Three Yin Strategy / 一阳夹三阴
 # K-line pattern: bullish → 3 small bearish → bullish. Consolidation end signal.
+# Optimized v2: Flexible pattern matching (not rigid 5-day), volume arc,
+# multi-pattern variants, and pre-pattern context analysis.
 
 name: one_yang_three_yin
 display_name: 一阳夹三阴
-description: 检测一阳夹三阴K线整理形态，趋势延续入场信号。
+description: 检测一阳夹三阴K线整理形态，含灵活匹配、量能弧线分析与前置趋势校验，趋势延续入场信号。
 category: pattern
-core_rules: [2, 4]
+core_rules: [2, 3, 4]
 required_tools:
   - get_daily_history
   - analyze_trend
+  - get_realtime_quote
 aliases: [一阳穿三阴, 一阳夹三阴]
-default_priority: 110
+default_priority: 100
 
 instructions: |
-  **一阳夹三阴（One Yang Three Yin Strategy）**
-
-  形态定义（最近 5 个交易日）：
-
-  1. **第1日**：大阳线（收盘价 > 开盘价，实体 > 股价的 2%）。
-  2. **第2-4日**：连续三根阴线或小K线：
-     - 每根K线最低价不跌破第1日开盘价。
-     - 成交量应逐步萎缩（量比 < 0.8）。
-     - 三根K线应收在第1日实体范围内。
-  3. **第5日**：又一根阳线，收盘价突破第1日收盘价。
-
-  如何使用工具评估：
-
-  1. 使用 `get_daily_history` 获取最近 10 日数据。
-  2. 检查最后 5 根K线是否符合上述形态。
-  3. 使用 `analyze_trend` 确认多头排列（关联理念2：趋势交易，MA5 > MA10 > MA20）。
-
-  评分调整：
-  - 形态成立 + 趋势看多：sentiment_score +15
-  - 形态成立但趋势不明：sentiment_score +5
-  - 在 `pattern_analysis` 和 `buy_reason` 中注明"一阳夹三阴"。
-  - 理想买点设在第5日收盘价附近，止损设在第1日开盘价下方。
+  **一阳夹三阴 v2（One Yang Three Yin — Expert Enhanced）**
+  
+  核心升级：灵活形态匹配（1-2-3 / 1-3-1 / 1-2-2 变体）+ 量能U型弧线 + 前置趋势校验 + 假形态过滤。
+  
+  ---
+  
+  ## 1. 形态变体库（灵活匹配）
+  
+  基础形态 = 阳线 → 2-4根整理K线 → 突破阳线。检测以下变体：
+  
+  ### Variant A：经典型（1-3-1）最强
+  - Day 1：大阳线（实体 > 2%，收于高位）。
+  - Day 2-4：三根小阴/小阳线，重心横盘或微降，最低价不低于 Day 1 开盘价。
+  - Day 5：突破阳线，收盘 > Day 1 收盘价 + 量能放大。
+  
+  ### Variant B：紧凑型（1-2-1）强
+  - Day 1：阳线。
+  - Day 2-3：两根整理线（仅 2 日整理，整理更紧凑）。
+  - Day 4：突破阳线。
+  
+  ### Variant C：延长型（1-4-1）强
+  - Day 1：阳线。
+  - Day 2-5：四根整理线（整理时间更长，清洗更充分）。
+  - Day 6：突破阳线。
+  
+  ### Variant D：并排型（1-1-1）强
+  - Day 1：阳线。
+  - Day 2：同价位小阴/阳（并排整理 1 日）。
+  - Day 3：突破阳线。
+  
+  使用 `get_daily_history`（20 日）检测近 20 日内是否出现以上变体。
+  
+  ---
+  
+  ## 2. 量能U型弧线验证（关键！）
+  
+  整理形态中成交量应呈「U型」：
+  - Day 1（首阳）：放量（量比 > 1.2）。
+  - Day 2-N（整理）：逐步缩量（量比逐日下降，最后一日 < 0.7）。
+  - 突破日（末阳）：再次放量（量比 > 突破前一日量比的 1.5 倍）。
+  
+  **Volume Arc Score**：
+  - 完美 U 型（首阳放→整理缩→末阳放）→ +3 分。
+  - 部分 U 型（缩量阶段不完全）→ +1 分。
+  - 量能杂乱无章 → -2 分（形态不成立）。
+  
+  ---
+  
+  ## 3. 前置趋势校验
+  
+  使用 `analyze_trend`：
+  - 最佳：形态发生前已有上升趋势（MA5 > MA10 > MA20）。
+  - 可接受：形态发生前横盘整理（均线粘合），形态是突破启动信号。
+  - 拒绝：形态发生前处于下跌趋势 → 很可能只是下跌中继，放弃。
+  - 拒绝：形态发生前涨幅已 > 20%（短时间）→ 高位整理可能是出货。
+  
+  ---
+  
+  ## 4. Pattern Quality Scorecard（总分 12 分）
+  
+  | 评分项 | 满分 | 条件 |
+  |--------|------|------|
+  | 首阳线质量 | 3 | 实体 > 3%（3分）/ 2-3%（2分）/ < 2%（1分）|
+  | 整理紧凑度 | 3 | 整理期振幅 < 首阳实体的 50% |
+  | 量能 U 型 | 3 | 完美 U 型（3分）/ 部分（1分）|
+  | 突破力度 | 3 | 末阳实体 > 首阳实体 70% + 量比 > 1.5 |
+  
+  - **≥ 9 分** → 高质量形态，正常仓位。
+  - **6-8 分** → 中等质量，轻仓试探。
+  - **< 6 分** → 形态弱，等待或放弃。
+  
+  ---
+  
+  ## 5. 入场与止损
+  
+  - **理想买点**：末阳（突破阳）收盘价附近，或次日开盘价（若未大幅高开）。
+  - **次优买点**：形态确认后回踩 Day 1 收盘价获得支撑时。
+  - **标准止损**：Day 1 开盘价下方 -2%。
+  - **移动止损**：持仓后若上涨，止损上移至末阳开盘价。
+  
+  ---
+  
+  ## 6. Fake Pattern Triple Warning
+  
+  - 突破日量能不足（量比 < 0.8）→ 假突破概率高。
+  - 突破日收盘回落（上影线 > 实体）→ 抛压重。
+  - 突破次日即跌回整理区 → 形态失败，止损出局。
+  
+  ---
+  
+  ## Output Requirements
+  
+  - 检测到的形态变体类型（A/B/C/D）。
+  - 量能 U 型弧线评分。
+  - 前置趋势结论（上升/横盘/下跌）。
+  - 形态质量总分及等级。
+  - 建议买点、止损位。
+  
+  ---
+  
+  **Score Adjustments:**
+  - 高质量形态（≥ 9 分）+ 上升趋势前置：`sentiment_score +15`
+  - 中等质量（6-8 分）+ 横盘突破：`sentiment_score +10`
+  - 低质量 + 上升趋势：`sentiment_score +5`
+  - 形态成立但趋势向下：`sentiment_score +3`（谨慎）
+  - 量能杂乱 / 假突破：`sentiment_score -3`
+  - 在 `pattern_analysis` 和 `buy_reason` 中注明变体类型及质量分。
+  
