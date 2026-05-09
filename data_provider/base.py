@@ -979,6 +979,7 @@ class DataFetcherManager:
         from .longbridge_fetcher import LongbridgeFetcher
         from .moomoo_fetcher import MoomooFetcher
         config = get_config()
+        from .moomoo_fetcher import MoomooFetcher
         # 创建所有数据源实例（优先级在各 Fetcher 的 __init__ 中确定）
         efinance = EfinanceFetcher()
         akshare = AkshareFetcher()
@@ -1004,6 +1005,8 @@ class DataFetcherManager:
             optional_fetchers.append(LongbridgeFetcher())  # 长桥（美股/港股兜底，懒加载）
         else:
             logger.debug("[数据源初始化] 跳过未配置的 LongbridgeFetcher")
+        longbridge = LongbridgeFetcher()  # 长桥（美股/港股兜底，懒加载）
+        moomoo = MoomooFetcher()          # Moomoo OpenAPI（实时行情，懒加载）
 
         # 初始化数据源列表
         self._ensure_concurrency_guards()
@@ -1017,6 +1020,8 @@ class DataFetcherManager:
                 longbridge,
                 moomoo,
                 *optional_fetchers,
+                longbridge,
+                moomoo,
             ]
 
             # 按优先级排序（Tushare 如果配置了 Token 且初始化成功，优先级为 0）

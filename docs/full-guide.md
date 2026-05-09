@@ -321,7 +321,11 @@ daily_stock_analysis/
 | `LONGBRIDGE_APP_KEY` | [Longbridge OpenAPI](https://open.longbridge.com/) App Key；配置后美股/港股的量比、换手率、PE 等 YFinance 缺失字段会自动从长桥补充 | - | 可选 |
 | `LONGBRIDGE_APP_SECRET` | Longbridge App Secret | - | 可选 |
 | `LONGBRIDGE_ACCESS_TOKEN` | Longbridge Access Token | - | 可选 |
-| `LONGBRIDGE_*`（可选） | 见官方 [环境变量](https://open.longbridge.com/zh-CN/docs/getting-started#环境变量)；另有 `LONGBRIDGE_STATIC_INFO_TTL_SECONDS` | - | 可选 |
+| `LONGBRIDGE_*`（可选） | 见官方 [环境变量](https://open.longbridge.com/zh-CN/docs/getting-started#环境变量)；另有 `LONGBRIDGE_STATIC_INFO_TTL_SECONDS` 与 `LONGBRIDGE_CONNECTION_COOLDOWN_SECONDS` | - | 可选 |
+| `MOOMOO_OPEND_HOST` | Moomoo OpenAPI 本地 OpenD 网关地址；当 `REALTIME_SOURCE_PRIORITY` 包含 `moomoo` 时使用 | `127.0.0.1` | 可选 |
+| `MOOMOO_OPEND_PORT` | Moomoo OpenD 网关端口 | `11111` | 可选 |
+| `MOOMOO_OPEND_CONNECT_TIMEOUT` | Moomoo OpenD 连接预检查超时时间（秒），OpenD 不可达时快速降级 | `1.0` | 可选 |
+| `MOOMOO_EXTENDED_TIME` | Moomoo 美股扩展时段行情开关（`true`/`false`） | `false` | 可选 |
 | `ENABLE_REALTIME_QUOTE` | 启用实时行情（关闭后使用历史收盘价分析） | `true` | 可选 |
 | `ENABLE_REALTIME_TECHNICAL_INDICATORS` | 盘中实时技术面：启用时用实时价计算 MA5/MA10/MA20 与多头排列（Issue #234）；关闭则用昨日收盘 | `true` | 可选 |
 | `ENABLE_CHIP_DISTRIBUTION` | 启用筹码分布分析（该接口不稳定，云端部署建议关闭）。GitHub Actions 用户需在 Repository Variables 中设置 `ENABLE_CHIP_DISTRIBUTION=true` 方可启用；workflow 默认关闭。 | `true` | 可选 |

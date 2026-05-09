@@ -16,6 +16,13 @@ This is the entry point for project documentation. The README covers the project
 | Use Bot / IM integrations | [Bot Commands (EN)](bot-command_EN.md) | [Bot Platform Docs](bot/) <sub><sub>![P2 Badge](https://img.shields.io/badge/P2-yellow?style=flat)</sub></sub> (Chinese-only) |
 | Troubleshoot runtime issues | [FAQ (EN)](FAQ_EN.md) | [Changelog](CHANGELOG.md) |
 | Contribute code or docs | [Contributing Guide (EN)](CONTRIBUTING_EN.md) | [API Spec](architecture/api_spec.json) |
+| Document | Description |
+|----------|-------------|
+| [README (EN)](README_EN.md) | Project overview, quick start, features, sample output |
+| [Full Guide (EN)](full-guide_EN.md) | Complete setup and usage walkthrough |
+| [Deploy Guide (EN)](DEPLOY_EN.md) | Server deployment (Docker, systemd, Supervisor) |
+| [LLM Config Guide (EN)](LLM_CONFIG_GUIDE_EN.md) | AI model configuration (Gemini, OpenAI-compatible, DeepSeek, Ollama, etc.) |
+| [Moomoo OpenD Setup](moomoo-opend-setup.md) | Install OpenD, configure Docker access, and verify Moomoo quote data |
 
 ## Getting Started
 

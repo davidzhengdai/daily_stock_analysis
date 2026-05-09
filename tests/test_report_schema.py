@@ -341,6 +341,95 @@ class TestAnalyzerSchemaFallback(unittest.TestCase):
         result = analyzer._parse_response(response, "600519", "股票600519")
         self.assertEqual(result.dashboard["decision_stability"]["applied"], True)
         self.assertEqual(result.dashboard["decision_stability"]["reason"], "回测验证")
+    def test_parse_response_accepts_chinese_score_aliases(self) -> None:
+        """Local models may return Chinese field names and scores like '69/100'."""
+        analyzer = GeminiAnalyzer()
+        response = json.dumps({
+            "股票名称": "特斯拉（TSLA）",
+            "趋势分析预判": {
+                "趋势状态": "多头排列",
+                "系统评分": "48/100",
+            },
+            "操作建议": "持有",
+            "置信度": "中",
+            "analysis_summary": "技术面偏强但估值较高",
+        }, ensure_ascii=False)
+
+        result = analyzer._parse_response(response, "TSLA", "股票TSLA")
+
+        self.assertEqual(result.name, "特斯拉（TSLA）")
+        self.assertEqual(result.sentiment_score, 48)
+        self.assertEqual(result.trend_prediction, "多头排列")
+        self.assertEqual(result.operation_advice, "持有")
+
+    def test_parse_response_accepts_system_score_alias(self) -> None:
+        """Some local models return system_score instead of sentiment_score."""
+        analyzer = GeminiAnalyzer()
+        response = json.dumps({
+            "stock_name": "特斯拉（TSLA）",
+            "system_score": 48,
+            "operation_advice": "持有",
+            "dashboard": {
+                "core_conclusion": {"one_sentence": "持有，等待回调"},
+                "intelligence": {"risk_alerts": []},
+                "battle_plan": {"sniper_points": {"stop_loss": 406.94}},
+            },
+        }, ensure_ascii=False)
+
+        result = analyzer._parse_response(response, "TSLA", "Tesla")
+
+        self.assertEqual(result.sentiment_score, 48)
+
+    def test_parse_response_accepts_nested_chinese_dashboard_score(self) -> None:
+        """Local Chinese models may put the score under nested dashboard/technical sections."""
+        analyzer = GeminiAnalyzer()
+        response = json.dumps({
+            "股票名称": "特斯拉（TSLA）",
+            "技术面数据": {
+                "趋势分析预判": {
+                    "趋势状态": "多头排列",
+                    "系统信号": "持有",
+                    "系统评分": 48,
+                },
+            },
+            "决策仪表盘": {
+                "core_conclusion": {"one_sentence": "持有，等待回调"},
+                "intelligence": {"risk_alerts": []},
+                "battle_plan": {"sniper_points": {"stop_loss": 386.76}},
+                "系统信号": "持有",
+                "系统评分": 48,
+            },
+        }, ensure_ascii=False)
+
+        result = analyzer._parse_response(response, "TSLA", "Tesla")
+
+        self.assertEqual(result.sentiment_score, 48)
+        self.assertEqual(result.trend_prediction, "多头排列")
+        self.assertEqual(result.operation_advice, "持有")
+        self.assertIsNotNone(result.dashboard)
+
+    def test_parse_response_accepts_system_score_object(self) -> None:
+        """Some local models return 系统评分 as an object containing the actual score."""
+        analyzer = GeminiAnalyzer()
+        response = json.dumps({
+            "股票名称": "美光科技（MU）",
+            "核心结论": "乖离率超买严重，建议持有并设置止损",
+            "系统评分": {
+                "趋势强度": 90,
+                "系统评分": 52,
+                "信号": "持有",
+            },
+            "dashboard": {
+                "core_conclusion": {"one_sentence": "乖离率超买严重，建议持有并设置止损"},
+                "intelligence": {"risk_alerts": []},
+                "battle_plan": {"sniper_points": {"stop_loss": "495.00元"}},
+            },
+        }, ensure_ascii=False)
+
+        result = analyzer._parse_response(response, "MU", "Micron Technology")
+
+        self.assertEqual(result.sentiment_score, 52)
+        self.assertEqual(result.operation_advice, "持有")
 
     def test_parse_text_response_honors_injected_runtime_report_language(self) -> None:
         """Fallback text parsing should use the analyzer's injected config, not the global singleton."""
