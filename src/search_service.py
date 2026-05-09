@@ -2431,10 +2431,323 @@ class YahooFinanceNewsProvider(BaseSearchProvider):
         )
 
 
+class EastMoneyNewsProvider(BaseSearchProvider):
+    """
+    东方财富网 (EastMoney) 新闻搜索 Provider。
+    使用其公开 JSON 搜索 API，无需 API Key，优先响应 A 股和港股相关新闻。
+    当 query 不含中文时快速返回 success=False，将请求让给英文源。
+    """
+
+    SEARCH_URL = "https://search.eastmoney.com/api/json.html"
+    TIMEOUT_SECONDS = 8
+    _CN_RE = re.compile(r"[一-鿿]")
+
+    def __init__(self) -> None:
+        super().__init__([], "EastMoneyNews")
+
+    @property
+    def is_available(self) -> bool:
+        return True
+
+    def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7) -> SearchResponse:
+        raise NotImplementedError
+
+    def search(self, query: str, max_results: int = 5, days: int = 7, **kwargs) -> SearchResponse:
+        start_time = time.time()
+        if not self._CN_RE.search(query):
+            return SearchResponse(
+                query=query, results=[], provider=self.name,
+                success=False, error_message="non-Chinese query, skipping",
+                search_time=time.time() - start_time,
+            )
+        params = {
+            "keyword": query,
+            "type": "news",
+            "pageindex": 1,
+            "pagesize": max(max_results, 5),
+        }
+        try:
+            resp = requests.get(
+                self.SEARCH_URL,
+                params=params,
+                timeout=self.TIMEOUT_SECONDS,
+                headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.eastmoney.com/"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            return SearchResponse(
+                query=query, results=[], provider=self.name,
+                success=False, error_message=str(exc),
+                search_time=time.time() - start_time,
+            )
+
+        article_list = []
+        result_block = data.get("result") or {}
+        if isinstance(result_block, dict):
+            article_list = result_block.get("articleList") or []
+        elif isinstance(data, dict):
+            article_list = data.get("articleList") or data.get("list") or []
+
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
+        results: List[SearchResult] = []
+        for item in article_list:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("Art_Title") or item.get("title") or "").strip()
+            if not title:
+                continue
+            url = str(item.get("Art_Url") or item.get("url") or "").strip()
+            source = str(item.get("Art_Source") or item.get("source") or "东方财富").strip()
+            published_date: Optional[str] = None
+            raw_time = item.get("Art_ShowTime") or item.get("pubDate") or item.get("time") or ""
+            if raw_time:
+                try:
+                    dt = datetime.fromisoformat(str(raw_time)[:19]).replace(tzinfo=timezone.utc)
+                    if dt < cutoff:
+                        continue
+                    published_date = dt.date().isoformat()
+                except Exception:
+                    published_date = str(raw_time)[:10]
+            results.append(SearchResult(
+                title=title,
+                snippet=str(item.get("Art_Abstract") or item.get("summary") or title)[:200],
+                url=url,
+                source=source,
+                published_date=published_date,
+            ))
+            if len(results) >= max_results:
+                break
+
+        logger.info(
+            "[EastMoneyNews] 搜索 '%s' 完成，返回 %d 条结果，耗时 %.2fs",
+            query[:30], len(results), time.time() - start_time,
+        )
+        return SearchResponse(
+            query=query, results=results, provider=self.name,
+            success=bool(results),
+            search_time=time.time() - start_time,
+        )
+
+
+class CLSNewsProvider(BaseSearchProvider):
+    """
+    财联社 (CLS) 新闻 Provider。
+    财联社是中国领先的实时财经新闻机构，专注 A 股和港股突发新闻。
+    使用其公开搜索 API，无需 API Key。
+    当 query 不含中文时快速返回 success=False，将请求让给英文源。
+    """
+
+    SEARCH_URL = "https://www.cls.cn/api/search"
+    TIMEOUT_SECONDS = 8
+    _CN_RE = re.compile(r"[一-鿿]")
+
+    def __init__(self) -> None:
+        super().__init__([], "CLSNews")
+
+    @property
+    def is_available(self) -> bool:
+        return True
+
+    def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7) -> SearchResponse:
+        raise NotImplementedError
+
+    def search(self, query: str, max_results: int = 5, days: int = 7, **kwargs) -> SearchResponse:
+        start_time = time.time()
+        if not self._CN_RE.search(query):
+            return SearchResponse(
+                query=query, results=[], provider=self.name,
+                success=False, error_message="non-Chinese query, skipping",
+                search_time=time.time() - start_time,
+            )
+        params = {
+            "type": "news",
+            "keyword": query,
+            "pageNum": 1,
+            "pageSize": max(max_results, 5),
+        }
+        try:
+            resp = requests.get(
+                self.SEARCH_URL,
+                params=params,
+                timeout=self.TIMEOUT_SECONDS,
+                headers={
+                    "User-Agent": "Mozilla/5.0",
+                    "Referer": "https://www.cls.cn/",
+                    "Accept": "application/json",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            return SearchResponse(
+                query=query, results=[], provider=self.name,
+                success=False, error_message=str(exc),
+                search_time=time.time() - start_time,
+            )
+
+        items = []
+        data_block = data.get("data") or {}
+        if isinstance(data_block, dict):
+            items = data_block.get("items") or data_block.get("list") or []
+        elif isinstance(data, dict):
+            items = data.get("items") or data.get("list") or []
+
+        cutoff_ts = (datetime.now(tz=timezone.utc) - timedelta(days=days)).timestamp()
+        results: List[SearchResult] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or item.get("Art_Title") or "").strip()
+            if not title:
+                continue
+            url = str(item.get("share_url") or item.get("url") or item.get("Art_Url") or "").strip()
+            source = str(item.get("source") or item.get("Art_Source") or "财联社").strip()
+            published_date: Optional[str] = None
+            ctime = item.get("ctime") or item.get("publish_time") or 0
+            try:
+                ts = int(ctime)
+                if ts > cutoff_ts:
+                    published_date = datetime.fromtimestamp(ts, tz=timezone.utc).date().isoformat()
+                elif ts > 0:
+                    continue  # too old
+            except Exception:
+                pass
+            results.append(SearchResult(
+                title=title,
+                snippet=str(item.get("abstract") or item.get("brief") or title)[:200],
+                url=url,
+                source=source,
+                published_date=published_date,
+            ))
+            if len(results) >= max_results:
+                break
+
+        logger.info(
+            "[CLSNews] 搜索 '%s' 完成，返回 %d 条结果，耗时 %.2fs",
+            query[:30], len(results), time.time() - start_time,
+        )
+        return SearchResponse(
+            query=query, results=results, provider=self.name,
+            success=bool(results),
+            search_time=time.time() - start_time,
+        )
+
+
+class GoogleNewsCNRSSProvider(BaseSearchProvider):
+    """
+    Google News RSS — 中文简体 (A 股) 和繁体 (港股) 本地化版本。
+    与 GoogleNewsRSSProvider 相同机制，但使用 zh-CN/zh-TW locale，
+    更适合检索 A 股和港股的中文新闻。
+    当 query 不含中文时快速返回 success=False。
+    """
+
+    RSS_BASE_URL = "https://news.google.com/rss/search"
+    TIMEOUT_SECONDS = 8
+    _CN_RE = re.compile(r"[一-鿿]")
+    # HK stock code patterns: hk + 5 digits, or purely 5-digit numeric code
+    _HK_CODE_RE = re.compile(r"\bhk\d{5}\b|\b\d{5}\b", re.IGNORECASE)
+
+    def __init__(self) -> None:
+        super().__init__([], "GoogleNewsCNRSS")
+
+    @property
+    def is_available(self) -> bool:
+        return True
+
+    def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7) -> SearchResponse:
+        raise NotImplementedError
+
+    def search(self, query: str, max_results: int = 5, days: int = 7, **kwargs) -> SearchResponse:
+        start_time = time.time()
+        if not self._CN_RE.search(query):
+            return SearchResponse(
+                query=query, results=[], provider=self.name,
+                success=False, error_message="non-Chinese query, skipping",
+                search_time=time.time() - start_time,
+            )
+        # Use zh-TW locale for HK stock queries (contains 5-digit code or hkXXXXX pattern)
+        is_hk = bool(self._HK_CODE_RE.search(query))
+        if is_hk:
+            params = {"q": query, "hl": "zh-TW", "gl": "HK", "ceid": "HK:zh-Hant"}
+        else:
+            params = {"q": query, "hl": "zh-CN", "gl": "CN", "ceid": "CN:zh-Hans"}
+        try:
+            resp = requests.get(
+                self.RSS_BASE_URL,
+                params=params,
+                timeout=self.TIMEOUT_SECONDS,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            resp.raise_for_status()
+        except Exception as exc:
+            return SearchResponse(
+                query=query, results=[], provider=self.name,
+                success=False, error_message=str(exc),
+                search_time=time.time() - start_time,
+            )
+        try:
+            root = ET.fromstring(resp.content)
+        except ET.ParseError as exc:
+            return SearchResponse(
+                query=query, results=[], provider=self.name,
+                success=False, error_message=f"RSS parse error: {exc}",
+                search_time=time.time() - start_time,
+            )
+
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
+        results: List[SearchResult] = []
+        for item in root.findall(".//item"):
+            title_el = item.find("title")
+            link_el = item.find("link")
+            source_el = item.find("source")
+            pubdate_el = item.find("pubDate")
+
+            title = (title_el.text or "").strip() if title_el is not None else ""
+            if not title:
+                continue
+            url = (link_el.text or "").strip() if link_el is not None else ""
+            source = (source_el.text or "").strip() if source_el is not None else "Google新闻"
+
+            published_date: Optional[str] = None
+            if pubdate_el is not None and pubdate_el.text:
+                try:
+                    dt = parsedate_to_datetime(pubdate_el.text)
+                    if dt < cutoff:
+                        continue
+                    published_date = dt.date().isoformat()
+                except Exception:
+                    pass
+
+            if source_el is not None and source_el.text and " - " in title:
+                title = title.rsplit(" - ", 1)[0].strip()
+
+            results.append(SearchResult(
+                title=title,
+                snippet=title,
+                url=url,
+                source=source,
+                published_date=published_date,
+            ))
+            if len(results) >= max_results:
+                break
+
+        locale_tag = "港股(HK)" if is_hk else "A股(CN)"
+        logger.info(
+            "[GoogleNewsCNRSS] %s 搜索 '%s' 完成，返回 %d 条结果，耗时 %.2fs",
+            locale_tag, query[:30], len(results), time.time() - start_time,
+        )
+        return SearchResponse(
+            query=query, results=results, provider=self.name,
+            success=bool(results),
+            search_time=time.time() - start_time,
+        )
+
+
 class SearchService:
     """
     搜索服务
-    
+
     功能：
     1. 管理多个搜索引擎
     2. 自动故障转移
@@ -2563,6 +2876,18 @@ class SearchService:
         if yf_provider.is_available:
             self._providers.append(yf_provider)
             logger.info("已启用 Yahoo Finance News 新闻源")
+
+        # 10. 东方财富新闻（无需 API Key，A 股/港股专属财经新闻源）
+        self._providers.append(EastMoneyNewsProvider())
+        logger.info("已启用 东方财富 新闻源（A股/港股）")
+
+        # 11. 财联社新闻（无需 API Key，A 股/港股实时突发财经新闻）
+        self._providers.append(CLSNewsProvider())
+        logger.info("已启用 财联社 新闻源（A股/港股）")
+
+        # 12. Google News CN/HK RSS（中文本地化，A 股用简中，港股用繁中）
+        self._providers.append(GoogleNewsCNRSSProvider())
+        logger.info("已启用 Google News CN/HK RSS 新闻源（A股简中 / 港股繁中）")
 
         # 10. Anspire Search（实时智能搜索优化）
         if anspire_keys:
@@ -3464,8 +3789,25 @@ class SearchService:
                     'tavily_topic': None,
                     'strict_freshness': False,
                 },
+                {
+                    'name': 'macro_politics',
+                    'query': (
+                        f"{stock_name} 货币政策 利率 宏观经济 指数展望"
+                        if is_index_etf else f"{stock_name} 宏观政策 货币政策 监管 行业政策 利率 影响"
+                    ),
+                    'desc': '宏观政策',
+                    'tavily_topic': None,
+                    'strict_freshness': False,
+                },
+                {
+                    'name': 'social_hot',
+                    'query': f"{stock_name} {stock_code} 雪球 东方财富 股吧 散户 热门 讨论 情绪",
+                    'desc': '社交热度',
+                    'tavily_topic': 'news',
+                    'strict_freshness': True,
+                },
             ]
-        
+
         search_days = self._effective_news_window_days()
         target_per_dimension = 3
         provider_max_results = self._provider_request_size(target_per_dimension)

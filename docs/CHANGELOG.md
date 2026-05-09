@@ -32,6 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 新增设置页配置帮助维护说明，明确帮助元数据字段、首批覆盖范围、事实源和多语言文案同步规则。
 - [测试] 补充设置项帮助元数据、API schema、前端弹窗交互测试，并修复 Bot 名称路由与调度时间 provider 测试的离线 CI 稳定性问题。
 - [新功能] 新增 Moomoo OpenAPI 实时行情数据源，可通过本地 OpenD 网关接入美股、港股和 A 股实时行情。
+- [新功能] 新增东方财富、财联社、Google News CN/HK RSS 三个 A 股 / 港股专属新闻 Provider，无需 API Key；A 股/港股多维度搜索同步新增宏观政策、社交热度两个维度，与美股分析维度对齐。
+- [修复] 修复 LLM（qwen3:8b）输出中文 key JSON 时评分恒为 50 的问题：新增 _scan_strings_for_score 对叙述字段进行兜底评分提取（识别"系统评分77/100"等嵌入式格式）。
+- [修复] 修复 LLM 未输出 dashboard 块时 ideal_buy / take_profit 始终显示 N/A：新增 _synthesize_dashboard_from_cn 从中文 key 合成 sniper_points；pipeline 新增 ideal_buy（MA5 附近）与 take_profit（最近阻力位）技术数据兜底。
 - [改进] 新增 Docker 构建并启动脚本 `scripts/docker-build-launch.sh`，支持先 build 再启动 server、analyzer 或全部服务。
 - [改进] Moomoo 数据源优先使用市场快照补充美股估值/股本/盘前盘后字段，并支持通过 Moomoo 拉取美股日 K。
 - [修复] Moomoo OpenD 不可达时先执行短超时连接预检查，避免 SDK 重试阻塞股票分析流程。

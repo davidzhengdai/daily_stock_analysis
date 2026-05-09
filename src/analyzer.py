@@ -2444,8 +2444,10 @@ class GeminiAnalyzer:
                         ('系统评分', '系统评分'),
                         ('系统评分', 'score'),
                     ),
-                    default=50,
+                    default=None,
                 )
+                if sentiment_score is None:
+                    sentiment_score = self._scan_strings_for_score(data) or 50
                 trend_prediction = self._get_first_present(
                     data,
                     'trend_prediction',
@@ -2535,6 +2537,39 @@ class GeminiAnalyzer:
         except json.JSONDecodeError as e:
             logger.warning(f"JSON 解析失败: {e}，标记为解析失败")
             return self._parse_text_response(response_text, code, name)
+
+    @staticmethod
+    def _scan_strings_for_score(data: Dict[str, Any]) -> Optional[int]:
+        """Last-resort: scan all top-level string values for embedded Chinese score patterns.
+
+        Handles cases like: "系统评分77/100", "评分：77", "综合评分 77 分" embedded inside
+        narrative fields (core_conclusion, analysis_summary, etc.).
+        """
+        import re as _re
+        _PATTERNS = [
+            _re.compile(r"系统评分\s*[：:]\s*(\d+)"),
+            _re.compile(r"系统评分\s*(\d+)"),
+            _re.compile(r"综合评分\s*[：:]\s*(\d+)"),
+            _re.compile(r"综合评分\s*(\d+)"),
+            _re.compile(r"评分\s*[：:]\s*(\d+)"),
+            _re.compile(r"(\d+)\s*/\s*100"),   # "77/100" pattern
+            _re.compile(r"(\d+)\s*分"),         # "77分" pattern
+        ]
+        if not isinstance(data, dict):
+            return None
+        for v in data.values():
+            if not isinstance(v, str):
+                continue
+            for pat in _PATTERNS:
+                m = pat.search(v)
+                if m:
+                    try:
+                        val = int(m.group(1))
+                        if 0 <= val <= 100:
+                            return val
+                    except (ValueError, IndexError):
+                        pass
+        return None
 
     @staticmethod
     def _synthesize_dashboard_from_cn(data: Dict[str, Any]) -> Dict[str, Any]:
