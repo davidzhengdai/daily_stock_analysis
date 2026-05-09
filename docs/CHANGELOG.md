@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] 设置项帮助窗口支持键盘焦点限制、Esc 关闭和关闭后焦点恢复，并移除短描述重复 hover tooltip。
 - [文档] 新增设置页配置帮助维护说明，明确帮助元数据字段、首批覆盖范围、事实源和多语言文案同步规则。
 - [测试] 补充设置项帮助元数据、API schema、前端弹窗交互测试，并修复 Bot 名称路由与调度时间 provider 测试的离线 CI 稳定性问题。
+- [新功能] 新增 Moomoo OpenAPI 实时行情数据源，可通过本地 OpenD 网关接入美股、港股和 A 股实时行情。
+- [改进] 新增 Docker 构建并启动脚本 `scripts/docker-build-launch.sh`，支持先 build 再启动 server、analyzer 或全部服务。
+- [改进] Moomoo 数据源优先使用市场快照补充美股估值/股本/盘前盘后字段，并支持通过 Moomoo 拉取美股日 K。
+- [修复] Moomoo OpenD 不可达时先执行短超时连接预检查，避免 SDK 重试阻塞股票分析流程。
+- [文档] 新增 Moomoo OpenD 安装、配置、Docker 连通性与 Web UI 验证指南。
+- [修复] 兼容本地模型返回中文评分字段、嵌套中文仪表盘、对象型 `系统评分` 和 `system_score`（如 `系统评分: 48/100` / `系统评分.系统评分: 52` / `system_score: 48`），避免分析结果总分误回退为 50。
 
 ## [3.15.0] - 2026-05-05
 

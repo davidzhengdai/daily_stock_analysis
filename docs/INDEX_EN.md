@@ -14,6 +14,7 @@
 | [Full Guide (EN)](full-guide_EN.md) | Complete setup and usage walkthrough |
 | [Deploy Guide (EN)](DEPLOY_EN.md) | Server deployment (Docker, systemd, Supervisor) |
 | [LLM Config Guide (EN)](LLM_CONFIG_GUIDE_EN.md) | AI model configuration (Gemini, OpenAI-compatible, DeepSeek, Ollama, etc.) |
+| [Moomoo OpenD Setup](moomoo-opend-setup.md) | Install OpenD, configure Docker access, and verify Moomoo quote data |
 
 ## ❓ Help & Troubleshooting
 

@@ -855,6 +855,7 @@ class DataFetcherManager:
           3. BaostockFetcher (Priority 3)
           4. YfinanceFetcher (Priority 4)
           5. LongbridgeFetcher (Priority 5) - 长桥（美股/港股兜底）
+          5. MoomooFetcher (Priority 5) - Moomoo OpenAPI（实时行情，需本地 OpenD）
         """
         from .efinance_fetcher import EfinanceFetcher
         from .akshare_fetcher import AkshareFetcher
@@ -863,6 +864,7 @@ class DataFetcherManager:
         from .baostock_fetcher import BaostockFetcher
         from .yfinance_fetcher import YfinanceFetcher
         from .longbridge_fetcher import LongbridgeFetcher
+        from .moomoo_fetcher import MoomooFetcher
         # 创建所有数据源实例（优先级在各 Fetcher 的 __init__ 中确定）
         efinance = EfinanceFetcher()
         akshare = AkshareFetcher()
@@ -871,6 +873,7 @@ class DataFetcherManager:
         baostock = BaostockFetcher()
         yfinance = YfinanceFetcher()
         longbridge = LongbridgeFetcher()  # 长桥（美股/港股兜底，懒加载）
+        moomoo = MoomooFetcher()          # Moomoo OpenAPI（实时行情，懒加载）
 
         # 初始化数据源列表
         self._ensure_concurrency_guards()
@@ -883,6 +886,7 @@ class DataFetcherManager:
                 baostock,
                 yfinance,
                 longbridge,
+                moomoo,
             ]
 
             # 按优先级排序（Tushare 如果配置了 Token 且初始化成功，优先级为 0）
@@ -949,11 +953,25 @@ class DataFetcherManager:
         # 美股（含美股指数）使用 Longbridge/YFinance 特殊路由；港股走下方通用数据源循环
         if is_us:
             prefer_lb = self._longbridge_preferred() and not is_us_index
-            source_order = (
-                ["LongbridgeFetcher", "YfinanceFetcher"]
-                if prefer_lb
-                else ["YfinanceFetcher", "LongbridgeFetcher"]
-            )
+            try:
+                from src.config import get_config
+
+                realtime_priority = getattr(get_config(), "realtime_source_priority", "")
+            except Exception:
+                realtime_priority = ""
+            realtime_sources = [
+                s.strip().lower()
+                for s in str(realtime_priority).split(",")
+                if s.strip()
+            ]
+            if not is_us_index and "moomoo" in realtime_sources:
+                source_order = ["MoomooFetcher", "LongbridgeFetcher", "YfinanceFetcher"]
+            else:
+                source_order = (
+                    ["LongbridgeFetcher", "YfinanceFetcher"]
+                    if prefer_lb
+                    else ["YfinanceFetcher", "LongbridgeFetcher"]
+                )
             market_label = "美股指数" if is_us_index else "美股"
 
             for src_name in source_order:
@@ -1094,7 +1112,7 @@ class DataFetcherManager:
         
         # 如果没有全量数据源，或者全量数据源排在第 3 位之后，跳过预取
         if first_bulk_source_index is None or first_bulk_source_index >= 2:
-            logger.info(f"[预取] 当前优先级使用轻量级数据源(sina/tencent)，无需预取")
+            logger.info(f"[预取] 当前优先级使用轻量级数据源(sina/tencent/moomoo)，无需预取")
             return 0
         
         # 如果股票数量少于 5 个，不进行批量预取（逐个查询更高效）
@@ -1157,6 +1175,20 @@ class DataFetcherManager:
             logger.debug(f"[实时行情] 功能已禁用，跳过 {stock_code}")
             return None
 
+        raw_source_priority = getattr(config, "realtime_source_priority", "")
+        if isinstance(raw_source_priority, (list, tuple)):
+            source_priority = [
+                str(source).strip().lower()
+                for source in raw_source_priority
+                if str(source).strip()
+            ]
+        else:
+            source_priority = [
+                source.strip().lower()
+                for source in str(raw_source_priority).split(',')
+                if source.strip()
+            ]
+
         # ----------------------------------------------------------
         # 美股 (指数 + 个股) / 港股 — 专用双源路由
         #   配置长桥后: Longbridge 首选, YFinance/AkShare 补充
@@ -1168,6 +1200,27 @@ class DataFetcherManager:
         is_hk = (not is_us) and _is_hk_market(stock_code)
 
         if is_us or is_hk:
+            if "moomoo" in source_priority:
+                moomoo_quote = self._try_fetcher_quote(stock_code, "MoomooFetcher")
+                if moomoo_quote is not None:
+                    logger.info(f"[实时行情] {stock_code} 成功获取 (来源: moomoo)")
+                    if not self._quote_needs_supplement(moomoo_quote):
+                        return moomoo_quote
+                    # Use the existing non-A-share source as a supplement if Moomoo lacks derived fields.
+                    prefer_lb_for_supplement = self._longbridge_preferred() and not is_us_index
+                    if is_us:
+                        supplement_src = "LongbridgeFetcher" if prefer_lb_for_supplement else "YfinanceFetcher"
+                        supplement_kw = {}
+                    else:
+                        supplement_src = "LongbridgeFetcher" if prefer_lb_for_supplement else "AkshareFetcher"
+                        supplement_kw = {"source": "hk"} if supplement_src == "AkshareFetcher" else {}
+                    return self._supplement_quote(
+                        stock_code,
+                        moomoo_quote,
+                        supplement_src,
+                        **supplement_kw,
+                    )
+
             prefer_lb = self._longbridge_preferred() and not is_us_index
             if is_us:
                 primary_src = "LongbridgeFetcher" if prefer_lb else "YfinanceFetcher"
@@ -1194,21 +1247,24 @@ class DataFetcherManager:
                 logger.info(f"[实时行情] {market_label} {stock_code} 无可用数据源")
             return None
         
-        # 获取配置的数据源优先级
-        source_priority = config.realtime_source_priority.split(',')
-        
         errors = []
         # primary_quote holds the first successful result; we may supplement
         # missing fields (volume_ratio, turnover_rate, etc.) from later sources.
         primary_quote = None
         
         for source in source_priority:
-            source = source.strip().lower()
-            
             try:
                 quote = None
                 
-                if source == "efinance":
+                if source == "moomoo":
+                    # 尝试 Moomoo OpenAPI（需本地 OpenD）
+                    for fetcher in self._get_fetchers_snapshot():
+                        if fetcher.name == "MoomooFetcher":
+                            if hasattr(fetcher, 'get_realtime_quote'):
+                                quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', raw_stock_code or stock_code)
+                            break
+
+                elif source == "efinance":
                     # 尝试 EfinanceFetcher
                     for fetcher in self._get_fetchers_snapshot():
                         if fetcher.name == "EfinanceFetcher":

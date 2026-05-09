@@ -600,6 +600,9 @@ class Config:
     longbridge_app_key: Optional[str] = None
     longbridge_app_secret: Optional[str] = None
     longbridge_access_token: Optional[str] = None
+    moomoo_opend_host: str = "127.0.0.1"
+    moomoo_opend_port: int = 11111
+    moomoo_extended_time: bool = False
 
     # === AI 分析配置 ===
     # LiteLLM unified model config (provider/model format, e.g. gemini/gemini-3.1-pro-preview)
@@ -839,11 +842,12 @@ class Config:
     # 东财接口补丁开关
     enable_eastmoney_patch: bool = False
     # 实时行情数据源优先级（逗号分隔）
-    # 推荐顺序：tencent > akshare_sina > efinance > akshare_em > tushare
+    # 推荐顺序：tencent > akshare_sina > efinance > akshare_em > tushare/moomoo
     # - tencent: 腾讯财经，有量比/换手率/市盈率等，单股查询稳定（推荐）
     # - akshare_sina: 新浪财经，基本行情稳定，但无量比
     # - efinance/akshare_em: 东财全量接口，数据最全但容易被封
     # - tushare: Tushare Pro，需要2000积分，数据全面（付费用户可优先使用）
+    # - moomoo: Moomoo OpenAPI，需本地 OpenD，支持美股/港股/A股实时行情
     realtime_source_priority: str = "tencent,akshare_sina,efinance,akshare_em"
     # 实时行情缓存时间（秒）
     realtime_cache_ttl: int = 600
@@ -1319,6 +1323,15 @@ class Config:
             longbridge_app_key=os.getenv('LONGBRIDGE_APP_KEY') or None,
             longbridge_app_secret=os.getenv('LONGBRIDGE_APP_SECRET') or None,
             longbridge_access_token=os.getenv('LONGBRIDGE_ACCESS_TOKEN') or None,
+            moomoo_opend_host=os.getenv('MOOMOO_OPEND_HOST') or "127.0.0.1",
+            moomoo_opend_port=parse_env_int(
+                os.getenv('MOOMOO_OPEND_PORT'),
+                11111,
+                field_name='MOOMOO_OPEND_PORT',
+                minimum=1,
+                maximum=65535,
+            ),
+            moomoo_extended_time=os.getenv('MOOMOO_EXTENDED_TIME', 'false').lower() == 'true',
             litellm_model=litellm_model,
             litellm_fallback_models=litellm_fallback_models,
             llm_temperature=resolve_unified_llm_temperature(litellm_model),

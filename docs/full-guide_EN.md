@@ -271,17 +271,23 @@ For the P0 notification baseline and diagnostics, see [Notification Baseline](no
 |--------|------|--------|:----:|
 | `TUSHARE_TOKEN` | Tushare Pro Token | - | Optional |
 | `TICKFLOW_API_KEY` | TickFlow API key; CN market review indices prefer TickFlow when configured, and market breadth does so only when the plan supports universe queries | - | Optional |
+| `MOOMOO_OPEND_HOST` | Local Moomoo OpenD gateway host; used when `REALTIME_SOURCE_PRIORITY` includes `moomoo` | `127.0.0.1` | Optional |
+| `MOOMOO_OPEND_PORT` | Local Moomoo OpenD gateway port | `11111` | Optional |
+| `MOOMOO_OPEND_CONNECT_TIMEOUT` | Moomoo OpenD socket precheck timeout in seconds, used to degrade quickly when OpenD is unreachable | `1.0` | Optional |
+| `MOOMOO_EXTENDED_TIME` | Request US extended-hours quotes through Moomoo (`true`/`false`) | `false` | Optional |
 | `ENABLE_REALTIME_QUOTE` | Enable real-time quotes (if disabled, uses historical closing prices for analysis) | `true` | Optional |
 | `ENABLE_REALTIME_TECHNICAL_INDICATORS` | Intraday real-time technicals: Calculate MA5/MA10/MA20 and bull trends using real-time prices when enabled (Issue #234); uses yesterday's close if disabled. | `true` | Optional |
 | `ENABLE_CHIP_DISTRIBUTION` | Enable chip distribution analysis (this API is unstable, recommended to disable for cloud deployment). GitHub Actions users must set `ENABLE_CHIP_DISTRIBUTION=true` in Repository Variables to enable; disabled by default in workflows. | `true` | Optional |
 | `ENABLE_EASTMONEY_PATCH` | Eastmoney API patch: Recommended to set to `true` when Eastmoney APIs fail frequently (e.g., RemoteDisconnected, connection closed). Injects NID tokens and random User-Agents to reduce rate limiting probability. | `false` | Optional |
-| `REALTIME_SOURCE_PRIORITY` | Real-time quote source priority (comma-separated), e.g., `tencent,akshare_sina,efinance,akshare_em` | See .env.example | Optional |
+| `REALTIME_SOURCE_PRIORITY` | Real-time quote source priority (comma-separated), e.g., `moomoo,tencent,akshare_sina,efinance,akshare_em`; `moomoo` requires a running, logged-in OpenD gateway | See .env.example | Optional |
 | `ENABLE_FUNDAMENTAL_PIPELINE` | Master switch for fundamental aggregation; when disabled, returns `not_supported` block only, without altering the original analysis pipeline. | `true` | Optional |
 | `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS` | Total latency budget for the fundamental stage (seconds) | `1.5` | Optional |
 | `FUNDAMENTAL_FETCH_TIMEOUT_SECONDS` | Timeout for a single capability source call (seconds) | `0.8` | Optional |
 | `FUNDAMENTAL_RETRY_MAX` | Retry count for fundamental capabilities (including the first attempt) | `1` | Optional |
 | `FUNDAMENTAL_CACHE_TTL_SECONDS` | Fundamental aggregation cache TTL (seconds), short cache to reduce repeated API pulling. | `120` | Optional |
 | `FUNDAMENTAL_CACHE_MAX_ENTRIES` | Maximum entries for fundamental cache (evicted by time within TTL) | `256` | Optional |
+
+Moomoo data boundary: the integration now prefers `get_market_snapshot` for US realtime quotes plus valuation/share fields such as PE/PB, market value, EPS, 52-week highs/lows, and pre/after-hours snapshot fields, and supports US daily candles via `request_history_kline`. Moomoo news is not wired in; news still uses the existing search providers such as SerpAPI, Tavily, Brave, Bocha, and SearXNG. Installation, OpenD configuration, Docker connectivity checks, and Web UI verification are covered in the [Moomoo OpenD Setup Guide](moomoo-opend-setup.md).
 
 > **Behavior Notes:**
 > - **A-shares**: Returns aggregated capabilities by `valuation/growth/earnings/institution/capital_flow/dragon_tiger/boards`.

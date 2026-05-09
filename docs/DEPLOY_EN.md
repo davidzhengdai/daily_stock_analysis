@@ -48,6 +48,11 @@ vim .env  # Fill in real API Keys and configuration
 # Build and start
 docker-compose -f ./docker/docker-compose.yml up -d
 
+# Or explicitly build first, then launch through the helper script
+scripts/docker-build-launch.sh server
+scripts/docker-build-launch.sh analyzer
+scripts/docker-build-launch.sh all
+
 # View logs
 docker-compose -f ./docker/docker-compose.yml logs -f
 

@@ -302,17 +302,23 @@ daily_stock_analysis/
 | `LONGBRIDGE_APP_SECRET` | Longbridge App Secret | - | 可选 |
 | `LONGBRIDGE_ACCESS_TOKEN` | Longbridge Access Token | - | 可选 |
 | `LONGBRIDGE_*`（可选） | 见官方 [环境变量](https://open.longbridge.com/zh-CN/docs/getting-started#环境变量)；另有 `LONGBRIDGE_STATIC_INFO_TTL_SECONDS` | - | 可选 |
+| `MOOMOO_OPEND_HOST` | Moomoo OpenAPI 本地 OpenD 网关地址；当 `REALTIME_SOURCE_PRIORITY` 包含 `moomoo` 时使用 | `127.0.0.1` | 可选 |
+| `MOOMOO_OPEND_PORT` | Moomoo OpenD 网关端口 | `11111` | 可选 |
+| `MOOMOO_OPEND_CONNECT_TIMEOUT` | Moomoo OpenD 连接预检查超时时间（秒），OpenD 不可达时快速降级 | `1.0` | 可选 |
+| `MOOMOO_EXTENDED_TIME` | Moomoo 美股扩展时段行情开关（`true`/`false`） | `false` | 可选 |
 | `ENABLE_REALTIME_QUOTE` | 启用实时行情（关闭后使用历史收盘价分析） | `true` | 可选 |
 | `ENABLE_REALTIME_TECHNICAL_INDICATORS` | 盘中实时技术面：启用时用实时价计算 MA5/MA10/MA20 与多头排列（Issue #234）；关闭则用昨日收盘 | `true` | 可选 |
 | `ENABLE_CHIP_DISTRIBUTION` | 启用筹码分布分析（该接口不稳定，云端部署建议关闭）。GitHub Actions 用户需在 Repository Variables 中设置 `ENABLE_CHIP_DISTRIBUTION=true` 方可启用；workflow 默认关闭。 | `true` | 可选 |
 | `ENABLE_EASTMONEY_PATCH` | 东财接口补丁：东财接口频繁失败（如 RemoteDisconnected、连接被关闭）时建议设为 `true`，注入 NID 令牌与随机 User-Agent 以降低被限流概率 | `false` | 可选 |
-| `REALTIME_SOURCE_PRIORITY` | 实时行情数据源优先级（逗号分隔），如 `tencent,akshare_sina,efinance,akshare_em` | 见 .env.example | 可选 |
+| `REALTIME_SOURCE_PRIORITY` | 实时行情数据源优先级（逗号分隔），如 `moomoo,tencent,akshare_sina,efinance,akshare_em`；`moomoo` 需先启动并登录 OpenD | 见 .env.example | 可选 |
 | `ENABLE_FUNDAMENTAL_PIPELINE` | 基本面聚合总开关；关闭时仅返回 `not_supported` 块，不改变原分析链路 | `true` | 可选 |
 | `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS` | 基本面阶段总时延预算（秒） | `1.5` | 可选 |
 | `FUNDAMENTAL_FETCH_TIMEOUT_SECONDS` | 单能力源调用超时（秒） | `0.8` | 可选 |
 | `FUNDAMENTAL_RETRY_MAX` | 基本面能力重试次数（含首次） | `1` | 可选 |
 | `FUNDAMENTAL_CACHE_TTL_SECONDS` | 基本面聚合缓存 TTL（秒），短缓存减轻重复拉取 | `120` | 可选 |
 | `FUNDAMENTAL_CACHE_MAX_ENTRIES` | 基本面缓存最大条目数（TTL 内按时间淘汰） | `256` | 可选 |
+
+Moomoo 数据边界：当前接入会优先使用 `get_market_snapshot` 获取美股实时行情、PE/PB、市值、股本、EPS、52 周高低、盘前/盘后等快照字段，并支持 `request_history_kline` 获取美股日 K。Moomoo 新闻接口当前未接入；新闻仍走搜索服务（SerpAPI/Tavily/Brave/Bocha/SearXNG 等）。安装、OpenD 配置、Docker 连通性验证和 Web UI 验证见 [Moomoo OpenD Setup Guide](moomoo-opend-setup.md)。
 
 > 行为说明：
 > - A 股：按 `valuation/growth/earnings/institution/capital_flow/dragon_tiger/boards` 聚合能力返回；
@@ -382,6 +388,11 @@ vim .env  # 填入 API Key 和配置
 docker-compose -f ./docker/docker-compose.yml up -d server     # Web 服务模式（推荐，提供 API 与 WebUI）
 docker-compose -f ./docker/docker-compose.yml up -d analyzer   # 定时任务模式
 docker-compose -f ./docker/docker-compose.yml up -d            # 同时启动两种模式
+
+# 或：先构建镜像，再启动服务
+scripts/docker-build-launch.sh server     # Web 服务模式（默认）
+scripts/docker-build-launch.sh analyzer   # 定时任务模式
+scripts/docker-build-launch.sh all        # 同时启动两种模式
 
 # 4. 访问 WebUI
 # http://localhost:8000

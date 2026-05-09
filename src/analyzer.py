@@ -2386,30 +2386,89 @@ class GeminiAnalyzer:
                     )
 
                 # 提取 dashboard 数据
-                dashboard = data.get('dashboard', None)
+                dashboard = self._get_first_present(data, 'dashboard', '决策仪表盘')
 
                 # 优先使用 AI 返回的股票名称（如果原名称无效或包含代码）
-                ai_stock_name = data.get('stock_name')
+                ai_stock_name = self._get_first_present(data, 'stock_name', '股票名称', '名称')
                 if ai_stock_name and (name.startswith('股票') or name == code or 'Unknown' in name):
-                    name = ai_stock_name
+                    name = str(ai_stock_name)
+
+                sentiment_score = self._parse_score_value(
+                    self._get_first_present(
+                        data,
+                        'sentiment_score',
+                        'system_score',
+                        'score',
+                        '综合评分',
+                        '情绪评分',
+                        '评分',
+                        ('dashboard', 'sentiment_score'),
+                        ('dashboard', 'system_score'),
+                        ('dashboard', 'score'),
+                        ('决策仪表盘', 'sentiment_score'),
+                        ('决策仪表盘', 'system_score'),
+                        ('决策仪表盘', 'score'),
+                        ('决策仪表盘', '系统评分'),
+                        ('决策仪表盘', '评分'),
+                        ('核心指标', '综合评分'),
+                        ('核心指标', '情绪评分'),
+                        ('趋势分析预判', '系统评分'),
+                        ('趋势分析预判', '评分'),
+                        ('技术面数据', '趋势分析预判', '系统评分'),
+                        ('技术面数据', '趋势分析预判', '评分'),
+                        ('系统评分', '系统评分'),
+                        ('系统评分', 'score'),
+                    ),
+                    default=50,
+                )
+                trend_prediction = self._get_first_present(
+                    data,
+                    'trend_prediction',
+                    '趋势预测',
+                    '趋势判断',
+                    '趋势结论',
+                    ('趋势分析预判', '趋势状态'),
+                    ('趋势分析预判', '趋势判断'),
+                    ('技术面数据', '趋势分析预判', '趋势状态'),
+                    ('技术面数据', '趋势分析预判', '趋势判断'),
+                    default='Sideways' if report_language == "en" else '震荡',
+                )
+                operation_advice = self._get_first_present(
+                    data,
+                    'operation_advice',
+                    '操作建议',
+                    '交易建议',
+                    '投资建议',
+                    ('核心结论', '操作建议'),
+                    ('决策仪表盘', '系统信号'),
+                    ('技术面数据', '趋势分析预判', '系统信号'),
+                    ('系统评分', '信号'),
+                    default='Hold' if report_language == "en" else '持有',
+                )
+                confidence_level = self._get_first_present(
+                    data,
+                    'confidence_level',
+                    '置信度',
+                    '信心等级',
+                    default='Medium' if report_language == "en" else '中',
+                )
 
                 # 解析所有字段，使用默认值防止缺失
                 # 解析 decision_type，如果没有则根据 operation_advice 推断
                 decision_type = data.get('decision_type', '')
                 if not decision_type:
-                    op = data.get('operation_advice', 'Hold' if report_language == "en" else '持有')
-                    decision_type = infer_decision_type_from_advice(op, default='hold')
+                    decision_type = infer_decision_type_from_advice(str(operation_advice), default='hold')
                 
                 return AnalysisResult(
                     code=code,
                     name=name,
                     # 核心指标
-                    sentiment_score=int(data.get('sentiment_score', 50)),
-                    trend_prediction=data.get('trend_prediction', 'Sideways' if report_language == "en" else '震荡'),
-                    operation_advice=data.get('operation_advice', 'Hold' if report_language == "en" else '持有'),
+                    sentiment_score=sentiment_score,
+                    trend_prediction=str(trend_prediction),
+                    operation_advice=str(operation_advice),
                     decision_type=decision_type,
                     confidence_level=localize_confidence_level(
-                        data.get('confidence_level', 'Medium' if report_language == "en" else '中'),
+                        str(confidence_level),
                         report_language,
                     ),
                     report_language=report_language,
@@ -2450,6 +2509,46 @@ class GeminiAnalyzer:
         except json.JSONDecodeError as e:
             logger.warning(f"JSON 解析失败: {e}，标记为解析失败")
             return self._parse_text_response(response_text, code, name)
+
+    @staticmethod
+    def _get_first_present(data: Dict[str, Any], *keys: Any, default: Any = None) -> Any:
+        """Return the first non-empty value from flat keys or nested key paths."""
+        for key in keys:
+            if isinstance(key, tuple):
+                current: Any = data
+                found = True
+                for part in key:
+                    if not isinstance(current, dict) or part not in current:
+                        found = False
+                        break
+                    current = current.get(part)
+                if found and current not in (None, ""):
+                    return current
+                continue
+            if isinstance(data, dict) and key in data and data.get(key) not in (None, ""):
+                return data.get(key)
+        return default
+
+    @staticmethod
+    def _parse_score_value(value: Any, default: int = 50) -> int:
+        """Parse an LLM score from numbers or strings like '69/100' and '80分'."""
+        if value in (None, ""):
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            pass
+
+        import re
+
+        text = str(value)
+        match = re.search(r"-?\d+(?:\.\d+)?", text)
+        if not match:
+            return default
+        try:
+            return int(float(match.group(0)))
+        except ValueError:
+            return default
     
     def _fix_json_string(self, json_str: str) -> str:
         """修复常见的 JSON 格式问题"""
