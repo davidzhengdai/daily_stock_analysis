@@ -8,7 +8,6 @@
 #   同时启动: docker-compose -f ./docker/docker-compose.yml up -d analyzer server
 
 name: daily-stock-analysis
-version: '3.8'
 
 x-common: &common
   build:
@@ -39,6 +38,8 @@ x-common: &common
     # 代理设置（如果需要）
     # - http_proxy=http://host.docker.internal:10809
     # - https_proxy=http://host.docker.internal:10809
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   logging:
     driver: "json-file"
     options:

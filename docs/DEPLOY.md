@@ -48,6 +48,11 @@ vim .env  # 填入真实的 API Key 等配置
 # 构建并启动（同时包含定时分析和 Web 界面服务）
 docker-compose -f ./docker/docker-compose.yml up -d
 
+# 或使用脚本显式先构建再启动（默认启动 Web/API 服务）
+scripts/docker-build-launch.sh server
+scripts/docker-build-launch.sh analyzer
+scripts/docker-build-launch.sh all
+
 # 查看日志
 docker-compose -f ./docker/docker-compose.yml logs -f
 

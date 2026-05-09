@@ -573,6 +573,7 @@ class DataFetcherManager:
         "LongbridgeFetcher": {"hk", "us"},
         "FinnhubFetcher": {"us"},
         "AlphaVantageFetcher": {"us"},
+        "MoomooFetcher": {"cn", "hk", "us"},
     }
 
     def __init__(self, fetchers: Optional[List[BaseFetcher]] = None):
@@ -1049,6 +1050,8 @@ class DataFetcherManager:
           2. PytdxFetcher (Priority 2) - 通达信
           3. BaostockFetcher (Priority 3)
           4. YfinanceFetcher (Priority 4)
+          5. LongbridgeFetcher (Priority 5) - 长桥（美股/港股兜底）
+          5. MoomooFetcher (Priority 5) - Moomoo OpenAPI（实时行情，需本地 OpenD）
         """
         from src.config import get_config
         from .efinance_fetcher import EfinanceFetcher
@@ -1058,6 +1061,7 @@ class DataFetcherManager:
         from .baostock_fetcher import BaostockFetcher
         from .yfinance_fetcher import YfinanceFetcher
         from .longbridge_fetcher import LongbridgeFetcher
+        from .moomoo_fetcher import MoomooFetcher
         config = get_config()
         # 创建所有数据源实例（优先级在各 Fetcher 的 __init__ 中确定）
         efinance = EfinanceFetcher()
@@ -1096,6 +1100,16 @@ class DataFetcherManager:
             optional_fetchers.append(AlphaVantageFetcher())
         else:
             logger.debug("[数据源初始化] 跳过未配置的 AlphaVantageFetcher")
+
+        realtime_sources = {
+            source.strip().lower()
+            for source in str(getattr(config, "realtime_source_priority", "")).split(",")
+            if source.strip()
+        }
+        if "moomoo" in realtime_sources:
+            optional_fetchers.append(MoomooFetcher())
+        else:
+            logger.debug("[数据源初始化] 跳过未配置优先级的 MoomooFetcher")
 
         # 初始化数据源列表
         self._ensure_concurrency_guards()
@@ -1186,6 +1200,15 @@ class DataFetcherManager:
         # When Longbridge preferred: Longbridge -> Finnhub -> AlphaVantage -> Yfinance
         if is_us:
             prefer_lb = self._longbridge_preferred(capability="daily_data") and not is_us_index
+            try:
+                realtime_priority = getattr(get_config(), "realtime_source_priority", "")
+            except Exception:
+                realtime_priority = ""
+            realtime_sources = [
+                s.strip().lower()
+                for s in str(realtime_priority).split(",")
+                if s.strip()
+            ]
             if is_us_index:
                 # 指数始终 YFinance 首选（Longbridge 不提供指数K线）
                 source_order = ["YfinanceFetcher", "FinnhubFetcher"]
@@ -1193,6 +1216,10 @@ class DataFetcherManager:
                 source_order = ["LongbridgeFetcher", "FinnhubFetcher", "AlphaVantageFetcher", "YfinanceFetcher"]
             else:
                 source_order = ["FinnhubFetcher", "AlphaVantageFetcher", "YfinanceFetcher", "LongbridgeFetcher"]
+            if not is_us_index and "moomoo" in realtime_sources:
+                source_order = ["MoomooFetcher"] + [
+                    source for source in source_order if source != "MoomooFetcher"
+                ]
             market_label = "美股指数" if is_us_index else "美股"
 
             for order_index, src_name in enumerate(source_order):
@@ -1405,7 +1432,7 @@ class DataFetcherManager:
         
         # 如果没有全量数据源，或者全量数据源排在第 3 位之后，跳过预取
         if first_bulk_source_index is None or first_bulk_source_index >= 2:
-            logger.info(f"[预取] 当前优先级使用轻量级数据源(sina/tencent)，无需预取")
+            logger.info(f"[预取] 当前优先级使用轻量级数据源(sina/tencent/moomoo)，无需预取")
             return 0
         
         # 如果股票数量少于 5 个，不进行批量预取（逐个查询更高效）
@@ -1468,6 +1495,20 @@ class DataFetcherManager:
             logger.debug(f"[实时行情] 功能已禁用，跳过 {stock_code}")
             return None
 
+        raw_source_priority = getattr(config, "realtime_source_priority", "")
+        if isinstance(raw_source_priority, (list, tuple)):
+            source_priority = [
+                str(source).strip().lower()
+                for source in raw_source_priority
+                if str(source).strip()
+            ]
+        else:
+            source_priority = [
+                source.strip().lower()
+                for source in str(raw_source_priority).split(',')
+                if source.strip()
+            ]
+
         # ----------------------------------------------------------
         # 美股 (指数 + 个股) / 港股 — 专用双源路由
         #   配置长桥后: Longbridge 首选, YFinance/AkShare 补充
@@ -1479,6 +1520,27 @@ class DataFetcherManager:
         is_hk = (not is_us) and _is_hk_market(stock_code)
 
         if is_us or is_hk:
+            if "moomoo" in source_priority:
+                moomoo_quote = self._try_fetcher_quote(stock_code, "MoomooFetcher")
+                if moomoo_quote is not None:
+                    logger.info(f"[实时行情] {stock_code} 成功获取 (来源: moomoo)")
+                    if not self._quote_needs_supplement(moomoo_quote):
+                        return moomoo_quote
+                    # Use the existing non-A-share source as a supplement if Moomoo lacks derived fields.
+                    prefer_lb_for_supplement = self._longbridge_preferred() and not is_us_index
+                    if is_us:
+                        supplement_src = "LongbridgeFetcher" if prefer_lb_for_supplement else "YfinanceFetcher"
+                        supplement_kw = {}
+                    else:
+                        supplement_src = "LongbridgeFetcher" if prefer_lb_for_supplement else "AkshareFetcher"
+                        supplement_kw = {"source": "hk"} if supplement_src == "AkshareFetcher" else {}
+                    return self._supplement_quote(
+                        stock_code,
+                        moomoo_quote,
+                        supplement_src,
+                        **supplement_kw,
+                    )
+
             prefer_lb = self._longbridge_preferred() and not is_us_index
             if is_us:
                 primary_src = "LongbridgeFetcher" if prefer_lb else "YfinanceFetcher"
@@ -1511,13 +1573,6 @@ class DataFetcherManager:
                 logger.info(f"[实时行情] {market_label} {stock_code} 无可用数据源")
             return None
         
-        # 获取配置的数据源优先级
-        source_priority = [
-            source.strip().lower()
-            for source in config.realtime_source_priority.split(',')
-            if source.strip()
-        ]
-        
         errors = []
         # primary_quote holds the first successful result; we may supplement
         # missing fields (volume_ratio, turnover_rate, etc.) from later sources.
@@ -1530,7 +1585,12 @@ class DataFetcherManager:
             try:
                 quote = None
                 
-                if source == "efinance":
+                if source == "moomoo":
+                    fetcher = self._get_fetcher_by_name("MoomooFetcher", capability="realtime_quote")
+                    if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
+                        quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', raw_stock_code or stock_code)
+
+                elif source == "efinance":
                     fetcher = self._get_fetcher_by_name("EfinanceFetcher", capability="realtime_quote")
                     if fetcher is not None and hasattr(fetcher, 'get_realtime_quote'):
                         quote = self._call_fetcher_method(fetcher, 'get_realtime_quote', stock_code)
