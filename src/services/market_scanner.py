@@ -113,6 +113,7 @@ def _build_recommendation(rank: int, candidate: CandidateStock, result: Any) -> 
         buy_signal=candidate.fund.tech.buy_signal,
         why_selected=why_selected,
         selection_factors=selection_factors,
+        news_evidence=getattr(result, "news_evidence", []) or [],
         thesis=thesis,
         llm_decision=getattr(result, "decision_type", "hold") or "hold",
         analysis_summary=getattr(result, "analysis_summary", "") or "",
@@ -163,6 +164,12 @@ def _format_scan_report(report: ScanReport) -> str:
         "",
     ]
     for pick in report.top_picks:
+        evidence_lines = [
+            f"- [{item.get('dimension', 'News')}] {item.get('title', '')}"
+            + (f" ({item.get('source')})" if item.get("source") else "")
+            + (f" — {item.get('url')}" if item.get("url") else "")
+            for item in pick.news_evidence[:5]
+        ] or ["_No article evidence_"]
         lines += [
             f"### #{pick.rank} {pick.ticker} — {pick.name} ({pick.sector})",
             f"**Score**: {pick.composite_score:.0f}/100 | "
@@ -174,6 +181,9 @@ def _format_scan_report(report: ScanReport) -> str:
             "",
             "#### Selection Factors",
             *[f"- {factor}" for factor in pick.selection_factors],
+            "",
+            "#### News Evidence",
+            *evidence_lines,
             "",
             "#### Financial Health",
             pick.thesis.financial_summary or "_No data_",

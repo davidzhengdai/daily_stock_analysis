@@ -246,6 +246,27 @@ const PickCard: React.FC<{ pick: StockPick }> = ({ pick }) => {
               ))}
             </ul>
           )}
+          {pick.newsEvidence && pick.newsEvidence.length > 0 && (
+            <div className="mt-3 rounded-lg border border-border/40 bg-card/40 p-3">
+              <span className="label-uppercase mb-2 block">新闻证据</span>
+              <div className="space-y-2">
+                {pick.newsEvidence.slice(0, 3).map((item) => (
+                  <a
+                    key={`${item.title}-${item.url}`}
+                    href={item.url || undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block text-xs text-secondary-text hover:text-cyan"
+                  >
+                    <span className="text-cyan">{item.dimension || '新闻'}</span>
+                    <span className="mx-1 text-muted-text">·</span>
+                    <span>{item.title}</span>
+                    {item.source ? <span className="text-muted-text">（{item.source}）</span> : null}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

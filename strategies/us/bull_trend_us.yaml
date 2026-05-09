@@ -101,7 +101,7 @@ instructions: |
   ---
   
   ## Step 6: Risk Screening
-  
+
   Use search_stock_news, last 7 days:
   - Insider cluster selling (multiple officers) -> VETO
   - Earnings miss or guidance revision lower -> VETO
@@ -109,22 +109,76 @@ instructions: |
   - Lockup expiration > 5% of float -> VETO
   - Sector-wide regulatory or rate headwind -> reduce position one tier
   - Check short interest: > 20% of float may indicate structural problem or squeeze setup (context-dependent)
-  
+
   ---
-  
+
+  ## Step 7: Fundamental & Macro Analysis (required — equal weight to technicals)
+
+  Technical signals are necessary but not sufficient. Before finalizing any recommendation,
+  explicitly evaluate the following four non-technical dimensions. Each dimension can
+  independently override or reinforce the technical conclusion.
+
+  ### 7a. Fundamentals
+  - Latest earnings: beat / in-line / miss vs consensus EPS and revenue estimates
+  - Guidance trend: raised / maintained / lowered — guidance changes carry more weight than single quarter beats
+  - Revenue growth rate YoY, gross margin trend, free cash flow direction
+  - Balance sheet: debt load, interest coverage — especially important for financials and rate-sensitive sectors
+  - Valuation: P/E and P/B vs sector average and 5-year historical range; flag if significantly stretched
+  - **Score adjustment**: Beat + raised guidance -> +10; Miss + lowered guidance -> -15
+
+  ### 7b. Macro & Political Environment
+  - Federal Reserve policy: rate direction (hiking / pausing / cutting) and its sector-specific impact
+    (e.g., rising rates = headwind for high-P/E growth stocks, potential tailwind for banks' NIM)
+  - Regulatory landscape: any pending rules, Congressional hearings, executive orders, or agency actions
+    affecting the company's sector
+  - Trade policy: tariffs, export controls, sanctions — note direct exposure
+  - Geopolitical events with material sector impact (energy supply shocks, currency moves, sovereign risk)
+  - **Score adjustment**: Clear macro tailwind -> +8; Active regulatory headwind / trade risk -> -10
+
+  ### 7c. News Catalysts & Events
+  - Product launches, major contract wins, M&A announcements, key management changes
+  - Analyst upgrades/downgrades with rationale (not just the rating change)
+  - ESG / reputational events that may affect institutional ownership
+  - Assess whether the news flow is net positive, mixed, or net negative over the search window
+  - **Score adjustment**: Major positive catalyst -> +8; Significant negative event -> -10
+
+  ### 7d. Social Sentiment & Retail Interest
+  - Reddit / StockTwits / X (Twitter) trending: rising or falling mention volume
+  - Unusual options activity flagged in social channels (gamma squeeze risk or institutional hedging signal)
+  - Retail sentiment divergence from institutional: a crowded retail long in a technically weak setup is a warning
+  - **Score adjustment**: Strong positive social momentum + institutional alignment -> +5;
+    Retail-driven hype without fundamental support -> 0 (do not add); Heavy retail short squeeze attempt -> flag as high-risk
+
+  ### Multi-Factor Verdict
+  After evaluating all four dimensions, state explicitly:
+  - Which dimensions align with a bullish view, which are neutral, which are bearish
+  - Whether news_confluence.verdict is "Supports buy", "Neutral", "Weakens", or "Contradicts"
+  - The composite non-technical score adjustment (sum of 7a–7d adjustments, cap at ±25)
+  - Final recommendation must reconcile technicals with this multi-factor view:
+    - If technicals say buy but macro+fundamentals say headwind → downgrade one tier, note "技术偏多但宏观承压"
+    - If technicals are mixed but fundamentals+news strongly positive → upgrade one tier, note "基本面驱动"
+    - Never produce a high-conviction buy solely from MA alignment; require at least one non-technical dimension to confirm
+
+  ---
+
   ## Output Requirements
-  
+
   Must output:
   - Trend phase and health percentage
   - RS Rating vs SPY and sector ETF
   - Sector participation conclusion (tailwind/neutral/headwind)
   - Deviation from MA5 and entry timing score
-  - Composite score and suggested position size
+  - Fundamental verdict (earnings beat/miss, guidance, valuation)
+  - Macro/political verdict (rate environment, regulatory risk)
+  - News catalyst verdict (net positive/mixed/negative)
+  - Social sentiment verdict
+  - Composite non-technical score adjustment
+  - Final composite score and suggested position size
   - Stop-loss level (exact price)
   - If conditions not met: state "No trade — conditions insufficient"
-  
+
   ---
-  
+
   **Score Adjustments:**
   - Early phase + sector tailwind + deviation < 2%: sentiment_score +15
   - Mid phase + pullback to 50-day MA holding: sentiment_score +12
@@ -132,4 +186,11 @@ instructions: |
   - Late phase / deviation > 8%: sentiment_score -10
   - Break below MA20 with expanding volume: sentiment_score -12
   - Sector headwind: sentiment_score -5
+  - Earnings beat + raised guidance: sentiment_score +10
+  - Earnings miss + lowered guidance: sentiment_score -15
+  - Clear macro tailwind (e.g., rate cut for rate-sensitive sector): sentiment_score +8
+  - Active regulatory headwind or trade risk: sentiment_score -10
+  - Major positive news catalyst: sentiment_score +8
+  - Significant negative news event: sentiment_score -10
+  - Strong positive social momentum aligned with institutions: sentiment_score +5
   

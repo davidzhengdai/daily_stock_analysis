@@ -136,6 +136,7 @@ class StockRecommendation:
     buy_signal: str
     why_selected: str           # concise explanation of why this stock survived the funnel
     selection_factors: List[str] # key screen factors that drove the ranking
+    news_evidence: List[Dict[str, Any]]
     thesis: InvestmentThesis
     llm_decision: str           # LLM buy/sell/hold label
     analysis_summary: str       # brief LLM summary
@@ -154,6 +155,7 @@ class StockRecommendation:
             "buy_signal": self.buy_signal,
             "why_selected": self.why_selected,
             "selection_factors": self.selection_factors,
+            "news_evidence": self.news_evidence,
             "llm_decision": self.llm_decision,
             "analysis_summary": self.analysis_summary,
             "thesis": {
