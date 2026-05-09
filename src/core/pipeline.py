@@ -487,6 +487,18 @@ class StockAnalysisPipeline:
                 stream_progress_callback=_on_llm_stream,
             )
 
+            # Step 7.5a: 技术评分兜底 — LLM 未输出评分时使用 trend_result.signal_score
+            if result and result.sentiment_score == 50 and trend_result is not None:
+                try:
+                    tech_score = int(getattr(trend_result, 'signal_score', 0) or 0)
+                    if 0 < tech_score <= 100 and tech_score != 50:
+                        result.sentiment_score = tech_score
+                        logger.info(
+                            "[%s] LLM 未输出评分，使用技术面评分兜底: %s", code, tech_score
+                        )
+                except (TypeError, ValueError):
+                    pass
+
             # Step 7.5: 填充分析时的价格信息到 result
             if result:
                 self._emit_progress(94, f"{stock_name}：正在校验并整理分析结果")

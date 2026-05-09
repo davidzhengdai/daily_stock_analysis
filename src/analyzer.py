@@ -2583,14 +2583,19 @@ class GeminiAnalyzer:
         if not isinstance(data, dict):
             return {}
 
+        _SNIPER_PARENTS = (
+            '作战计划', '操作计划', '交易计划', '决策计划', '操作建议详情',
+            '狙击计划', '具体狙击点位', '狙击点位', '操作点位',
+            'battle_plan', '决策仪表盘',
+        )
+
         def _pick(*keys: str) -> Any:
             for k in keys:
                 v = data.get(k)
                 if v not in (None, "", []):
                     return v
             # Also probe one level of nesting under common parent keys
-            for parent in ('作战计划', '操作计划', '交易计划', '决策计划', '操作建议详情',
-                           '狙击计划', 'battle_plan', '决策仪表盘'):
+            for parent in _SNIPER_PARENTS:
                 d = data.get(parent)
                 if isinstance(d, dict):
                     for k in keys:
@@ -2599,10 +2604,15 @@ class GeminiAnalyzer:
                             return v
             return None
 
-        ideal_buy = _pick('理想买入点', '理想入场位', '理想入场点', '最优买入点', '买入点', '入场点', '理想买点')
+        ideal_buy = _pick(
+            '理想买入点', '理想入场位', '理想入场点', '最优买入点',
+            '买入点', '入场点', '理想买点', '买入价',  # "买入价" seen in NVDA response
+        )
         secondary_buy = _pick('次优买入点', '次优入场位', '次优买点', '保守买入点', '第二买入点')
         stop_loss = _pick('止损位', '止损价', '止损点', '止损', '止损价格')
-        take_profit = _pick('目标位', '止盈位', '目标价', '止盈价', '目标价格', '盈利目标', '目标')
+        take_profit = _pick(
+            '目标位', '止盈位', '目标价', '止盈价', '目标价格', '盈利目标', '目标',
+        )
 
         if not any([ideal_buy, secondary_buy, stop_loss, take_profit]):
             return {}

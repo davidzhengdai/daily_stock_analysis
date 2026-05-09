@@ -249,6 +249,8 @@ model_list:
       api_base: http://localhost:11434
 ```
 
+Docker Compose 默认挂载根目录 `litellm_config.yaml` 到容器内 `/app/litellm_config.yaml`，并显式设置 `LITELLM_CONFIG=/app/litellm_config.yaml`、`LITELLM_MODEL=deepseek-smart-model`、`LITELLM_FALLBACK_MODELS=ollama/qwen3:8b`。如果沿用仓库根目录示例中的 `os.environ/DEEPSEEK_API_KEY`，请在 `.env` 中提供 `DEEPSEEK_API_KEY`；其他 Provider Key（如 `OPENAI_API_KEY(S)`、`ANTHROPIC_API_KEY(S)`、`GEMINI_API_KEY(S)` 与 `LITELLM_API_KEY`）也通过同一个 `.env` 注入容器，方便后续 YAML 路由引用。
+
 ### GitHub Actions配置说明
 
 1. `Settings` → `Secrets and variables` → `Actions`。非敏感配置（如模型名、开关、Base URL）可以放在 `Secret` 或 `Variables`；凡是 `*_API_KEY` / `*_API_KEYS` 以及 `LLM_<NAME>_API_KEY` / `LLM_<NAME>_API_KEYS` 这类密钥字段，请统一放在 `Secret` 标签页的 `New repository secret`

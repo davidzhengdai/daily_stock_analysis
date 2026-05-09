@@ -36,6 +36,13 @@ x-common: &common
     - WEBUI_HOST=0.0.0.0
     # API_PORT 从 .env 文件读取，无需在此硬编码
 
+    # Docker 默认启用根目录 litellm_config.yaml：
+    # 先走 DeepSeek 路由别名，失败后回退到本机 Ollama。
+    # LLM Provider Key 由 env_file 加载的 .env 提供，供 YAML 中的 os.environ/<VAR> 引用。
+    - LITELLM_CONFIG=/app/litellm_config.yaml
+    - LITELLM_MODEL=deepseek-smart-model
+    - LITELLM_FALLBACK_MODELS=ollama/qwen3:8b
+
     # 代理设置（如果需要）
     # - http_proxy=http://host.docker.internal:10809
     # - https_proxy=http://host.docker.internal:10809

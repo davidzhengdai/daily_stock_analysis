@@ -237,6 +237,8 @@ model_list:
       api_base: http://localhost:11434
 ```
 
+Docker Compose mounts the root `litellm_config.yaml` to `/app/litellm_config.yaml` and explicitly sets `LITELLM_CONFIG=/app/litellm_config.yaml`, `LITELLM_MODEL=deepseek-smart-model`, and `LITELLM_FALLBACK_MODELS=ollama/qwen3:8b`. If you use the root example's `os.environ/DEEPSEEK_API_KEY`, provide `DEEPSEEK_API_KEY` in `.env`. Other provider keys such as `OPENAI_API_KEY(S)`, `ANTHROPIC_API_KEY(S)`, `GEMINI_API_KEY(S)`, and `LITELLM_API_KEY` are injected into the container through the same `.env` file for future YAML routes.
+
 > **Priority Rule**: YAML is king! If YAML is configured, both **Channels Mode** and **Simple Mode** are entirely ignored. Hierarchy: `YAML > Channels > Simple`.
 
 ### GitHub Actions Notes
