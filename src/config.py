@@ -923,6 +923,17 @@ class Config:
     # Telegram 机器人 - 已有 telegram_bot_token, telegram_chat_id
     telegram_webhook_secret: Optional[str] = None   # Webhook 密钥
 
+    # === 市场扫描器配置 ===
+    scanner_enabled: bool = True
+    scanner_markets: List[str] = field(default_factory=lambda: ["us", "cn"])
+    scanner_min_market_cap_m: float = 500.0    # USD millions
+    scanner_min_avg_volume: int = 500_000
+    scanner_top_n: int = 10
+    scanner_max_tier5_stocks: int = 30
+    scanner_max_cn_stocks: int = 800
+    scanner_china_policy_weight: float = 0.25
+    scanner_universe_cache_hours: int = 24
+
     # === 配置校验模式 ===
     # CONFIG_VALIDATE_MODE=warn (default): log all issues but always continue startup
     # CONFIG_VALIDATE_MODE=strict: exit(1) when any "error" severity issue is found
@@ -1647,7 +1658,43 @@ class Config:
                 field_name='PORTFOLIO_RISK_LOOKBACK_DAYS',
                 minimum=1,
             ),
-            portfolio_fx_update_enabled=os.getenv('PORTFOLIO_FX_UPDATE_ENABLED', 'true').lower() == 'true'
+            portfolio_fx_update_enabled=os.getenv('PORTFOLIO_FX_UPDATE_ENABLED', 'true').lower() == 'true',
+            scanner_enabled=parse_env_bool(os.getenv('SCANNER_ENABLED'), default=True),
+            scanner_markets=[
+                m for m in (
+                    part.strip().lower()
+                    for part in os.getenv('SCANNER_MARKETS', 'us,cn').split(',')
+                )
+                if m in ('us', 'cn')
+            ] or ['us'],
+            scanner_min_market_cap_m=parse_env_float(
+                os.getenv('SCANNER_MIN_MARKET_CAP_M'), 500.0,
+                field_name='SCANNER_MIN_MARKET_CAP_M', minimum=0.0,
+            ),
+            scanner_min_avg_volume=parse_env_int(
+                os.getenv('SCANNER_MIN_AVG_VOLUME'), 500_000,
+                field_name='SCANNER_MIN_AVG_VOLUME', minimum=0,
+            ),
+            scanner_top_n=parse_env_int(
+                os.getenv('SCANNER_TOP_N'), 10,
+                field_name='SCANNER_TOP_N', minimum=1, maximum=50,
+            ),
+            scanner_max_tier5_stocks=parse_env_int(
+                os.getenv('SCANNER_MAX_TIER5_STOCKS'), 30,
+                field_name='SCANNER_MAX_TIER5_STOCKS', minimum=5, maximum=100,
+            ),
+            scanner_max_cn_stocks=parse_env_int(
+                os.getenv('SCANNER_MAX_CN_STOCKS'), 800,
+                field_name='SCANNER_MAX_CN_STOCKS', minimum=50, maximum=5000,
+            ),
+            scanner_china_policy_weight=parse_env_float(
+                os.getenv('SCANNER_CHINA_POLICY_WEIGHT'), 0.25,
+                field_name='SCANNER_CHINA_POLICY_WEIGHT', minimum=0.0, maximum=1.0,
+            ),
+            scanner_universe_cache_hours=parse_env_int(
+                os.getenv('SCANNER_UNIVERSE_CACHE_HOURS'), 24,
+                field_name='SCANNER_UNIVERSE_CACHE_HOURS', minimum=1,
+            ),
         )
     
     @classmethod

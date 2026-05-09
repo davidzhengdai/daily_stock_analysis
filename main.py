@@ -217,6 +217,8 @@ def parse_arguments() -> argparse.Namespace:
   python main.py --single-notify    # 启用单股推送模式（每分析完一只立即推送）
   python main.py --schedule         # 启用定时任务模式
   python main.py --market-review    # 仅运行大盘复盘
+  python main.py --scanner --discovery-markets us,cn
+  python main.py --gold-digger --discovery-markets cn --china-policy-weight 0.4
         '''
     )
 
@@ -285,6 +287,109 @@ def parse_arguments() -> argparse.Namespace:
         '--no-market-review',
         action='store_true',
         help='跳过大盘复盘分析'
+    )
+
+    parser.add_argument(
+        '--scanner',
+        action='store_true',
+        help='运行全市场 Scanner，按配置扫描美股/A股并输出 Top Picks'
+    )
+
+    parser.add_argument(
+        '--gold-digger',
+        action='store_true',
+        help='运行沙里淘金，扫描超跌低估候选并输出金股推荐'
+    )
+
+    parser.add_argument(
+        '--discovery-markets',
+        type=str,
+        default=None,
+        help='Scanner/沙里淘金扫描市场，逗号分隔：us,cn；可只填 us 或 cn'
+    )
+
+    parser.add_argument(
+        '--discovery-top-n',
+        type=int,
+        default=None,
+        help='Scanner/沙里淘金最终推荐数量'
+    )
+
+    parser.add_argument(
+        '--china-policy-weight',
+        type=float,
+        default=None,
+        help='A股中国政策与国家热点主题权重，范围 0-1'
+    )
+
+    parser.add_argument(
+        '--scanner-min-market-cap-m',
+        type=float,
+        default=None,
+        help='Scanner 最低市值过滤（百万美元）'
+    )
+
+    parser.add_argument(
+        '--scanner-min-avg-volume',
+        type=int,
+        default=None,
+        help='Scanner 最低日均成交量过滤'
+    )
+
+    parser.add_argument(
+        '--scanner-max-tier5-stocks',
+        type=int,
+        default=None,
+        help='Scanner Tier 5 深度 AI 分析候选数量'
+    )
+
+    parser.add_argument(
+        '--scanner-max-cn-stocks',
+        type=int,
+        default=None,
+        help='Scanner A股股票池上限'
+    )
+
+    parser.add_argument(
+        '--gold-max-tier5-per-market',
+        type=int,
+        default=None,
+        help='沙里淘金每个市场进入深度 AI 分析的候选数量'
+    )
+
+    parser.add_argument(
+        '--gold-us-min-market-cap-m',
+        type=float,
+        default=None,
+        help='沙里淘金美股最低市值过滤（百万美元）'
+    )
+
+    parser.add_argument(
+        '--gold-us-max-market-cap-m',
+        type=float,
+        default=None,
+        help='沙里淘金美股最高市值过滤（百万美元）'
+    )
+
+    parser.add_argument(
+        '--gold-min-price-decline-6m-pct',
+        type=float,
+        default=None,
+        help='沙里淘金 6 个月最小跌幅过滤百分比'
+    )
+
+    parser.add_argument(
+        '--gold-min-pe-discount-pct',
+        type=float,
+        default=None,
+        help='沙里淘金相对行业 PE 最小折价百分比'
+    )
+
+    parser.add_argument(
+        '--gold-theme-count',
+        type=int,
+        default=None,
+        help='沙里淘金提取的宏观/政策主题数量'
     )
 
     parser.add_argument(
@@ -710,6 +815,162 @@ def _build_schedule_time_provider(default_schedule_time: str):
     return _provider
 
 
+def _parse_discovery_markets(raw: Optional[str], default: List[str]) -> List[str]:
+    if raw is None:
+        return default
+    markets = [m.strip().lower() for m in raw.split(",") if m.strip()]
+    valid = [m for m in markets if m in {"us", "cn"}]
+    return valid or default
+
+
+def _clamp_float(value: Optional[float], default: float, minimum: float, maximum: float) -> float:
+    if value is None:
+        return default
+    return max(minimum, min(maximum, float(value)))
+
+
+def _run_scanner_cli(config: Config, args: argparse.Namespace) -> int:
+    """Run Scanner once from CLI and wait for completion."""
+    from src.schemas.scanner import ScanConfig
+    from src.services.market_scanner import get_market_scanner
+
+    markets = _parse_discovery_markets(
+        getattr(args, "discovery_markets", None),
+        getattr(config, "scanner_markets", ["us", "cn"]),
+    )
+    cfg = ScanConfig(
+        top_n=getattr(args, "discovery_top_n", None) or getattr(config, "scanner_top_n", 10),
+        markets=markets,
+        min_market_cap_m=(
+            getattr(args, "scanner_min_market_cap_m", None)
+            if getattr(args, "scanner_min_market_cap_m", None) is not None
+            else getattr(config, "scanner_min_market_cap_m", 500.0)
+        ),
+        min_avg_volume=(
+            getattr(args, "scanner_min_avg_volume", None)
+            if getattr(args, "scanner_min_avg_volume", None) is not None
+            else getattr(config, "scanner_min_avg_volume", 500_000)
+        ),
+        max_tier5_stocks=(
+            getattr(args, "scanner_max_tier5_stocks", None)
+            if getattr(args, "scanner_max_tier5_stocks", None) is not None
+            else getattr(config, "scanner_max_tier5_stocks", 30)
+        ),
+        max_cn_stocks=(
+            getattr(args, "scanner_max_cn_stocks", None)
+            if getattr(args, "scanner_max_cn_stocks", None) is not None
+            else getattr(config, "scanner_max_cn_stocks", 800)
+        ),
+        china_policy_weight=_clamp_float(
+            getattr(args, "china_policy_weight", None),
+            getattr(config, "scanner_china_policy_weight", 0.25),
+            0.0,
+            1.0,
+        ),
+    )
+
+    scanner = get_market_scanner()
+    scan_id = scanner.start_scan(scan_config=cfg)
+    logger.info(
+        "Scanner started: scan_id=%s markets=%s top_n=%s china_policy_weight=%.2f",
+        scan_id,
+        ",".join(cfg.markets),
+        cfg.top_n,
+        cfg.china_policy_weight,
+    )
+
+    while True:
+        status = scanner.get_status(scan_id) or {}
+        logger.info(
+            "Scanner progress: %s%% %s",
+            status.get("progress", 0),
+            status.get("message", ""),
+        )
+        if status.get("status") == "completed":
+            result = scanner.get_result(scan_id) or {}
+            picks = result.get("top_picks", [])
+            logger.info("Scanner completed: %d top picks", len(picks))
+            for pick in picks:
+                logger.info(
+                    "#%s %s %s [%s] score=%s confidence=%s",
+                    pick.get("rank"),
+                    pick.get("ticker"),
+                    pick.get("name"),
+                    pick.get("market", "us"),
+                    pick.get("composite_score"),
+                    pick.get("llm_confidence"),
+                )
+            return 0
+        if status.get("status") == "failed":
+            logger.error("Scanner failed: %s", status.get("error") or status.get("message"))
+            return 1
+        time.sleep(10)
+
+
+def _run_gold_digger_cli(config: Config, args: argparse.Namespace) -> int:
+    """Run GoldDigger once from CLI and wait for completion."""
+    from src.schemas.gold_digger import DigConfig
+    from src.services.gold_digger import get_gold_digger
+
+    markets = _parse_discovery_markets(
+        getattr(args, "discovery_markets", None),
+        ["us", "cn"],
+    )
+    cfg = DigConfig(
+        top_n=getattr(args, "discovery_top_n", None) or 10,
+        markets=markets,
+        us_min_market_cap_m=getattr(args, "gold_us_min_market_cap_m", None) or 50.0,
+        us_max_market_cap_m=getattr(args, "gold_us_max_market_cap_m", None) or 1000.0,
+        min_price_decline_6m_pct=getattr(args, "gold_min_price_decline_6m_pct", None) or 20.0,
+        min_pe_discount_pct=getattr(args, "gold_min_pe_discount_pct", None) or 10.0,
+        max_tier5_per_market=getattr(args, "gold_max_tier5_per_market", None) or 15,
+        theme_count=getattr(args, "gold_theme_count", None) or 8,
+        china_policy_weight=_clamp_float(
+            getattr(args, "china_policy_weight", None),
+            0.25,
+            0.0,
+            1.0,
+        ),
+    )
+
+    digger = get_gold_digger()
+    run_id = digger.start_dig(cfg)
+    logger.info(
+        "GoldDigger started: run_id=%s markets=%s top_n=%s china_policy_weight=%.2f",
+        run_id,
+        ",".join(cfg.markets),
+        cfg.top_n,
+        cfg.china_policy_weight,
+    )
+
+    while True:
+        status = digger.get_status(run_id) or {}
+        logger.info(
+            "GoldDigger progress: %s%% %s",
+            status.get("progress", 0),
+            status.get("message", ""),
+        )
+        if status.get("status") == "completed":
+            report = digger.get_result(run_id)
+            picks = report.gold_picks if report else []
+            logger.info("GoldDigger completed: %d gold picks", len(picks))
+            for pick in picks:
+                logger.info(
+                    "#%s %s %s [%s] score=%s confidence=%s",
+                    pick.rank,
+                    pick.ticker,
+                    pick.name,
+                    pick.market,
+                    pick.composite_score,
+                    pick.llm_confidence,
+                )
+            return 0
+        if status.get("status") == "error":
+            logger.error("GoldDigger failed: %s", status.get("message"))
+            return 1
+        time.sleep(10)
+
+
 def main() -> int:
     """
     主入口函数
@@ -764,6 +1025,18 @@ def main() -> int:
         result = run_notification_diagnostics(config)
         print(format_notification_diagnostics(result))
         return 0 if result.ok else 1
+
+    if args.scanner and args.gold_digger:
+        logger.error("--scanner 与 --gold-digger 不能同时使用，请分两次运行。")
+        return 2
+
+    if args.scanner:
+        logger.info("模式: Scanner 全市场扫股")
+        return _run_scanner_cli(config, args)
+
+    if args.gold_digger:
+        logger.info("模式: 沙里淘金")
+        return _run_gold_digger_cli(config, args)
 
     # 解析股票列表（统一为大写 Issue #355）
     stock_codes = None

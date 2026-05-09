@@ -905,11 +905,16 @@ FastAPI provides RESTful API service for configuration management and triggering
 |------|------|
 | `python main.py --serve` | Start API service + run full analysis once |
 | `python main.py --serve-only` | Start API service only, manually trigger analysis |
+| `python main.py --scanner --discovery-markets us,cn` | Run Scanner stock discovery |
+| `python main.py --gold-digger --discovery-markets us,cn` | Run GoldDigger |
+
+Scanner and GoldDigger market configuration, CLI options, and API examples are documented in [Scanner and GoldDigger](./scanner-gold-digger_EN.md).
 
 ### Features
 
 - **Configuration Management** - View/modify watchlist
 - **Quick Analysis** - Trigger analysis via API
+- **Cross-market Discovery** - Scanner / GoldDigger support US, China, or both, with China policy and national-hot-topic weighting for A-shares
 - **Real-time Progress** - Analysis task status updates in real-time, supports parallel tasks; the regular stock-analysis path now prefers LiteLLM streaming during the LLM stage and pushes finer-grained `message/progress` updates through task SSE
 - **Backtest Validation** - Evaluate historical analysis accuracy, query direction win rate and simulated returns
 - **API Documentation** - Visit `/docs` for Swagger UI

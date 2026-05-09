@@ -1069,11 +1069,16 @@ FastAPI 提供 RESTful API 服务，支持配置管理和触发分析。
 |------|------|
 | `python main.py --serve` | 启动 API 服务 + 执行一次完整分析 |
 | `python main.py --serve-only` | 仅启动 API 服务，手动触发分析 |
+| `python main.py --scanner --discovery-markets us,cn` | 运行 Scanner 全市场扫股 |
+| `python main.py --gold-digger --discovery-markets us,cn` | 运行沙里淘金 |
+
+Scanner 与沙里淘金的市场配置、CLI 参数和 API 示例见 [Scanner 与沙里淘金](./scanner-gold-digger.md)。
 
 ### 功能特性
 
 - 📝 **配置管理** - 查看/修改自选股列表
 - 🚀 **快速分析** - 通过 API 接口触发分析
+- 🔎 **跨市场选股** - Scanner / 沙里淘金支持美股、A股或两者，并可为 A股加入中国政策与国家热点权重
 - 📊 **实时进度** - 分析任务状态实时更新，支持多任务并行；普通分析链路在进入 LLM 阶段后会优先尝试 LiteLLM 流式生成，并通过任务 SSE 回灌更细粒度的 `message/progress`
 - 📈 **回测验证** - 评估历史分析准确率，查询方向胜率与模拟收益
 - 🔗 **API 文档** - 访问 `/docs` 查看 Swagger UI
