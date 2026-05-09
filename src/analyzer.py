@@ -3034,7 +3034,67 @@ class GeminiAnalyzer:
                 # 优先使用 AI 返回的股票名称（如果原名称无效或包含代码）
                 ai_stock_name = self._get_first_present(data, 'stock_name', '股票名称', '名称')
                 if ai_stock_name and (name.startswith('股票') or name == code or 'Unknown' in name):
-                    name = ai_stock_name
+                    name = str(ai_stock_name)
+
+                sentiment_score = self._parse_score_value(
+                    self._get_first_present(
+                        data,
+                        'sentiment_score',
+                        'system_score',
+                        'score',
+                        '综合评分',
+                        '情绪评分',
+                        '评分',
+                        ('dashboard', 'sentiment_score'),
+                        ('dashboard', 'system_score'),
+                        ('dashboard', 'score'),
+                        ('决策仪表盘', 'sentiment_score'),
+                        ('决策仪表盘', 'system_score'),
+                        ('决策仪表盘', 'score'),
+                        ('决策仪表盘', '系统评分'),
+                        ('决策仪表盘', '评分'),
+                        ('核心指标', '综合评分'),
+                        ('核心指标', '情绪评分'),
+                        ('趋势分析预判', '系统评分'),
+                        ('趋势分析预判', '评分'),
+                        ('技术面数据', '趋势分析预判', '系统评分'),
+                        ('技术面数据', '趋势分析预判', '评分'),
+                        ('系统评分', '系统评分'),
+                        ('系统评分', 'score'),
+                    ),
+                    default=50,
+                )
+                trend_prediction = self._get_first_present(
+                    data,
+                    'trend_prediction',
+                    '趋势预测',
+                    '趋势判断',
+                    '趋势结论',
+                    ('趋势分析预判', '趋势状态'),
+                    ('趋势分析预判', '趋势判断'),
+                    ('技术面数据', '趋势分析预判', '趋势状态'),
+                    ('技术面数据', '趋势分析预判', '趋势判断'),
+                    default='Sideways' if report_language == "en" else '震荡',
+                )
+                operation_advice = self._get_first_present(
+                    data,
+                    'operation_advice',
+                    '操作建议',
+                    '交易建议',
+                    '投资建议',
+                    ('核心结论', '操作建议'),
+                    ('决策仪表盘', '系统信号'),
+                    ('技术面数据', '趋势分析预判', '系统信号'),
+                    ('系统评分', '信号'),
+                    default='Hold' if report_language == "en" else '持有',
+                )
+                confidence_level = self._get_first_present(
+                    data,
+                    'confidence_level',
+                    '置信度',
+                    '信心等级',
+                    default='Medium' if report_language == "en" else '中',
+                )
 
                 # 解析所有字段，使用默认值防止缺失
                 # 解析 decision_type，如果没有则根据 operation_advice 推断

@@ -111,6 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] Scanner / 沙里淘金支持按美股和 A 股市场配置扫描范围，并为 A 股候选增加中国政策与国家热点主题权重。
 - [改进] Scanner / 沙里淘金新增 CLI 一次性运行入口，并补充中英文使用文档、API 示例和市场配置说明。
 - [改进] Scanner Top Picks 新增入选理由与关键筛选因子展示，帮助用户理解股票为何被选中。
+- [修复] Scanner 情报搜索为空时不再向 LLM 注入“未找到信息”占位新闻，并为美股候选增加 Yahoo Finance 新闻兜底。
+- [改进] 单股分析与 Scanner 推荐结果展示新闻证据来源，保留标题、来源、日期与链接，便于用户核对消息面依据。
 - [改进] Docker 镜像支持非 root 用户 (`dsa`, UID 1000) 执行，并增强 `Dockerfile` 安全性与构建稳健性。
 - [改进] 放宽 LiteLLM 依赖约束，保留 `>=1.80.10` 最低版本并显式排除 PyPI 事故版本 `1.82.7` / `1.82.8`，允许安装后续 1.x 修复版本。
 - [改进] 补齐通知渠道 P0 基线、Actions 映射与 `--check-notify` 只读诊断，完善 AstrBot 配置入口和通知回归快照。
