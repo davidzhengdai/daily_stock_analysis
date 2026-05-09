@@ -51,6 +51,7 @@ class Skill:
         default_router: Whether this skill participates in router fallback selection.
         default_priority: Ordering hint for defaults / selectors (lower comes first).
         market_regimes: Optional market regime tags used by the skill router.
+        region: Target market region — "cn", "us", "hk", or "all". Used for auto-routing.
         execution_context: Inline/fork execution hint from frontmatter.
         subagent_type: Optional subagent type hint from frontmatter.
         preferred_model: Optional model hint from frontmatter.
@@ -74,6 +75,7 @@ class Skill:
     default_router: bool = False
     default_priority: int = 100
     market_regimes: List[str] = field(default_factory=list)
+    region: str = "cn"
     execution_context: str = "inline"
     subagent_type: str = ""
     preferred_model: str = ""
@@ -196,6 +198,7 @@ def load_skill_from_yaml(filepath: Union[str, Path]) -> Skill:
             _coerce_string_list(data.get("market_regimes"))
             or _coerce_string_list(data.get("market-regimes"))
         ),
+        region=str(data.get("region", "cn")).strip().lower() or "cn",
         execution_context=str(data.get("context", "inline")).strip() or "inline",
         subagent_type=str(data.get("agent", "")).strip(),
         preferred_model=str(data.get("model", "")).strip(),
@@ -265,6 +268,7 @@ def load_skill_from_markdown(filepath: Union[str, Path]) -> Skill:
             _coerce_string_list(metadata.get("market-regimes"))
             or _coerce_string_list(metadata.get("market_regimes"))
         ),
+        region=str(metadata.get("region", "cn")).strip().lower() or "cn",
         execution_context=str(metadata.get("context", "inline")).strip() or "inline",
         subagent_type=str(metadata.get("agent", "")).strip(),
         preferred_model=str(metadata.get("model", "")).strip(),
@@ -342,23 +346,40 @@ class SkillManager:
         logger.debug(f"Registered skill: {skill.name} ({skill.display_name})")
 
     def load_builtin_skills(self) -> int:
-        """Load all built-in skills from the compatibility `strategies/` directory.
+        """Load all built-in skills from the compatibility `strategies/` directory
+        and `strategies/us/` for US-market strategies.
 
         Returns:
             Number of skills loaded.
         """
         skills_dir = _BUILTIN_SKILLS_DIR
-        if not skills_dir.is_dir():
+        total = 0
+
+        if skills_dir.is_dir():
+            skills = load_skills_from_directory(skills_dir)
+            for skill in skills:
+                skill.source = "builtin"
+                # CN strategies default to region=cn if not explicitly set
+                if not getattr(skill, 'region', None) or skill.region == "cn":
+                    skill.region = "cn"
+                self.register(skill)
+            logger.info(f"Loaded {len(skills)} built-in skills from {skills_dir}")
+            total += len(skills)
+        else:
             logger.warning(f"Built-in skill directory not found: {skills_dir}")
-            return 0
 
-        skills = load_skills_from_directory(skills_dir)
-        for skill in skills:
-            skill.source = "builtin"
-            self.register(skill)
+        # Load US strategies from strategies/us/
+        us_dir = skills_dir / "us"
+        if us_dir.is_dir():
+            us_skills = load_skills_from_directory(us_dir)
+            for skill in us_skills:
+                skill.source = "builtin"
+                skill.region = "us"
+                self.register(skill)
+            logger.info(f"Loaded {len(us_skills)} US-market skills from {us_dir}")
+            total += len(us_skills)
 
-        logger.info(f"Loaded {len(skills)} built-in skills from {skills_dir}")
-        return len(skills)
+        return total
 
     def load_custom_skills(self, directory: Union[str, Path, None]) -> int:
         """Load custom skills from a user-specified directory.

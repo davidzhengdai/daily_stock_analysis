@@ -1,0 +1,210 @@
+name: range_trading_us
+display_name: Range Trade
+description: Trade established price ranges. Algorithmic range detection, volume profile nodes, time decay, and breakout anticipation.
+category: framework
+core_rules:
+- 1
+- 2
+- 3
+required_tools:
+- get_daily_history
+- analyze_trend
+- get_realtime_quote
+aliases:
+- us range
+- range trade
+- channel
+- range bound
+default_priority: 50
+market_regimes:
+- us_sideways
+region: us
+instructions: '**Range Trade Strategy**
+
+
+  Trade within established price ranges. Algorithmic range detection with
+
+  volume profile analysis, time decay awareness, and breakout probability.
+
+
+  ---
+
+
+  ## Step 1: Range Detection
+
+
+  Using get_daily_history (90 days):
+
+
+  Algorithm:
+
+  1. Identify swing highs (prior and next close both lower) and swing lows (prior and next close both higher)
+
+  2. Cluster swing highs within 3% into resistance zones
+
+  3. Cluster swing lows within 3% into support zones
+
+  4. The highest-count resistance cluster and highest-count support cluster define the range
+
+
+  Validity Score:
+
+
+  | Condition                               | Points | Required |
+
+  |-----------------------------------------|--------|----------|
+
+  | Resistance zone tested >= 3 times       | +3     | Yes      |
+
+  | Support zone tested >= 3 times          | +3     | Yes      |
+
+  | Last test within 30 days                | +2     | Yes      |
+
+  | Range duration > 40 sessions            | +2     |          |
+
+  | Range width 5-25% (tradable)            | +2     | Yes      |
+
+  | 50 DMA contained within range           | +1     |          |
+
+
+  - Total >= 8: valid range. 5-7: unconfirmed, trade smaller. < 5: not a range.
+
+
+  ---
+
+
+  ## Step 2: Volume Profile Zones
+
+
+  Map volume by price within the range:
+
+  - High Volume Node (HVN): price zone where significant volume traded; strong support/resistance
+
+  - Low Volume Node (LVN): price zone with little volume; price moves through quickly; weak support/resistance
+
+  - Value Area (70% of volume): the range where 70% of volume occurred; the "fair value" zone
+
+  - Support at HVN: strong, full position. Support at LVN: fragile, half position.
+
+
+  ---
+
+
+  ## Step 3: Position Ratio
+
+
+  Position % = (current price - support) / (resistance - support) x 100
+
+
+  | Ratio      | Zone            | Action                                  |
+
+  |------------|-----------------|-----------------------------------------|
+
+  | 0-15%      | Support zone    | Buy / add; stop at support -3%          |
+
+  | 15-35%     | Lower transition| Light probe OK                          |
+
+  | 35-65%     | Mid-range       | No new action; hold existing            |
+
+  | 65-85%     | Upper transition| Prepare to reduce                       |
+
+  | 85-100%    | Resistance zone | Reduce / exit; do not buy               |
+
+
+  ---
+
+
+  ## Step 4: Time Decay
+
+
+  Ranges do not last forever. Breakout probability increases with age:
+
+  - < 30 sessions: Early. Safe for range trading.
+
+  - 30-60 sessions: Mature. Normal, but be alert.
+
+  - 60-90 sessions: Aged. Breakout risk elevated. Reduce position to 50%.
+
+  - > 90 sessions: Ancient. Breakout probable. Probe positions only.
+
+
+  ---
+
+
+  ## Step 5: Signal Matrix at Boundaries
+
+
+  | Location     | Volume Condition        | Signal             | Action             |
+
+  |-------------|-------------------------|--------------------|--------------------|
+
+  | Support      | RVOL < 0.7 (contracting) | Strong buy         | Full position      |
+
+  | Support      | RVOL 1.5-2.0 (expanding) | Bounce starting    | Add                |
+
+  | Support      | RVOL > 3.0 (extreme)    | Potential breakdown | WAIT, do not buy   |
+
+  | Resistance   | RVOL < 0.7 (contracting) | Strong sell        | Exit               |
+
+  | Resistance   | RVOL 1.5-2.0 (expanding) | Breakout possible  | Hold, watch        |
+
+  | Resistance   | RVOL > 3.0 (extreme)    | Breakout likely    | Wait for confirmation |
+
+
+  ---
+
+
+  ## Step 6: Breakout Rules
+
+
+  True breakout: 2 consecutive closes beyond range boundary + RVOL > 1.5x on breakout day.
+
+  False breakout: single probe beyond boundary, closes back inside same session.
+
+
+  Upside target: resistance + range height
+
+  Downside target: support - range height
+
+  Stop for breakout trade: former boundary (support becomes resistance, or vice versa)
+
+
+  ---
+
+
+  ## Output Requirements
+
+
+  - Range boundaries and width
+
+  - Validity score
+
+  - Volume profile (HVN/LVN at boundaries)
+
+  - Current position ratio and zone
+
+  - Time decay stage
+
+  - Breakout probability direction
+
+
+  ---
+
+
+  **Score Adjustments:**
+
+  - Support zone + contracting volume + HVN support: sentiment_score +12
+
+  - Support zone + expanding volume (bounce): sentiment_score +10
+
+  - Support zone + extreme volume (possible breakdown): sentiment_score -5
+
+  - Resistance zone + contracting volume: sentiment_score -8 (sell)
+
+  - Upside breakout confirmed: sentiment_score +15, switch to trend strategy
+
+  - Downside breakout: sentiment_score -15, exit
+
+  - Aged range (> 60 sessions): additional -3
+
+  '

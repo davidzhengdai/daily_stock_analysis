@@ -23,7 +23,39 @@ logger = logging.getLogger(__name__)
 
 
 class SkillRouter:
-    """Select applicable skills for a given analysis context."""
+    """Select applicable skills for a given analysis context.
+
+    Auto-detects market region from stock code and filters skills accordingly.
+    CN stocks (numeric codes) -> region="cn" skills.
+    US stocks (letter tickers) -> region="us" skills.
+    HK stocks (5-digit codes) -> region="cn" skills (share CN strategies).
+    """
+
+    # ── Region detection ────────────────────────────────────────
+
+    @staticmethod
+    def _detect_region(stock_code: str) -> str:
+        """Detect market region from stock code pattern."""
+        code = (stock_code or "").strip().upper()
+        if not code:
+            return "cn"
+        # US stocks: ticker symbols (letters, possibly with dots like BRK.B)
+        if code.replace(".", "").isalpha():
+            return "us"
+        # CN stocks: 6-digit numeric; HK: 5-digit numeric
+        return "cn"
+
+    @staticmethod
+    def _filter_by_region(skills: list, region: str) -> list:
+        """Filter skills to those matching the target region or 'all'."""
+        if not region:
+            return skills
+        return [
+            s for s in skills
+            if getattr(s, "region", "cn") in (region, "all")
+        ]
+
+    # ── Skill selection ─────────────────────────────────────────
 
     def select_skills(
         self,
@@ -35,16 +67,24 @@ class SkillRouter:
             logger.info("[SkillRouter] user-requested skills: %s", requested_skills)
             return requested_skills[:max_count]
 
+        region = self._detect_region(ctx.stock_code)
+        logger.info("[SkillRouter] detected region=%s from stock_code=%s", region, ctx.stock_code)
+
         routing_mode = self._get_routing_mode()
         if routing_mode == "manual":
-            selected = self._get_manual_skills(max_count=max_count)
-            logger.info("[SkillRouter] manual mode — using skills: %s", selected)
+            selected = self._get_manual_skills(max_count=max_count, region=region)
+            logger.info("[SkillRouter] manual mode (region=%s) — using skills: %s", region, selected)
             return selected
 
-        available_skills = self._get_available_skills()
+        all_skills = self._get_available_skills()
+        available_skills = self._filter_by_region(all_skills, region)
         skill_catalog = available_skills or None
         available_ids = {skill.name for skill in available_skills}
-        regime = self._detect_regime(ctx)
+
+        # Detect market regime and prefix with region for US strategies
+        base_regime = self._detect_regime(ctx)
+        regime = f"{region}_{base_regime}" if base_regime and region == "us" else base_regime
+
         if regime:
             selected = get_regime_skill_ids(
                 regime,
@@ -53,7 +93,7 @@ class SkillRouter:
                 available_skill_ids=available_ids or None,
             )
             if selected:
-                logger.info("[SkillRouter] regime=%s -> skills: %s", regime, selected)
+                logger.info("[SkillRouter] region=%s regime=%s -> skills: %s", region, regime, selected)
                 return selected
 
         default_skills = get_default_router_skill_ids(
@@ -61,7 +101,7 @@ class SkillRouter:
             max_count=max_count,
             available_skill_ids=available_ids or None,
         )
-        logger.info("[SkillRouter] using default skills: %s", default_skills)
+        logger.info("[SkillRouter] region=%s using default skills: %s", region, default_skills)
         return default_skills
 
     def select_strategies(
@@ -130,7 +170,7 @@ class SkillRouter:
             return []
 
     @classmethod
-    def _get_manual_skills(cls, max_count: int) -> List[str]:
+    def _get_manual_skills(cls, max_count: int, region: str = "cn") -> List[str]:
         configured: List[str] = []
         try:
             from src.config import get_config
@@ -145,7 +185,8 @@ class SkillRouter:
             logger.warning("Failed to get manual skills config", exc_info=True)
             configured = []
 
-        available_skills = cls._get_available_skills()
+        all_skills = cls._get_available_skills()
+        available_skills = cls._filter_by_region(all_skills, region)
         skill_catalog = available_skills or None
         available = {skill.name for skill in available_skills}
         selected = [skill_id for skill_id in configured if skill_id in available][:max_count]

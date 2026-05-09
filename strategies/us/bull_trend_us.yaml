@@ -1,0 +1,135 @@
+name: bull_trend_us
+display_name: Bull Trend
+description: |
+  Default US equity trend-following strategy. Trend phase classification, RS vs SPY, sector alignment, adaptive position sizing.
+category: trend
+core_rules:
+  - 1
+  - 2
+  - 3
+  - 4
+  - 7
+required_tools:
+  - get_daily_history
+  - analyze_trend
+  - get_realtime_quote
+  - get_sector_rankings
+  - search_stock_news
+aliases:
+  - us trend
+  - trend following
+  - trend
+default_active: true
+default_router: true
+default_priority: 10
+market_regimes:
+  - us_trending_up
+region: us
+instructions: |
+  **Bull Trend Strategy**
+  
+  Trend-following framework for US equities. Classify the trend phase, verify sector participation,
+  measure relative strength against benchmark, and size positions accordingly.
+  
+  ---
+  
+  ## Step 1: Trend Phase Classification
+  
+  Use get_daily_history (90 days, daily) and analyze_trend. Classify into four phases:
+  
+  | Phase    | Characteristics                                                        | Priority    |
+  |----------|------------------------------------------------------------------------|-------------|
+  | Early    | MA5 crossed above MA20 within last 10 days, MACD just turned positive, volume expanding moderately | Highest     |
+  | Mid      | MAs fanning upward with separation, slope > 20 degrees, MACD in strong territory | Buy pullbacks |
+  | Late     | Price > 8% above MA5, MACD histogram contracting (bearish divergence risk), volume stalling | Sell only   |
+  | Topping  | MA5 flattening, MAs converging, volume drying up, lower highs forming  | Wait         |
+  
+  Trend health = percentage of last 20 closes above MA20. Below 60%: trend fatigue, reduce position by half.
+  
+  ---
+  
+  ## Step 2: Relative Strength vs Benchmark
+  
+  Use get_daily_history (60 days). Compute RS Rating:
+    RS = (stock 60-day return) / (SPY 60-day return)
+  
+  - RS > 1.20: Market leader. May relax deviation tolerance to 6%.
+  - RS 0.80-1.20: Market performer. Standard rules apply.
+  - RS < 0.80: Laggard. Avoid regardless of absolute trend — underperforming in an up market is a red flag.
+  
+  Also compare against the stock's sector ETF (e.g., XLK for tech, XLF for financials) for sector-relative strength.
+  
+  ---
+  
+  ## Step 3: Sector Participation Check
+  
+  Use get_sector_rankings:
+  - Is the stock's GICS sector in the top 30% of 5-day returns? (tailwind)
+  - Is the stock ranked in the top 20% within its sector? (leadership)
+  - Tailwind + Leadership = strongest combination. Normal position size.
+  - Tailwind + Laggard = reduce position by half.
+  - Headwind + anything = avoid; solo outperformers in weak sectors rarely sustain.
+  
+  ---
+  
+  ## Step 4: Entry Timing Matrix
+  
+  | Deviation (MA5) | Phase      | Volume Condition       | Action           |
+  |-----------------|------------|------------------------|------------------|
+  | < 2%            | Early/Mid  | Contracting, support   | Heavy buy        |
+  | < 2%            | Early/Mid  | Expanding on bounce    | Standard buy     |
+  | 2-5%            | Early/Mid  | --                     | Light probe      |
+  | 2-5%            | Late       | --                     | Do not buy       |
+  | > 5%            | Any        | --                     | No chase         |
+  | Pullback to MA20| Mid        | Contracting, holds     | Golden entry     |
+  | Break below MA20| Any        | Expanding              | Reduce / exit    |
+  | Pullback to 50-day MA | Early/Mid | Contracting, holds | Institutional buy zone |
+  
+  ---
+  
+  ## Step 5: Adaptive Position Sizing
+  
+  | Composite Score | Position | Stop-Loss           | Notes                      |
+  |-----------------|----------|---------------------|----------------------------|
+  | >= 8/10         | 50-70%   | MA20 or -5%         | High conviction            |
+  | 5-7/10          | 30-50%   | MA20 or -4%         | Standard                   |
+  | 3-4/10          | 10-20%   | MA10 or -3%         | Probe only                 |
+  | < 3/10          | 0%       | --                  | Stand aside                |
+  
+  Composite = Phase (0-2.5) + RS (0-2.5) + Sector (0-2.5) + Entry Timing (0-2.5).
+  
+  ---
+  
+  ## Step 6: Risk Screening
+  
+  Use search_stock_news, last 7 days:
+  - Insider cluster selling (multiple officers) -> VETO
+  - Earnings miss or guidance revision lower -> VETO
+  - SEC investigation / DOJ action / class action -> VETO
+  - Lockup expiration > 5% of float -> VETO
+  - Sector-wide regulatory or rate headwind -> reduce position one tier
+  - Check short interest: > 20% of float may indicate structural problem or squeeze setup (context-dependent)
+  
+  ---
+  
+  ## Output Requirements
+  
+  Must output:
+  - Trend phase and health percentage
+  - RS Rating vs SPY and sector ETF
+  - Sector participation conclusion (tailwind/neutral/headwind)
+  - Deviation from MA5 and entry timing score
+  - Composite score and suggested position size
+  - Stop-loss level (exact price)
+  - If conditions not met: state "No trade — conditions insufficient"
+  
+  ---
+  
+  **Score Adjustments:**
+  - Early phase + sector tailwind + deviation < 2%: sentiment_score +15
+  - Mid phase + pullback to 50-day MA holding: sentiment_score +12
+  - Mid phase + deviation 2-5%: sentiment_score +8
+  - Late phase / deviation > 8%: sentiment_score -10
+  - Break below MA20 with expanding volume: sentiment_score -12
+  - Sector headwind: sentiment_score -5
+  

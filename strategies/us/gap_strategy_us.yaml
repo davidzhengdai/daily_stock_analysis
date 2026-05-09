@@ -1,0 +1,239 @@
+name: gap_strategy_us
+display_name: Gap Trade
+description: 'Trade price gaps: breakaway, runaway, exhaustion. Special focus on earnings gaps and post-earnings drift.'
+category: pattern
+core_rules:
+- 2
+- 3
+- 5
+required_tools:
+- get_daily_history
+- analyze_trend
+- get_realtime_quote
+- search_stock_news
+aliases:
+- us gap
+- gap fill
+- gap trade
+- earnings gap
+default_priority: 105
+market_regimes:
+- us_trending_up
+- us_trending_down
+region: us
+instructions: '**Gap Trade Strategy**
+
+
+  Classify and trade price gaps. Special attention to earnings gaps, which are the most
+
+  frequent and significant gap events in US equities.
+
+
+  ---
+
+
+  ## Step 1: Gap Detection and Measurement
+
+
+  Using get_daily_history (30 days):
+
+  - Up gap: today''s low > yesterday''s high
+
+  - Down gap: today''s high < yesterday''s low
+
+  - Gap size = (gap amount / prior close) x 100%
+
+
+  Categorize by size:
+
+  - < 1%: negligible (common gap, ignore)
+
+  - 1-3%: normal gap (potentially significant)
+
+  - 3-5%: large gap (highly significant)
+
+  - > 5%: extreme gap (usually earnings-driven)
+
+
+  ---
+
+
+  ## Step 2: Gap Classification
+
+
+  ### Breakaway Gap
+
+  - Location: After 20+ day consolidation / base pattern
+
+  - Volume: >= 2.0x relative volume
+
+  - Fill probability: Low (~15% in 5 days)
+
+  - Meaning: New trend initiating; highest reliability
+
+  - Action: Trade WITH the gap direction
+
+
+  ### Runaway (Measuring) Gap
+
+  - Location: Mid-trend, 10-25 days into the move
+
+  - Volume: 1.2-2.0x relative volume
+
+  - Fill probability: Low-medium (~25% in 10 days)
+
+  - Meaning: Trend accelerating; approximately 50% through the move
+
+  - Measured move target: gap price + (gap price - base price)
+
+
+  ### Exhaustion Gap
+
+  - Location: Late trend, > 25 days or > 40% move
+
+  - Volume: Can be extreme (> 2.5x) but next session volume contracts sharply
+
+  - Fill probability: High (~70% in 5 days)
+
+  - Meaning: Final blow-off; trend ending
+
+  - Action: FADE the gap (sell up gaps, buy down gaps after confirmation)
+
+
+  ### Earnings Gap
+
+  - Special case: gap caused by earnings release
+
+  - Post-earnings drift: stocks tend to drift in the gap direction for 2-4 weeks after positive surprises, and mean-revert
+  after 4+ weeks
+
+  - If gap > 5% AND volume > 3.0x: high probability of continuation for 5-10 sessions (post-earnings announcement drift)
+
+  - If gap < 3%: likely to fill within 5-10 sessions
+
+
+  ---
+
+
+  ## Step 3: Gap Fill Probability
+
+
+  | Gap Type        | 3-Day Fill | 10-Day Fill | Never Fills |
+
+  |-----------------|------------|-------------|-------------|
+
+  | Breakaway       | 15%        | 30%         | 55%         |
+
+  | Runaway         | 20%        | 40%         | 40%         |
+
+  | Exhaustion      | 60%        | 85%         | < 5%        |
+
+  | Earnings (> 5%) | 10%        | 25%         | 65%         |
+
+  | Earnings (< 3%) | 50%        | 75%         | 10%         |
+
+  | Common (< 1%)   | 90%        | 99%         | < 1%        |
+
+
+  ---
+
+
+  ## Step 4: Multi-Gap Sequence
+
+
+  | Gap Number | Typical Type           | Action                          |
+
+  |------------|------------------------|----------------------------------|
+
+  | 1st gap    | Breakaway              | Enter with trend                |
+
+  | 2nd gap    | Runaway                | Hold / add                      |
+
+  | 3rd gap    | Likely exhaustion      | Prepare to exit / reverse       |
+
+  | 4th gap    | Exhaustion confirmed   | Reverse immediately             |
+
+
+  The "three gaps and exhausted" rule applies in both directions.
+
+
+  ---
+
+
+  ## Step 5: Volume Confirmation Matrix
+
+
+  | Gap Type          | Bullish Volume Pattern                          | Bearish Warning                               |
+
+  |-------------------|-------------------------------------------------|-----------------------------------------------|
+
+  | Up breakaway      | RVOL > 2.0x + close at HOD                      | RVOL > 3.0x with long upper wick              |
+
+  | Up runaway        | RVOL 1.2-2.0x + steady                          | RVOL declining across gaps (momentum fading)   |
+
+  | Up exhaustion     | RVOL spikes then next day collapses             | This IS the warning; prepare to exit           |
+
+  | Down breakaway    | RVOL > 2.0x + close at LOD                      | RVOL extreme but long lower wick (absorption)  |
+
+  | Down exhaustion   | RVOL spikes then collapses + long lower wick    | Potential reversal; watch for green follow-through
+  |
+
+
+  ---
+
+
+  ## Step 6: Action Matrix
+
+
+  | Gap Type         | Direction | Action          | Position | Stop            |
+
+  |------------------|-----------|-----------------|----------|-----------------|
+
+  | Up breakaway     | Long      | Enter           | 30-50%   | Gap top -2%     |
+
+  | Up runaway       | Long      | Add             | 20-30%   | Gap top -1.5%   |
+
+  | Up exhaustion    | Short     | Sell / exit     | --       | --              |
+
+  | Down breakaway   | Exit      | Exit all longs  | --       | --              |
+
+  | Down exhaustion  | Watch     | Prepare to buy  | 0%       | Wait for trigger|
+
+
+  ---
+
+
+  ## Output Requirements
+
+
+  - Gap type, size, direction, and catalyst (earnings or not)
+
+  - Gap sequence number
+
+  - Fill probability assessment
+
+  - Volume confirmation result
+
+  - Action and position recommendation
+
+  - Measured move target (if runaway gap)
+
+
+  ---
+
+
+  **Score Adjustments:**
+
+  - Up breakaway + consolidation base + high volume: sentiment_score +15
+
+  - Up runaway + mid-trend: sentiment_score +10
+
+  - Earnings gap (> 5%, positive) + high volume: sentiment_score +14
+
+  - Up exhaustion (3rd+ gap): sentiment_score -14
+
+  - Down breakaway: sentiment_score -15
+
+  - Down exhaustion + bullish divergence: sentiment_score +9 (reversal watch)
+
+  '

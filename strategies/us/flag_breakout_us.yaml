@@ -1,0 +1,141 @@
+name: flag_breakout_us
+display_name: Flag Breakout
+description: |
+  Trade bull flag and pennant consolidation breakouts. Volume arc validation, pattern quality scoring, and measured move targets.
+category: pattern
+core_rules:
+  - 2
+  - 3
+  - 4
+required_tools:
+  - get_daily_history
+  - analyze_trend
+  - get_realtime_quote
+aliases:
+  - us flag
+  - bull flag
+  - pennant
+  - consolidation breakout
+default_priority: 100
+market_regimes:
+  - us_trending_up
+region: us
+instructions: |
+  **Flag Breakout Strategy**
+  
+  Trade bull flag and pennant patterns: a sharp advance (pole), followed by a
+  contracting consolidation (flag/pennant), then a breakout continuation.
+  
+  ---
+  
+  ## Step 1: Pattern Identification
+  
+  The flag consists of two parts:
+  
+  Pole: A sharp, near-vertical advance lasting 3-8 sessions, gaining 10-30%.
+  Flag: A 3-10 session consolidation that drifts sideways or slightly downward
+         on contracting volume. The flag should retrace no more than 38.2% of the pole.
+  
+  Pennant variant: The consolidation forms a symmetrical triangle (contracting range)
+  instead of a parallel channel.
+  
+  ---
+  
+  ## Step 2: Flag Quality Scorecard (12 points)
+  
+  ### Pole Quality (0-4 pts)
+  - Pole gain 15-30% (ideal): +4
+  - Pole gain 10-15%: +2
+  - Pole gain outside range: +1
+  
+  ### Flag Contraction (0-3 pts)
+  - Flag width (high-low range) < 50% of pole height: +3
+  - 50-75%: +2
+  - > 75% (too loose, not a flag): +1
+  
+  ### Volume Arc (0-3 pts)
+  - Volume surges on pole, then systematically declines through flag: +3
+  - Volume declines but not systematically: +1
+  - Volume erratic (no pattern): +0 (not a flag)
+  
+  ### Trend Context (0-2 pts)
+  - 50 DMA > 200 DMA (bull trend established): +2
+  - 20 EMA > 50 DMA but 50 DMA still below 200 DMA: +1
+  - 50 DMA < 200 DMA (counter-trend flag): +0 (low reliability)
+  
+  ---
+  
+  ## Step 3: Pattern Grades
+  
+  | Score  | Grade         | Reliability |
+  |--------|---------------|-------------|
+  | >= 10  | Textbook flag | Very High   |
+  | 7-9    | Quality flag  | High        |
+  | 4-6    | Loose flag    | Moderate    |
+  | < 4    | Not a flag    | Ignore      |
+  
+  ---
+  
+  ## Step 4: Breakout Entry
+  
+  The breakout is triggered when price closes above the flag's upper boundary:
+  
+  - Breakout session: relative volume must be > 1.5x flag-average volume (return of demand)
+  - Close must be in upper third of session range (conviction)
+  - Entry: at breakout close, or on first pullback to the broken flag boundary (the retest)
+  
+  ---
+  
+  ## Step 5: Measured Move Target
+  
+  Target = Pole low + Pole height
+  
+  The flag is a "halfway" pattern: the move after the breakout tends to equal the
+  move before the flag (the pole height).
+  
+  - Target 1: 50% of pole height added to breakout point (conservative)
+  - Target 2: 100% of pole height added to breakout point (standard measured move)
+  
+  ---
+  
+  ## Step 6: Position and Risk
+  
+  | Grade         | Position | Stop                              |
+  |---------------|----------|-----------------------------------|
+  | Textbook flag | 30-50%   | Flag low -2% or pole 38.2% retrace|
+  | Quality flag  | 20-30%   | Flag low -2%                      |
+  | Loose flag    | 10%      | Flag low -1.5%                    |
+  
+  - Trail stop to breakeven after +5%
+  - If breakout fails (price closes back inside flag within 2 sessions): exit
+  
+  ---
+  
+  ## Step 7: Fake Breakout Warnings
+  
+  - Breakout on low volume (RVOL < 1.0): lacks sponsorship; likely false
+  - Breakout candle with long upper wick: supply at higher levels
+  - Breakout then immediate gap down next session: bull trap
+  - Pole already extended > 30%: flag may be topping pattern, not continuation
+  
+  ---
+  
+  ## Output Requirements
+  
+  - Pattern type (bull flag / pennant)
+  - Pole height and flag duration
+  - Quality score breakdown
+  - Grade and reliability
+  - Entry trigger status
+  - Measured move targets
+  - Stop level
+  
+  ---
+  
+  **Score Adjustments:**
+  - Textbook flag (>= 10) + volume arc + trend context: sentiment_score +15
+  - Quality flag (7-9): sentiment_score +10
+  - Loose flag (4-6): sentiment_score +5
+  - Breakout on strong volume (RVOL > 2.0): bonus +3
+  - Fake breakout signals: sentiment_score -5
+  

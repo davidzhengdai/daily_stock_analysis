@@ -1,0 +1,201 @@
+name: ma_golden_cross_us
+display_name: MA Cross
+description: Moving average cross detection with quality scoring. Includes the widely-followed 50/200 DMA golden cross and
+  20/50 EMA crosses.
+category: trend
+core_rules:
+- 1
+- 2
+- 3
+required_tools:
+- get_daily_history
+- analyze_trend
+- get_realtime_quote
+aliases:
+- us cross
+- golden cross
+- death cross
+- ma cross
+default_priority: 20
+market_regimes:
+- us_trending_up
+region: us
+instructions: '**MA Cross Strategy**
+
+
+  Moving average cross detection with quality scoring. Covers the standard US institutional crosses:
+
+  the 50/200 DMA (Wall Street''s "golden cross / death cross"), 20/50 EMA, and 10/20 EMA.
+
+
+  ---
+
+
+  ## Step 1: Cross Type Hierarchy
+
+
+  | Cross                     | Signal Reliability | Typical Use            | Lookback   |
+
+  |---------------------------|-------------------|------------------------|------------|
+
+  | 50 DMA > 200 DMA          | Very High         | Secular trend change   | 200+ days  |
+
+  | 20 EMA > 50 EMA           | High              | Intermediate trend     | 50-100 days|
+
+  | 10 EMA > 20 EMA           | Medium            | Tactical entry         | 20-50 days |
+
+  | 5 EMA > 10 EMA            | Low-Medium        | Short-term timing      | 10-20 days |
+
+
+  The 50/200 DMA golden cross is the most widely cited technical signal on Wall Street.
+
+  A death cross (50 DMA < 200 DMA) is equally significant on the downside.
+
+
+  ---
+
+
+  ## Step 2: Cross Quality Scorecard (18 points)
+
+
+  ### A. Trend Context (0-3 pts)
+
+  - 50 DMA > 200 DMA AND 20 EMA > 50 EMA (aligned): +3
+
+  - One of the above aligned: +2
+
+  - Both neutral (MAs converging): +1
+
+  - 50 DMA < 200 DMA (counter-trend cross): +0
+
+
+  ### B. Cross Angle / Slope Divergence (0-3 pts)
+
+  - Faster MA slope exceeds slower MA slope by > 0.5%/day: +3
+
+  - 0.2-0.5%/day: +2
+
+  - < 0.2%/day (shallow, weak): +1
+
+
+  ### C. Volume Confirmation (0-3 pts)
+
+  - Cross day relative volume > 2.0x 20-day average: +3
+
+  - 1.5-2.0x: +2
+
+  - 1.0-1.5x: +1
+
+  - < 1.0x (no volume sponsorship): +0
+
+
+  ### D. MACD Alignment (0-3 pts)
+
+  - MACD line crossing signal line above zero: +3
+
+  - MACD crossing near zero: +2
+
+  - MACD crossing below zero: +1
+
+  - MACD still in bearish configuration: +0
+
+
+  ### E. Price Confirmation (0-3 pts)
+
+  - Next session close > cross session close: +3
+
+  - Next session close approximately flat (+/- 0.3%): +2
+
+  - Next session close < cross session close: +0 (failure)
+
+
+  ### F. Deviation Safety (0-3 pts)
+
+  - Price within 2% of crossing MAs: +3
+
+  - 2-5%: +2
+
+  - > 5%: +0 (chasing)
+
+
+  ---
+
+
+  ## Step 3: Cross Grade and Position Size
+
+
+  | Score   | Grade        | Position | Confidence   |
+
+  |---------|--------------|----------|--------------|
+
+  | >= 14   | Institutional| 50-70%   | Very High    |
+
+  | 11-13   | Strong       | 30-50%   | High         |
+
+  | 8-10    | Standard     | 20-30%   | Medium       |
+
+  | 5-7     | Weak         | 5-10%    | Low (probe)  |
+
+  | < 5     | Noise        | 0%       | None         |
+
+
+  ---
+
+
+  ## Step 4: Multi-Timeframe Alignment
+
+
+  - Daily cross + weekly chart also showing bullish structure: double weight
+
+  - Daily cross + weekly chart still bearish: halve weight
+
+  - 50/200 DMA golden cross with score >= 14: secular bull signal, position can be held for months
+
+
+  ---
+
+
+  ## Step 5: False Signal Filters
+
+
+  - 3-Day Rule: cross must hold above the slower MA for 3 consecutive sessions
+
+  - Volume Continuity: volume must not dry up immediately after cross (relative volume > 0.7 for 2 days following)
+
+  - Prior Trend: crosses after a 15+ day consolidation are most reliable; crosses during a V-shaped bounce after a crash are
+  suspect (dead cat)
+
+
+  ---
+
+
+  ## Output Requirements
+
+
+  - Cross type and date
+
+  - Quality score breakdown and total
+
+  - Grade and suggested position
+
+  - Multi-timeframe alignment check
+
+  - Stop-loss: slower MA -2%
+
+
+  ---
+
+
+  **Score Adjustments:**
+
+  - Institutional grade (>=14) + multi-timeframe: sentiment_score +18
+
+  - Strong grade (11-13): sentiment_score +12
+
+  - Standard grade (8-10): sentiment_score +8
+
+  - Weak grade / no volume: sentiment_score +3
+
+  - Death cross (50 DMA < 200 DMA): sentiment_score -15
+
+  '

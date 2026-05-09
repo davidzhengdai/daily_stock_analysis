@@ -1,0 +1,233 @@
+name: vp_divergence_us
+display_name: VPA Divergence
+description: 'Volume-Price Analysis: detect divergences as early reversal signals. Wyckoff-style smart money accumulation/distribution
+  identification.'
+category: reversal
+core_rules:
+- 3
+- 5
+- 6
+required_tools:
+- get_daily_history
+- analyze_trend
+- get_realtime_quote
+aliases:
+- us vpa
+- divergence
+- wyckoff
+- smart money
+default_priority: 65
+market_regimes:
+- us_trending_up
+- us_trending_down
+region: us
+instructions: '**Volume-Price Divergence Strategy**
+
+
+  VPA-based approach: price is the narrative, volume reveals intent.
+
+  Detect Wyckoff-style accumulation and distribution through volume-price relationships.
+
+
+  ---
+
+
+  ## Step 1: Fundamental VPA Rules
+
+
+  | Price      | Volume    | Meaning                              | Signal        |
+
+  |------------|-----------|--------------------------------------|---------------|
+
+  | Rising     | Rising    | Healthy demand, trend valid          | Bullish       |
+
+  | Rising     | Falling   | Demand weakening, exhaustion         | Bearish divergence |
+
+  | Falling    | Rising    | Active distribution / capitulation   | Bearish       |
+
+  | Falling    | Falling   | Selling pressure exhausted           | Bullish divergence |
+
+  | Flat       | Rising    | Battle for control; breakout pending | Directional alert |
+
+  | Flat       | Falling   | Apathy; coiled spring                | Wait           |
+
+
+  ---
+
+
+  ## Step 2: Four Core Divergence Patterns
+
+
+  ### Type 1: Bearish Divergence — Higher Highs, Lower Volume
+
+  - Price makes new 20-day high; volume is less than volume at the prior high
+
+  - Two or more consecutive higher highs on declining volume: strong bearish signal
+
+  - Mechanism: fewer buyers willing to pay higher prices; uptrend running on fumes
+
+  - Action: SELL / REDUCE
+
+
+  ### Type 2: Bullish Divergence — Lower Lows, Lower Volume
+
+  - Price makes new 20-day low; volume is less than volume at the prior low
+
+  - Two or more consecutive lower lows on declining volume: strong bullish signal
+
+  - Mechanism: sellers exhausted; no new supply coming in at lower prices
+
+  - Action: BUY setup; wait for confirmation (first green day on expanding volume)
+
+
+  ### Type 3: On-Balance Volume (OBV) Divergence
+
+  - Price rising, OBV flat or falling: bearish (volume not confirming price)
+
+  - Price falling, OBV flat or rising: bullish (accumulation during decline)
+
+  - OBV divergence often leads price by 3-10 sessions
+
+
+  ### Type 4: Money Flow Divergence
+
+  - Chaikin Money Flow (CMF) diverging from price: institutional footprint
+
+  - Price rising, CMF negative: distribution into strength
+
+  - Price falling, CMF positive: accumulation into weakness
+
+
+  ---
+
+
+  ## Step 3: Wyckoff Smart Money Signatures
+
+
+  ### Accumulation (Bottoming Process):
+
+  - Selling Climax (SC): high-volume panic low followed by automatic rally (AR)
+
+  - Secondary Test (ST): price revisits SC zone on much lower volume (no supply)
+
+  - Spring: brief shakeout below support on low volume, immediately recovers
+
+  - Sign of Strength (SOS): high-volume rally breaking above trading range
+
+  - Last Point of Support (LPS): pullback to support on contracting volume (the buy zone)
+
+
+  ### Distribution (Topping Process):
+
+  - Buying Climax (BC): high-volume spike high followed by automatic reaction (AR)
+
+  - Secondary Test (ST): revisits BC zone on lower volume (no demand)
+
+  - Upthrust (UT): brief probe above resistance on high volume, immediately reverses
+
+  - Sign of Weakness (SOW): high-volume break below trading range
+
+  - Last Point of Supply (LPSY): rally to resistance on contracting volume (the sell zone)
+
+
+  ---
+
+
+  ## Step 4: Divergence Strength Scoring
+
+
+  | Item                   | Points | Condition                                     |
+
+  |------------------------|--------|-----------------------------------------------|
+
+  | Confirmation count     | +3     | 3+ consecutive divergences                    |
+
+  | Confirmation count     | +2     | 2 consecutive                                  |
+
+  | Magnitude              | +3     | Volume decline > 50% vs comparator             |
+
+  | Magnitude              | +1     | Volume decline 20-50%                          |
+
+  | OBV/MFI alignment      | +2     | OBV or CMF confirming in same direction        |
+
+  | MACD alignment         | +2     | MACD histogram diverging in sync               |
+
+  | Price span             | +2     | Divergence spans > 12% price move              |
+
+  | Time span              | +1     | Divergence spans > 15 sessions                 |
+
+
+  - >= 9: Strong divergence (high probability reversal)
+
+  - 5-8: Moderate (needs confirmation)
+
+  - < 5: Weak (noise)
+
+
+  ---
+
+
+  ## Step 5: Action Matrix
+
+
+  | Divergence        | Score    | Action        | Position     | Stop               |
+
+  |-------------------|----------|---------------|--------------|--------------------|
+
+  | Strong Bearish    | >= 9     | SELL          | Exit         | --                 |
+
+  | Moderate Bearish  | 5-8      | REDUCE        | 20-30%       | -3%                |
+
+  | Strong Bullish    | >= 9     | BUY           | 15-25%       | Divergence low -2% |
+
+  | Moderate Bullish  | 5-8      | WATCH         | 0%           | Wait for trigger   |
+
+
+  ---
+
+
+  ## Step 6: Confirmation Triggers
+
+
+  For bullish divergence: wait for price to break above a short-term resistance (swing high, 5 EMA) on volume > 1.5x.
+
+  For bearish divergence: wait for price to break below a short-term support (swing low, 5 EMA) on volume > 1.2x.
+
+
+  ---
+
+
+  ## Output Requirements
+
+
+  - Current VPA relationship
+
+  - Detected divergence type and count
+
+  - Wyckoff phase assessment (if applicable)
+
+  - Strength score breakdown
+
+  - Confirmation trigger status
+
+  - Action, position, stop
+
+
+  ---
+
+
+  **Score Adjustments:**
+
+  - Strong bearish divergence (> 9) + Wyckoff distribution: sentiment_score -18
+
+  - Moderate bearish (5-8): sentiment_score -10
+
+  - Strong bullish divergence (> 9) + Wyckoff accumulation: sentiment_score +16
+
+  - Moderate bullish (5-8): sentiment_score +8
+
+  - Upthrust confirmed: sentiment_score -14
+
+  - Spring confirmed: sentiment_score +14
+
+  '

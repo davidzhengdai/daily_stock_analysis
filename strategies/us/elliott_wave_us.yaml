@@ -1,0 +1,235 @@
+name: elliott_wave_us
+display_name: Elliott Wave
+description: Elliott Wave Theory applied to US equities. Iron-rule validation, volume-per-wave analysis, probabilistic scenario
+  mapping.
+category: framework
+core_rules:
+- 1
+- 2
+- 3
+- 4
+required_tools:
+- get_daily_history
+- analyze_trend
+- get_realtime_quote
+aliases:
+- us elliott
+- wave
+- elliott wave
+- ewt
+default_priority: 80
+market_regimes:
+- us_volatile
+region: us
+instructions: '**Elliott Wave Strategy**
+
+
+  Elliott Wave Theory with practical implementation: three iron rules,
+
+  volume-per-wave confirmation, probabilistic scenarios, and invalidation criteria.
+
+
+  ---
+
+
+  ## Step 0: Three Iron Rules
+
+
+  If ANY rule is violated, the wave count is WRONG. Restart.
+
+
+  | Rule | Description | Verification |
+
+  |------|-------------|--------------|
+
+  | 1 | Wave 2 cannot retrace beyond the start of Wave 1 | Wave 2 low > Wave 1 start |
+
+  | 2 | Wave 3 is NEVER the shortest impulse wave | Compare lengths of Waves 1, 3, 5 |
+
+  | 3 | Wave 4 cannot enter the price territory of Wave 1 | Wave 4 low > Wave 1 high (in uptrend) |
+
+
+  ---
+
+
+  ## Step 1: Impulse Wave Identification
+
+
+  Using get_daily_history (200 days) + analyze_trend:
+
+
+  | Wave  | Price Behavior                    | Volume Signature              | Duration (typical) |
+
+  |-------|-----------------------------------|-------------------------------|--------------------|
+
+  | 1     | 10-30% rise from bear market low  | Moderate expansion (RVOL 1.0-1.5) | 5-15 sessions   |
+
+  | 2     | 38.2-61.8% retrace of Wave 1      | Sharp contraction (RVOL < 0.7) | 3-10 sessions      |
+
+  | 3     | Largest wave (30-60%+), steepest  | Strong expansion (RVOL > 1.5) | 10-25 sessions     |
+
+  | 4     | Shallow retrace (23.6-38.2%), complex (triangle/flat) | Contraction      | 5-15 sessions      |
+
+  | 5     | New high but weaker momentum      | Volume divergence (price up, volume down) | 5-10 sessions |
+
+
+  ---
+
+
+  ## Step 2: Corrective Wave Identification (ABC)
+
+
+  | Wave  | Behavior                                          | Volume                    |
+
+  |-------|---------------------------------------------------|---------------------------|
+
+  | A     | First leg down; often mistaken for a dip          | Expanding (distribution)  |
+
+  | B     | Sucker rally; traps late buyers; lower volume than prior advance | Contracting        |
+
+  | C     | Second leg down; often exceeds Wave A; completes correction | Expanding (capitulation) |
+
+
+  B-waves are the most dangerous: they look like the trend resuming but are traps.
+
+  Never buy B-waves. Wait for C-wave completion.
+
+
+  ---
+
+
+  ## Step 3: Volume-Per-Wave Confirmation
+
+
+  - Wave 3 average daily volume > Wave 1 average daily volume: VERIFIED
+
+  - Wave 5 average daily volume < Wave 3 average daily volume: divergence warning
+
+  - B-wave volume < preceding impulse wave volume by > 50%: trap confirmed
+
+  - C-wave volume expanding on down days: distribution confirmed
+
+
+  ---
+
+
+  ## Step 4: Fibonacci Targets
+
+
+  | Target            | Calculation                                      |
+
+  |-------------------|--------------------------------------------------|
+
+  | Wave 2 retrace    | 38.2% / 50% / 61.8% of Wave 1                    |
+
+  | Wave 3 target     | 1.618 / 2.0 / 2.618 x Wave 1                     |
+
+  | Wave 4 retrace    | 23.6% / 38.2% of Wave 3                          |
+
+  | Wave 5 target     | 0.618 x (Wave 1 + Wave 3) added to Wave 4 low    |
+
+  | C-wave target     | 1.0 / 1.618 x Wave A from Wave B high            |
+
+
+  ---
+
+
+  ## Step 5: Probabilistic Scenario Mapping
+
+
+  Since wave counts are subjective, ALWAYS present 2-3 scenarios:
+
+
+  - Primary Count (50-60%): Most likely count with supporting evidence
+
+  - Alternate Count (25-35%): Different interpretation of the same price action
+
+  - Outlier (10-15%): Low probability but high impact
+
+
+  Identify the COMMON CONCLUSION across all scenarios:
+
+  E.g., "All three counts agree the next 5-10 sessions are corrective/consolidation" -> actionable insight.
+
+
+  ---
+
+
+  ## Step 6: Tradeable Wave Positions
+
+
+  | Position          | Action        | Position | Stop               | Target               |
+
+  |-------------------|---------------|----------|--------------------|----------------------|
+
+  | Wave 2 completion | Heavy buy     | 50-70%   | Wave 1 start -2%   | Wave 3 1.618 extension |
+
+  | Early Wave 3      | Add           | 30-50%   | Wave 2 low         | Wave 3 2.618 extension |
+
+  | Wave 4 completion | Add           | 20-30%   | Wave 1 high        | Wave 5 target        |
+
+  | Late Wave 5       | Reduce        | 10-20%   | -3%                | Scale out            |
+
+  | B-wave            | DO NOT BUY    | 0%       | --                 | Wait for C-wave      |
+
+  | C-wave completion | Scale in      | 20-30%   | C-wave low -2%     | New Wave 1           |
+
+
+  ---
+
+
+  ## Step 7: Invalidation
+
+
+  - Price breaks below Wave 1 start: not an impulse; larger correction in play
+
+  - Wave 4 enters Wave 1 territory: count wrong; re-label
+
+  - Wave 3 shorter than Wave 1: count wrong; re-label
+
+  - Price action violates ALL scenarios: abandon wave analysis; use another strategy
+
+
+  ---
+
+
+  ## Output Requirements
+
+
+  - Primary count with current wave position
+
+  - Alternate count (at least 1)
+
+  - Three iron-rule verification results
+
+  - Volume-per-wave check
+
+  - Key Fibonacci levels
+
+  - Common conclusion across all scenarios
+
+  - Confidence level (High / Medium / Low)
+
+
+  ---
+
+
+  **Score Adjustments:**
+
+  - Wave 2 completion + contraction + iron rules pass: sentiment_score +18
+
+  - Wave 3 confirmed breakout (volume): sentiment_score +15
+
+  - Wave 4 completion: sentiment_score +8
+
+  - Late Wave 5 + divergence: sentiment_score -12
+
+  - C-wave in progress: sentiment_score -15
+
+  - B-wave (trap): sentiment_score -5 (do not participate)
+
+  - All scenarios agree: bonus +4
+
+  - Scenarios contradict: sentiment_score -3 (uncertainty -> no trade)
+
+  '
