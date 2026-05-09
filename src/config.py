@@ -629,6 +629,9 @@ class Config:
     moomoo_opend_port: int = 11111
     moomoo_extended_time: bool = False
     stock_index_remote_update_enabled: bool = True
+    moomoo_opend_host: str = "127.0.0.1"
+    moomoo_opend_port: int = 11111
+    moomoo_extended_time: bool = False
 
     # === AI 分析配置 ===
     # LiteLLM unified model config (provider/model format, e.g. gemini/gemini-3.1-pro-preview)
@@ -1487,6 +1490,15 @@ class Config:
                 os.getenv('STOCK_INDEX_REMOTE_UPDATE_ENABLED'),
                 default=True,
             ),
+            moomoo_opend_host=os.getenv('MOOMOO_OPEND_HOST') or "127.0.0.1",
+            moomoo_opend_port=parse_env_int(
+                os.getenv('MOOMOO_OPEND_PORT'),
+                11111,
+                field_name='MOOMOO_OPEND_PORT',
+                minimum=1,
+                maximum=65535,
+            ),
+            moomoo_extended_time=os.getenv('MOOMOO_EXTENDED_TIME', 'false').lower() == 'true',
             litellm_model=litellm_model,
             litellm_fallback_models=litellm_fallback_models,
             llm_temperature=resolve_unified_llm_temperature(litellm_model),
