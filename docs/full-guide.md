@@ -1223,6 +1223,10 @@ FastAPI 提供 RESTful API 服务，支持配置管理和触发分析。
 |------|------|
 | `python main.py --serve` | 启动 API 服务 + 执行一次完整分析 |
 | `python main.py --serve-only` | 仅启动 API 服务，手动触发分析 |
+| `python main.py --scanner --discovery-markets us,cn` | 运行 Scanner 全市场扫股 |
+| `python main.py --gold-digger --discovery-markets us,cn` | 运行沙里淘金 |
+
+Scanner 与沙里淘金的市场配置、CLI 参数和 API 示例见 [Scanner 与沙里淘金](./scanner-gold-digger.md)。
 
 ### 功能特性
 
@@ -1230,6 +1234,7 @@ FastAPI 提供 RESTful API 服务，支持配置管理和触发分析。
 - 🚀 **快速分析** - 通过 API 接口触发个股分析；首页也提供“大盘复盘”按钮，可在 Docker/server 模式下后台触发大盘复盘
 - 🎯 **策略选择** - 首页支持显式选择分析策略 skill；不传 `skills` 时按系统默认策略运行，便于保持与历史行为兼容
 - 🧭 **首次配置提示** - 首页会读取只读配置状态，缺少 LLM 主渠道、自选股等基础项时提示缺口并引导进入系统设置
+- 🔎 **跨市场选股** - Scanner / 沙里淘金支持美股、A股或两者，并可为 A股加入中国政策与国家热点权重
 - 📊 **实时进度** - 分析任务状态实时更新，支持多任务并行；普通分析链路在进入 LLM 阶段后会优先尝试 LiteLLM 流式生成，并通过任务 SSE 回灌更细粒度的 `message/progress`
 - 🗂️ **大盘复盘任务可见性** - 首页触发大盘复盘后会返回 `task_id` 并轮询 `GET /api/v1/analysis/status/{task_id}`，在进行中/完成/失败场景给出可见反馈，失败时直接透出报错内容
 - 🧾 **市场复盘历史可复用** - 大盘复盘任务会持久化到分析历史，`report_type` 为 `market_review`，可直接通过历史列表/详情打开对应 Markdown 或详情页，不会重新触发分析重算

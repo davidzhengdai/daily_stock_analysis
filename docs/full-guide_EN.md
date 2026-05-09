@@ -1055,6 +1055,10 @@ FastAPI provides RESTful API service for configuration management and triggering
 |------|------|
 | `python main.py --serve` | Start API service + run full analysis once |
 | `python main.py --serve-only` | Start API service only, manually trigger analysis |
+| `python main.py --scanner --discovery-markets us,cn` | Run Scanner stock discovery |
+| `python main.py --gold-digger --discovery-markets us,cn` | Run GoldDigger |
+
+Scanner and GoldDigger market configuration, CLI options, and API examples are documented in [Scanner and GoldDigger](./scanner-gold-digger_EN.md).
 
 ### Features
 
@@ -1062,6 +1066,7 @@ FastAPI provides RESTful API service for configuration management and triggering
 - **Quick Analysis** - Trigger stock analysis via API; the Home page also provides a Market Review button that starts a background market recap in Docker/server mode
 - **Strategy selection** - The Home page supports explicitly selecting analysis strategy skills; when `skills` is omitted, analysis uses the server default strategy so legacy clients keep existing behavior
 - **First-run Setup Hint** - The Home page reads the read-only setup status and points users to Settings when required items such as the primary LLM channel or watchlist are missing
+- **Cross-market Discovery** - Scanner / GoldDigger support US, China, or both, with China policy and national-hot-topic weighting for A-shares
 - **Real-time Progress** - Analysis task status updates in real-time, supports parallel tasks; the regular stock-analysis path now prefers LiteLLM streaming during the LLM stage and pushes finer-grained `message/progress` updates through task SSE
 - **Market Review visibility** - After clicking Market Review, the API returns a `task_id` and the UI polls `GET /api/v1/analysis/status/{task_id}` to show progress; completed/failure states are rendered explicitly and failure messages are shown directly in the UI error area.
 - **Market review history replay** - Market review results are persisted with `report_type=market_review` and can be reopened from history list/detail or Markdown endpoints directly, without re-triggering a fresh analysis run.

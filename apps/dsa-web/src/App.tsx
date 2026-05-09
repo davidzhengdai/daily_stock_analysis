@@ -19,6 +19,8 @@ const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const ChatPage = lazy(() => import('./pages/ChatPage'));
 const PortfolioPage = lazy(() => import('./pages/PortfolioPage'));
 const AlertsPage = lazy(() => import('./pages/AlertsPage'));
+const ScannerPage = lazy(() => import('./pages/ScannerPage'));
+const GoldDiggerPage = lazy(() => import('./pages/GoldDiggerPage'));
 
 const AppContent: React.FC = () => {
   const location = useLocation();
@@ -79,6 +81,8 @@ const AppContent: React.FC = () => {
         <Route path="/portfolio" element={<PortfolioPage />} />
         <Route path="/backtest" element={<BacktestPage />} />
         <Route path="/alerts" element={<AlertsPage />} />
+        <Route path="/scanner" element={<ScannerPage />} />
+        <Route path="/gold-digger" element={<GoldDiggerPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

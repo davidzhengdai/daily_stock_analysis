@@ -11,7 +11,20 @@ API v1 路由聚合
 
 from fastapi import APIRouter
 
-from api.v1.endpoints import alerts, analysis, auth, history, stocks, backtest, system_config, agent, usage, portfolio
+from api.v1.endpoints import (
+    agent,
+    alerts,
+    analysis,
+    auth,
+    backtest,
+    gold_digger,
+    history,
+    portfolio,
+    scanner,
+    stocks,
+    system_config,
+    usage,
+)
 
 # 创建 v1 版本主路由
 router = APIRouter(prefix="/api/v1")
@@ -74,4 +87,16 @@ router.include_router(
     alerts.router,
     prefix="/alerts",
     tags=["Alerts"]
+)
+
+router.include_router(
+    scanner.router,
+    prefix="/scanner",
+    tags=["Scanner"]
+)
+
+router.include_router(
+    gold_digger.router,
+    prefix="/gold-digger",
+    tags=["GoldDigger"]
 )
