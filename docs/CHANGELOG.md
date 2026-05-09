@@ -104,6 +104,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - fix: Avoid unsupported built-in historical providers for Hong Kong daily data; align Beijing Stock Exchange `BJ` prefix and `.BJ` suffix validation.
 - fix: Improve Web market-review observability, Windows fallback lock probing, and market catalyst snippet rendering.
 - docs: Add the documentation index and settings-help maintenance guide; remove temporary PR/doc-sync notes from README and user-facing guides.
+- [新功能] 美股全市场扫描器：5层漏斗筛选 NYSE+NASDAQ 全量股票，推荐中线投资 Top10，含财务历史/行业资讯/全球行业状态分析；新增 `/api/v1/scanner/` REST API 及后台扫描任务；结果同步推送通知渠道与本地 Markdown 报告。
+- [新功能] 沙里淘金：扫描美股小盘股（$50M–$1B 市值）与 A 股，四维筛选（超跌+低估+低覆盖+低 PE），LLM 匹配宏观主题并深度分析，输出带完整投资论点的金股推荐；新增 `/api/v1/gold-digger/` REST API 及侧边栏入口。
+- [修复] 修复 Scanner / 沙里淘金使用 NASDAQ 股票池时因接口参数返回空 rows 导致扫描无结果的问题，并为沙里淘金美股价格下载增加分批处理。
+- [改进] Scanner / 沙里淘金 Web 页面补齐中文展示，包含页面标题、配置、进度、历史记录、筛选漏斗与结果指标文案。
+- [改进] Scanner / 沙里淘金支持按美股和 A 股市场配置扫描范围，并为 A 股候选增加中国政策与国家热点主题权重。
+- [改进] Scanner / 沙里淘金新增 CLI 一次性运行入口，并补充中英文使用文档、API 示例和市场配置说明。
+- [改进] Scanner Top Picks 新增入选理由与关键筛选因子展示，帮助用户理解股票为何被选中。
 - [改进] Docker 镜像支持非 root 用户 (`dsa`, UID 1000) 执行，并增强 `Dockerfile` 安全性与构建稳健性。
 - [改进] 放宽 LiteLLM 依赖约束，保留 `>=1.80.10` 最低版本并显式排除 PyPI 事故版本 `1.82.7` / `1.82.8`，允许安装后续 1.x 修复版本。
 - [改进] 补齐通知渠道 P0 基线、Actions 映射与 `--check-notify` 只读诊断，完善 AstrBot 配置入口和通知回归快照。
