@@ -1333,6 +1333,16 @@ class StockAnalysisPipeline:
                     trend_result,
                     report_language,
                 )
+            if self._is_agent_field_missing(sniper_points.get("ideal_buy"), scalar=True):
+                sniper_points["ideal_buy"] = self._ideal_buy_fallback_from_trend(
+                    trend_result,
+                    report_language,
+                )
+            if self._is_agent_field_missing(sniper_points.get("take_profit"), scalar=True):
+                sniper_points["take_profit"] = self._take_profit_fallback_from_trend(
+                    trend_result,
+                    report_language,
+                )
 
     @staticmethod
     def _stop_loss_fallback_from_trend(
@@ -1340,6 +1350,30 @@ class StockAnalysisPipeline:
         report_language: str,
     ) -> Any:
         levels = getattr(trend_result, "support_levels", None) if trend_result else None
+        if levels:
+            return levels[0]
+        return "To be completed" if report_language == "en" else "待补充"
+
+    @staticmethod
+    def _ideal_buy_fallback_from_trend(
+        trend_result: Optional[TrendAnalysisResult],
+        report_language: str,
+    ) -> Any:
+        """Ideal entry near MA5 (first pullback zone); fall back to MA10 then MA20."""
+        if trend_result:
+            for attr in ("ma5", "ma10", "ma20"):
+                val = getattr(trend_result, attr, None)
+                if val and float(val) > 0:
+                    return round(float(val), 2)
+        return "To be completed" if report_language == "en" else "待补充"
+
+    @staticmethod
+    def _take_profit_fallback_from_trend(
+        trend_result: Optional[TrendAnalysisResult],
+        report_language: str,
+    ) -> Any:
+        """Take-profit at nearest resistance level."""
+        levels = getattr(trend_result, "resistance_levels", None) if trend_result else None
         if levels:
             return levels[0]
         return "To be completed" if report_language == "en" else "待补充"

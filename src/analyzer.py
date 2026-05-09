@@ -2407,6 +2407,10 @@ class GeminiAnalyzer:
 
                 # 提取 dashboard 数据
                 dashboard = self._get_first_present(data, 'dashboard', '决策仪表盘')
+                if not isinstance(dashboard, dict) or not dashboard.get('battle_plan'):
+                    synthesized = self._synthesize_dashboard_from_cn(data)
+                    if synthesized:
+                        dashboard = synthesized if not isinstance(dashboard, dict) else {**synthesized, **dashboard}
 
                 # 优先使用 AI 返回的股票名称（如果原名称无效或包含代码）
                 ai_stock_name = self._get_first_present(data, 'stock_name', '股票名称', '名称')
@@ -2531,6 +2535,53 @@ class GeminiAnalyzer:
         except json.JSONDecodeError as e:
             logger.warning(f"JSON 解析失败: {e}，标记为解析失败")
             return self._parse_text_response(response_text, code, name)
+
+    @staticmethod
+    def _synthesize_dashboard_from_cn(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a minimal dashboard dict from Chinese-keyed LLM output.
+
+        qwen3:8b often ignores the English JSON template and returns flat or
+        nested Chinese keys.  We probe the most common patterns here so that
+        sniper_points (ideal_buy / secondary_buy / stop_loss / take_profit)
+        survive parsing even when the model refuses to use the schema.
+        """
+        if not isinstance(data, dict):
+            return {}
+
+        def _pick(*keys: str) -> Any:
+            for k in keys:
+                v = data.get(k)
+                if v not in (None, "", []):
+                    return v
+            # Also probe one level of nesting under common parent keys
+            for parent in ('作战计划', '操作计划', '交易计划', '决策计划', '操作建议详情',
+                           '狙击计划', 'battle_plan', '决策仪表盘'):
+                d = data.get(parent)
+                if isinstance(d, dict):
+                    for k in keys:
+                        v = d.get(k)
+                        if v not in (None, "", []):
+                            return v
+            return None
+
+        ideal_buy = _pick('理想买入点', '理想入场位', '理想入场点', '最优买入点', '买入点', '入场点', '理想买点')
+        secondary_buy = _pick('次优买入点', '次优入场位', '次优买点', '保守买入点', '第二买入点')
+        stop_loss = _pick('止损位', '止损价', '止损点', '止损', '止损价格')
+        take_profit = _pick('目标位', '止盈位', '目标价', '止盈价', '目标价格', '盈利目标', '目标')
+
+        if not any([ideal_buy, secondary_buy, stop_loss, take_profit]):
+            return {}
+
+        return {
+            'battle_plan': {
+                'sniper_points': {
+                    'ideal_buy': ideal_buy or 'N/A',
+                    'secondary_buy': secondary_buy or 'N/A',
+                    'stop_loss': stop_loss or 'N/A',
+                    'take_profit': take_profit or 'N/A',
+                }
+            }
+        }
 
     @staticmethod
     def _get_first_present(data: Dict[str, Any], *keys: Any, default: Any = None) -> Any:
