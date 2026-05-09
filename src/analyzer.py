@@ -14,7 +14,7 @@ import json
 import logging
 import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List, Tuple, Callable
 
 import litellm
@@ -705,6 +705,7 @@ class AnalysisResult:
     news_summary: str = ""  # 近期重要新闻/公告摘要
     market_sentiment: str = ""  # 市场情绪分析
     hot_topics: str = ""  # 相关热点话题
+    news_evidence: List[Dict[str, Any]] = field(default_factory=list)  # 证据新闻/公告列表
 
     # ========== 综合分析 ==========
     analysis_summary: str = ""  # 综合分析摘要
@@ -755,6 +756,7 @@ class AnalysisResult:
             'news_summary': self.news_summary,
             'market_sentiment': self.market_sentiment,
             'hot_topics': self.hot_topics,
+            'news_evidence': self.news_evidence,
             'analysis_summary': self.analysis_summary,
             'key_points': self.key_points,
             'risk_warning': self.risk_warning,
@@ -908,8 +910,14 @@ class GeminiAnalyzer:
             "latest_news": "【最新消息】近期重要新闻摘要",
             "risk_alerts": ["风险点1：具体描述", "风险点2：具体描述"],
             "positive_catalysts": ["利好1：具体描述", "利好2：具体描述"],
-            "earnings_outlook": "业绩预期分析（基于年报预告、业绩快报等）",
-            "sentiment_summary": "舆情情绪一句话总结"
+            "earnings_outlook": "业绩预期分析：最新EPS/营收是否超预期？业绩指引是否上调/下调？",
+            "macro_outlook": "宏观与政策面：利率走向、监管变化、行业政策对该股的实际影响（对美股/港股尤其重要）",
+            "social_sentiment": "社交热度：Reddit/StockTwits/社交媒体上的散户情绪与关注度趋势",
+            "sentiment_summary": "舆情情绪一句话总结",
+            "news_confluence": {
+                "verdict": "支撑买入/中性/削弱/矛盾",
+                "summary": "基于X条搜索新闻的综合印证：说明关键新闻证据如何支持或削弱操作建议（无新闻时填"暂无足够新闻证据，仅凭技术面判断"）"
+            }
         },
 
         "battle_plan": {
@@ -1058,8 +1066,14 @@ class GeminiAnalyzer:
             "latest_news": "【最新消息】近期重要新闻摘要",
             "risk_alerts": ["风险点1：具体描述", "风险点2：具体描述"],
             "positive_catalysts": ["利好1：具体描述", "利好2：具体描述"],
-            "earnings_outlook": "业绩预期分析（基于年报预告、业绩快报等）",
-            "sentiment_summary": "舆情情绪一句话总结"
+            "earnings_outlook": "业绩预期分析：最新EPS/营收是否超预期？业绩指引是否上调/下调？",
+            "macro_outlook": "宏观与政策面：利率走向、监管变化、行业政策对该股的实际影响（对美股/港股尤其重要）",
+            "social_sentiment": "社交热度：Reddit/StockTwits/社交媒体上的散户情绪与关注度趋势",
+            "sentiment_summary": "舆情情绪一句话总结",
+            "news_confluence": {
+                "verdict": "支撑买入/中性/削弱/矛盾",
+                "summary": "基于X条搜索新闻的综合印证：说明关键新闻证据如何支持或削弱操作建议（无新闻时填"暂无足够新闻证据，仅凭技术面判断"）"
+            }
         },
 
         "battle_plan": {
@@ -2145,12 +2159,13 @@ class GeminiAnalyzer:
         else:
             prompt += f"""
 
-### 重点关注（必须明确回答）：
-1. ❓ 当前结构是否满足激活技能的关键触发条件？
-2. ❓ 当前入场位置与风险回报是否合理？若偏离过大，请明确说明等待条件
-3. ❓ 量能、波动与筹码结构是否支持当前结论？
-4. ❓ 消息面有无重大利空或与技能结论冲突的信息？
-5. ❓ 若结论成立，具体触发条件、止损位、观察点分别是什么？
+### 重点关注（必须明确回答，技术面与基本面同等权重）：
+1. ❓ **基本面**：最新财报EPS/营收是超预期/符合/不及？业绩指引是否有变化？估值是否合理？
+2. ❓ **宏观政策**：当前利率走势、监管动态、行业政策对该股有何具体影响？是顺风还是逆风？
+3. ❓ **新闻催化**：近期是否有重大利好或利空事件（产品发布、合同、诉讼、高管变动等）？新闻面净多还是净空？
+4. ❓ **社交情绪**：社交媒体关注度趋势如何？散户情绪与机构判断是否一致？
+5. ❓ **技术面**：激活技能的关键触发条件是否满足？当前入场位置与风险回报是否合理？
+6. ❓ **综合判断**：以上4个非技术维度合计是多头还是空头？若与技术面方向相反，请明确说明如何权衡。
 """
         prompt += f"""
 
@@ -2161,7 +2176,9 @@ class GeminiAnalyzer:
 - **具体狙击点位**：买入价、止损价、目标价（精确到分）
 - **检查清单**：每项用 ✅/⚠️/❌ 标记
 - **消息面时间合规**：`latest_news`、`risk_alerts`、`positive_catalysts` 不得包含超出近{news_window_days}日或时间未知的信息
-- **技术面一致性**：严禁把“空头排列”和“多头排列”等互斥结论同时当作有效依据；若基本面/事件面与技术面冲突，必须明确写“事件先行、技术待确认”或“基本面偏多，但技术面尚未确认”
+- **多维度情报**：`macro_outlook` 须说明利率/监管/政策的实际影响；`social_sentiment` 须说明社交媒体情绪趋势；不得用”暂无数据”敷衍——若无搜索结果可依据行业常识推断并注明”基于行业背景推断”
+- **新闻印证**：`news_confluence.verdict` 必须从”支撑买入/中性/削弱/矛盾”中选一个；`news_confluence.summary` 须引用具体新闻标题或事件作为证据；若无新闻则填”暂无足够新闻证据，仅凭技术面判断”
+- **技术面一致性**：严禁把”空头排列”和”多头排列”等互斥结论同时当作有效依据；若基本面/事件面与技术面冲突，必须明确写”事件先行、技术待确认”或”基本面偏多，但技术面尚未确认”
  
 请输出完整的 JSON 格式决策仪表盘。"""
 
@@ -2175,6 +2192,9 @@ class GeminiAnalyzer:
 - This includes `stock_name`, `trend_prediction`, `operation_advice`, `confidence_level`, all nested dashboard text, checklist items, and every summary field.
 - Use the common English company name when you are confident. If not, keep the listed company name rather than inventing one.
 - When data is missing, explain it in English instead of Chinese.
+- `macro_outlook` must describe the concrete impact of rates/regulation/policy on this stock. `social_sentiment` must describe retail interest trends. If search results are absent, infer from industry context and note "inferred from sector background".
+- `news_confluence.verdict` must be one of: "Supports buy / Neutral / Weakens / Contradicts"; `news_confluence.summary` must cite specific news titles or events as evidence. If no news is available, write "No sufficient news evidence; judgment based on technicals only".
+- The overall recommendation must integrate all four non-technical dimensions (fundamentals, macro, news catalysts, social sentiment) with equal weight to technicals. A high-conviction buy call requires at least one non-technical dimension to confirm.
 """
         else:
             prompt += f"""
@@ -2399,6 +2419,7 @@ class GeminiAnalyzer:
                         'sentiment_score',
                         'system_score',
                         'score',
+                        '系统评分',
                         '综合评分',
                         '情绪评分',
                         '评分',
@@ -2424,6 +2445,7 @@ class GeminiAnalyzer:
                 trend_prediction = self._get_first_present(
                     data,
                     'trend_prediction',
+                    '趋势状态',
                     '趋势预测',
                     '趋势判断',
                     '趋势结论',

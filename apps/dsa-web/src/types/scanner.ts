@@ -61,6 +61,15 @@ export interface StockPick {
   llmDecision: string;
   whySelected?: string;
   selectionFactors?: string[];
+  newsEvidence?: Array<{
+    dimension?: string;
+    title?: string;
+    snippet?: string;
+    url?: string;
+    source?: string;
+    publishedDate?: string;
+    provider?: string;
+  }>;
   analysisSummary: string;
   thesis: InvestmentThesis;
 }

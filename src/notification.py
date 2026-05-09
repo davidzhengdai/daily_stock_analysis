@@ -711,6 +711,15 @@ class NotificationService(
                     news_lines.append(f"**市场情绪**：{result.market_sentiment}")
                 if hasattr(result, 'hot_topics') and result.hot_topics:
                     news_lines.append(f"**相关热点**：{result.hot_topics}")
+                evidence = getattr(result, 'news_evidence', []) or []
+                if evidence:
+                    news_lines.append("**新闻证据**：")
+                    for item in evidence[:5]:
+                        title = item.get('title', '')
+                        source = item.get('source') or item.get('provider') or ''
+                        url = item.get('url', '')
+                        suffix = f"（{source}）" if source else ""
+                        news_lines.append(f"- {title}{suffix}" + (f"：{url}" if url else ""))
                 if news_lines:
                     report_lines.extend([
                         "#### 📰 消息面/情绪面",
@@ -1078,6 +1087,19 @@ class NotificationService(
                             f"{result.news_summary}",
                             "",
                         ])
+                    evidence = getattr(result, 'news_evidence', []) or []
+                    if evidence:
+                        report_lines.extend([
+                            f"### 🧾 新闻证据",
+                            "",
+                        ])
+                        for item in evidence[:5]:
+                            title = item.get('title', '')
+                            source = item.get('source') or item.get('provider') or ''
+                            url = item.get('url', '')
+                            suffix = f"（{source}）" if source else ""
+                            report_lines.append(f"- {title}{suffix}" + (f"：{url}" if url else ""))
+                        report_lines.append("")
                 
                 report_lines.extend([
                     "---",
@@ -1472,6 +1494,20 @@ class NotificationService(
                     lines.append(f"- {str(cat)[:60]}")
         
         if info_added:
+            lines.append("")
+
+        evidence = getattr(result, 'news_evidence', []) or []
+        if evidence:
+            lines.extend([
+                "### 🧾 新闻证据",
+                "",
+            ])
+            for item in evidence[:5]:
+                title = item.get('title', '')
+                source = item.get('source') or item.get('provider') or ''
+                url = item.get('url', '')
+                suffix = f"（{source}）" if source else ""
+                lines.append(f"- {title}{suffix}" + (f"：{url}" if url else ""))
             lines.append("")
         
         # 狙击点位

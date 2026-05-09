@@ -384,21 +384,28 @@ class StockAnalysisPipeline:
             if self.search_service is not None and self.search_service.is_available:
                 logger.info(f"{stock_name}({code}) 开始多维度情报搜索...")
 
-                # 使用多维度搜索（最多5次搜索）
+                # 使用多维度搜索（最多7次搜索：5个基础维度 + 宏观政策 + 社交热度）
                 intel_results = self.search_service.search_comprehensive_intel(
                     stock_code=code,
                     stock_name=stock_name,
-                    max_searches=5
+                    max_searches=7
                 )
 
                 # 格式化情报报告
                 if intel_results:
-                    news_context = self.search_service.format_intel_report(intel_results, stock_name)
                     total_results = sum(
                         len(r.results) for r in intel_results.values() if r.success
                     )
                     logger.info(f"{stock_name}({code}) 情报搜索完成: 共 {total_results} 条结果")
-                    logger.debug(f"{stock_name}({code}) 情报搜索结果:\n{news_context}")
+                    if total_results > 0:
+                        news_context = self.search_service.format_intel_report(intel_results, stock_name)
+                        logger.debug(f"{stock_name}({code}) 情报搜索结果:\n{news_context}")
+                    else:
+                        logger.warning(
+                            "%s(%s) 情报搜索未返回有效新闻，AI 分析将不注入新闻上下文",
+                            stock_name,
+                            code,
+                        )
 
                     # 保存新闻情报到数据库（用于后续复盘与查询）
                     try:
@@ -484,6 +491,7 @@ class StockAnalysisPipeline:
             if result:
                 self._emit_progress(94, f"{stock_name}：正在校验并整理分析结果")
                 result.query_id = query_id
+                result.news_evidence = self._build_news_evidence(intel_results if 'intel_results' in locals() else {})
                 realtime_data = enhanced_context.get('realtime', {})
                 result.current_price = realtime_data.get('price')
                 result.change_pct = realtime_data.get('change_pct')
@@ -523,6 +531,44 @@ class StockAnalysisPipeline:
             logger.error(f"{stock_name}({code}) 分析失败: {e}")
             logger.exception(f"{stock_name}({code}) 详细错误信息:")
             return None
+
+    @staticmethod
+    def _build_news_evidence(intel_results: Optional[Dict[str, Any]], max_items: int = 6) -> List[Dict[str, Any]]:
+        """Extract article-level evidence from successful intel search results."""
+        if not intel_results:
+            return []
+        labels = {
+            "latest_news": "最新消息",
+            "announcements": "公司公告",
+            "market_analysis": "机构分析",
+            "risk_check": "风险排查",
+            "earnings": "业绩预期",
+            "industry": "行业分析",
+        }
+        evidence: List[Dict[str, Any]] = []
+        seen = set()
+        for dimension, response in intel_results.items():
+            if not getattr(response, "success", False):
+                continue
+            for item in getattr(response, "results", []) or []:
+                title = getattr(item, "title", "") or ""
+                url = getattr(item, "url", "") or ""
+                key = (title.strip().lower(), url.strip().lower())
+                if not title or key in seen:
+                    continue
+                seen.add(key)
+                evidence.append({
+                    "dimension": labels.get(dimension, dimension),
+                    "title": title,
+                    "snippet": getattr(item, "snippet", "") or "",
+                    "url": url,
+                    "source": getattr(item, "source", "") or getattr(response, "provider", ""),
+                    "published_date": getattr(item, "published_date", None),
+                    "provider": getattr(response, "provider", ""),
+                })
+                if len(evidence) >= max_items:
+                    return evidence
+        return evidence
     
     def _enhance_context(
         self,
