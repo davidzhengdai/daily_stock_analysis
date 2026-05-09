@@ -1,0 +1,138 @@
+name: mean_reversion_us
+display_name: Mean Reversion
+description: |
+  Statistical mean reversion with Bollinger Bands, RSI, Z-score, and VIX regime filter. Pairs/ETF context.
+category: reversal
+core_rules:
+  - 1
+  - 5
+required_tools:
+  - get_daily_history
+  - analyze_trend
+  - get_realtime_quote
+  - search_stock_news
+aliases:
+  - us reversion
+  - oversold
+  - overbought
+  - mean reversion
+default_priority: 85
+market_regimes:
+  - us_sideways
+  - us_volatile
+region: us
+instructions: |
+  **Mean Reversion Strategy**
+  
+  Trade the statistical tendency of prices to revert to their mean after extreme deviations.
+  Uses Bollinger Bands, RSI, Z-score, and VIX regime context.
+  
+  ---
+  
+  ## Step 1: Regime Filter — Is Mean Reversion Appropriate?
+  
+  Mean reversion ONLY works in range-bound or mildly volatile regimes. It fails catastrophically in trends.
+  
+  Trend Detection:
+  - Bollinger Band width: (upper - lower) / midline > 20% AND expanding = trending. DISABLE reversion.
+  - ADX > 30 with directional line sloping: trending. DISABLE.
+  - Price making consecutive higher highs / lower lows beyond 2 std dev: trending.
+  
+  If trending: output "Mean reversion not applicable — price is trending" and stop.
+  
+  ---
+  
+  ## Step 2: Extreme Deviation Detection
+  
+  ### Bollinger Bands (20,2)
+  - Price at/breaching lower band: +3
+  - Price in lower third (band to midline): +2
+  - Price near midline: +1
+  - Price in upper third: -1
+  - Price at/breaching upper band: -3
+  
+  ### RSI (14-period)
+  - RSI < 25: +3
+  - RSI 25-35: +2
+  - RSI 35-45: +1
+  - RSI 45-55: 0
+  - RSI 55-65: -1
+  - RSI 65-75: -2
+  - RSI > 75: -3
+  
+  ### Z-Score (20-day)
+    Z = (close - MA20) / stddev(20)
+  - Z < -2.0: +3
+  - Z -1.5 to -2.0: +2
+  - Z -1.0 to -1.5: +1
+  - Z -1.0 to +1.0: 0
+  - Z +1.0 to +1.5: -1
+  - Z +1.5 to +2.0: -2
+  - Z > +2.0: -3
+  
+  ### Consecutive Directional Days
+  - 5+ consecutive down days: +2
+  - 3-4 down days: +1
+  - 3-4 up days: -1
+  - 5+ up days: -2
+  
+  ---
+  
+  ## Step 3: Composite Score and State
+  
+  | Range       | State              | Action                  |
+  |-------------|--------------------|-------------------------|
+  | +8 to +11   | Extreme Oversold   | Heavy buy for reversion |
+  | +4 to +7    | Oversold           | Scale in                |
+  | -3 to +3    | Normal             | Hold / wait             |
+  | -7 to -4    | Overbought         | Reduce / trim           |
+  | -11 to -8   | Extreme Overbought | Exit / fade             |
+  
+  ---
+  
+  ## Step 4: Reversion Confirmation (Must Wait!)
+  
+  Oversold is not a buy signal by itself. Must wait for a trigger:
+  - Bullish engulfing: next session green candle body > prior red body
+  - Volume-supported bounce: relative volume > 1.5x on a green close
+  - Piercing line: open below prior close, close above prior midpoint
+  - RSI bullish divergence: price makes lower low, RSI makes higher low
+  - No trigger after 3 sessions: oversold condition may deepen; wait longer
+  
+  ---
+  
+  ## Step 5: Targets and Stops
+  
+  | Entry Signal              | Target 1       | Target 2      | Stop          |
+  |---------------------------|----------------|---------------|---------------|
+  | BB lower band + Z < -2    | BB midline     | MA20          | Entry low -2% |
+  | RSI < 25 oversold         | RSI 40         | RSI 50        | Session low -1.5% |
+  | 5+ down days + contraction| 38.2% retrace  | 50% retrace   | Low -1.5%     |
+  
+  ---
+  
+  ## Step 6: Sector / Pair Context
+  
+  - If the stock is in a sector ETF that is ALSO oversold: reversion probability increases (sector mean reversion)
+  - If only the stock is oversold while sector is fine: stock-specific problem, higher risk
+  - Pairs trade context: if stock is oversold vs its sector ETF, consider long stock / short ETF ratio trade
+  
+  ---
+  
+  ## Output Requirements
+  
+  - Regime assessment (range vs trend)
+  - Individual indicator scores and composite
+  - Reversion trigger status
+  - Targets and stop-loss
+  - Sector context
+  
+  ---
+  
+  **Score Adjustments:**
+  - Extreme oversold + trigger + range regime: sentiment_score +15
+  - Oversold + trigger: sentiment_score +10
+  - Oversold, no trigger: sentiment_score +3 (waiting)
+  - Extreme overbought + distribution: sentiment_score -10
+  - Trending regime: sentiment_score 0 (not applicable)
+  

@@ -1,0 +1,206 @@
+name: sector_leader_us
+display_name: Sector Leader
+description: IBD-style sector leader identification. RS rating, institutional sponsorship, leadership lifecycle, and breakout
+  context.
+category: trend
+core_rules:
+- 2
+- 7
+required_tools:
+- get_realtime_quote
+- get_sector_rankings
+- search_stock_news
+- get_daily_history
+aliases:
+- us leader
+- rs leader
+- market leader
+- leader
+default_priority: 80
+market_regimes:
+- us_sector_hot
+region: us
+instructions: '**Sector Leader Strategy**
+
+
+  Identify the leading stock in a sector rotation using an IBD-style approach.
+
+  Focus on relative strength, institutional accumulation, and leadership lifecycle.
+
+
+  ---
+
+
+  ## Step 1: Sector Health Check
+
+
+  Using get_sector_rankings:
+
+  - Stock''s GICS sector must rank in top 25% by 5-day return
+
+  - Sector 5-day average dollar volume > 20-day average by 1.3x: institutional money rotating in
+
+  - Sector advance/decline line positive (more stocks up than down)
+
+  - If top returns but no volume: hollow rally, leader cannot sustain
+
+
+  ---
+
+
+  ## Step 2: Leadership Scorecard (12 points)
+
+
+  | Dimension           | Max | Criterion                                                   |
+
+  |---------------------|-----|-------------------------------------------------------------|
+
+  | Daily rank          | 3   | #1 in sector for the session                                |
+
+  | 5-day RS            | 2   | Top 3 in sector by 5-day return                             |
+
+  | Breakout catalyst   | 2   | > 10% day on earnings or news in last 5 sessions            |
+
+  | Dollar volume       | 2   | Daily $ volume > 3x sector median                           |
+
+  | Turnover            | 1   | Turnover 5-15% (active, not frothy)                         |
+
+  | Institutional flow  | 2   | Large-lot net buying > small-lot net buying on balance       |
+
+
+  - >= 9: Confirmed leader. Standard position.
+
+  - 6-8: Contender. Light position, monitor for upgrade.
+
+  - < 6: Not a leader. Do not use this strategy.
+
+
+  ---
+
+
+  ## Step 3: RS Rating (IBD-Style)
+
+
+  Compute a simplified RS Rating (1-99 percentile):
+
+  - Weighted return: 60% x 3-month return + 40% x 1-month return
+
+  - Rank against all stocks in universe or sector
+
+  - RS >= 80: leadership territory
+
+  - RS >= 90: elite territory (top 10% of market)
+
+  - The best leaders typically have RS >= 85 BEFORE their major price runs
+
+
+  ---
+
+
+  ## Step 4: Leadership Lifecycle
+
+
+  | Phase        | Duration    | Action                                  |
+
+  |--------------|-------------|-----------------------------------------|
+
+  | Emergence    | Days 1-5    | Best risk/reward; enter on pullback     |
+
+  | Momentum     | Days 5-15   | Hold; add on 10 EMA/20 EMA pullbacks    |
+
+  | Climax       | Days 15-25  | Sell only; watch for exhaustion gaps    |
+
+  | Distribution | Day 25+     | Exit; volume declining, RS fading       |
+
+
+  Warning signs of phase transition:
+
+  - Relative volume declining for 3+ consecutive up days
+
+  - Closes in lower half of daily range repeatedly
+
+  - Sector RS begins to roll over while stock still rising (divergence)
+
+
+  ---
+
+
+  ## Step 5: Institutional Sponsorship
+
+
+  - Large-lot vs small-lot net flow: want large-lot dominant
+
+  - Accumulation/Distribution rating: more accumulation weeks than distribution weeks
+
+  - If large-lot is net selling while price still rising: distribution under cover of strength -> VETO
+
+  - Check recent 13F filings or fund ownership data if available
+
+
+  ---
+
+
+  ## Step 6: Entry and Position Management
+
+
+  | Phase           | Position | Stop          | Target                  |
+
+  |-----------------|----------|---------------|-------------------------|
+
+  | Emergence       | 30-50%   | -5% or 20 EMA | +15% or phase change    |
+
+  | Momentum        | Hold     | -5% trailing  | +25% partial exit       |
+
+  | Climax          | 10-20%   | -3%           | Exit on distribution signal |
+
+  | Distribution    | 0%       | --            | --                      |
+
+
+  ---
+
+
+  ## Step 7: Entry Rules
+
+
+  - Best entry: Day 2-4 of leadership emergence, first intraday pullback to 10 EMA holding
+
+  - Acceptable: Contracting-volume dip to 20 EMA in momentum phase
+
+  - No entry: Gap up > 5% at open (wait for pullback)
+
+  - No entry: Three consecutive 10%+ days (exhaustion risk)
+
+
+  ---
+
+
+  ## Output Requirements
+
+
+  - Leadership score breakdown and total
+
+  - RS Rating percentile
+
+  - Current lifecycle phase with evidence
+
+  - Institutional flow assessment
+
+  - Suggested position and stop
+
+
+  ---
+
+
+  **Score Adjustments:**
+
+  - Score >= 10 + emergence phase + RS > 90: sentiment_score +16
+
+  - Score 8-9 + momentum phase: sentiment_score +12
+
+  - Score 6-7 (contender): sentiment_score +7
+
+  - Climax / distribution phase: sentiment_score -8
+
+  - Large-lot net selling: sentiment_score -10 (VETO if persistent)
+
+  '

@@ -1,0 +1,248 @@
+name: volume_breakout_us
+display_name: Breakout
+description: High-volume breakout detection with accumulation analysis, short-squeeze potential assessment, and retest logic.
+category: trend
+core_rules:
+- 1
+- 2
+- 3
+- 5
+required_tools:
+- get_daily_history
+- analyze_trend
+- get_realtime_quote
+- search_stock_news
+aliases:
+- us breakout
+- breakout
+- volume breakout
+default_priority: 30
+market_regimes:
+- us_trending_up
+region: us
+instructions: '**Breakout Strategy**
+
+
+  Volume-confirmed breakout detection with pre-breakout accumulation analysis,
+
+  short-squeeze context, and retest entry logic.
+
+
+  ---
+
+
+  ## Step 1: Multi-Level Resistance Map
+
+
+  Use get_daily_history (120 days) + analyze_trend:
+
+
+  | Level | Source                                    | Strength       |
+
+  |-------|-------------------------------------------|----------------|
+
+  | R1    | 20-day high                               | Minor          |
+
+  | R2    | 50-day high / prior swing high            | Intermediate   |
+
+  | R3    | 200-day high / 52-week high               | Major          |
+
+  | R4    | Round number ($50, $100, $200, $500)      | Psychological  |
+
+  | R5    | Fibonacci 61.8% or 100% extension         | Technical      |
+
+  | R6    | IPO price (if listed < 2 years)           | Anchoring      |
+
+
+  ---
+
+
+  ## Step 2: Pre-Breakout Accumulation (Wyckoff)
+
+
+  Examine the 20-30 days before the breakout for accumulation signatures:
+
+
+  - Price compresses into tightening range (amplitude < 10%, contracting) with relative volume < 0.8 for 5+ days: +2
+
+  - Up days outnumber down days during the compression: +1
+
+  - Multiple tests of support with quick rejections (long lower wicks / spring patterns): +2
+
+  - No distribution signatures (no high-volume red days at the top of the range): +1
+
+  - Check short interest: if > 15% of float, breakout may trigger a squeeze (additional upside potential)
+
+
+  Accumulation Quality: 5-6 = textbook Wyckoff accumulation, 3-4 = decent, 0-2 = weak.
+
+
+  ---
+
+
+  ## Step 3: Breakout Quality Scorecard (20 points)
+
+
+  | Dimension            | Max | Criteria                                                    |
+
+  |----------------------|-----|-------------------------------------------------------------|
+
+  | Close strength       | 3   | Close at HOD +/- 0.3% (3) / upper third of range (2) / middle (1) |
+
+  | Volume expansion     | 3   | Relative volume > 3.0x (3) / 2.0-3.0x (2) / 1.5-2.0x (1)  |
+
+  | Body ratio           | 2   | Body > 70% of day''s range (2) / 50-70% (1)                  |
+
+  | Breakout margin      | 2   | Close > resistance by 2%+ (2) / 1-2% (1)                    |
+
+  | Accumulation quality | 3   | 5-6 pts (3) / 3-4 pts (2) / 1-2 pts (1)                    |
+
+  | Sector confirmation  | 2   | Sector ETF also breaking out (2) / neutral (1)              |
+
+  | Deviation safety     | 2   | MA5 deviation < 3% (2) / 3-5% (1) / > 5% (0)               |
+
+  | Resistance significance | 2 | Breaking R3+ (2) / R2 (1) / R1 (0.5)                    |
+
+  | Streak context       | 1   | Day 1-2 of up streak (1) / day 3+ (0, chasing)             |
+
+  | News catalyst        | 1   | Earnings beat / guidance raise / analyst upgrade (1)        |
+
+  | No adverse flags     | 1   | search_stock_news clean (1)                                  |
+
+
+  ---
+
+
+  ## Step 4: Short-Squeeze Overlay
+
+
+  If short interest > 15% of float:
+
+  - Breakout score gets +2 bonus (squeeze fuel)
+
+  - Position size can be 10% larger
+
+  - Trailing stop must be tighter (-3% vs -5%) because squeezes reverse violently
+
+  - Monitor short interest changes daily; if it drops > 20% in a week, squeeze is exhausting
+
+
+  ---
+
+
+  ## Step 5: Breakout Grade and Position
+
+
+  | Score   | Grade       | Position | Notes                          |
+
+  |---------|-------------|----------|---------------------------------|
+
+  | >= 16   | Textbook    | 50-70%   | Rare, high conviction           |
+
+  | 13-15   | Strong      | 30-50%   |                              |
+
+  | 10-12   | Standard    | 20-30%   |                              |
+
+  | 7-9     | Weak        | 10%      | Probe, wait for retest          |
+
+  | < 7     | Suspect     | 0%       | Likely false breakout           |
+
+
+  ---
+
+
+  ## Step 6: Retest Entry (The Institutional Entry)
+
+
+  Approximately 70-80% of breakouts retest the broken resistance (now support).
+
+  This retest is the highest-probability entry:
+
+
+  - Condition: pullback to former resistance +/- 1%, relative volume < 0.8, closes green or with long lower wick
+
+  - No retest after 5 days: enter on pullback to 10 EMA instead
+
+  - Retest fails (price closes back below former resistance): breakout invalid, exit
+
+
+  ---
+
+
+  ## Step 7: Targets and Risk Management
+
+
+  | Break Level | Target 1       | Target 2          | Initial Stop |
+
+  |-------------|----------------|-------------------|--------------|
+
+  | R1          | R2             | R3                | R1 -2%       |
+
+  | R2          | R3             | Measured move     | R2 -2%       |
+
+  | R3          | 52-wk high +10%| Measured move     | R3 -3%       |
+
+
+  - Trail stop to breakeven after +5%
+
+  - Trail stop to +5% profit after +10%
+
+  - Time stop: if price stalls at resistance for 7+ days without new high, exit
+
+
+  ---
+
+
+  ## Step 8: Fake Breakout Warnings
+
+
+  - Relative volume > 3.0x but candle has long upper wick (> 50% of body): distribution / bull trap
+
+  - Next session gaps down and closes below breakout level: false
+
+  - Stock already up > 8% in 3 days before breakout: news is priced in, breakout unreliable
+
+  - No volume expansion (relative volume < 1.2): lacks institutional sponsorship
+
+
+  ---
+
+
+  ## Output Requirements
+
+
+  - Resistance level and price
+
+  - Accumulation quality score
+
+  - Short interest context (if available)
+
+  - Breakout score breakdown and total
+
+  - Grade and position size
+
+  - Whether to wait for retest
+
+  - Target 1, Target 2, initial stop
+
+
+  ---
+
+
+  **Score Adjustments:**
+
+  - Textbook (> 16) + strong accumulation: sentiment_score +18
+
+  - Strong (13-15): sentiment_score +14
+
+  - Standard (10-12): sentiment_score +10
+
+  - + Short-squeeze overlay: bonus +3
+
+  - Weak + retest confirmed: sentiment_score +6
+
+  - Fake breakout signals: sentiment_score -8
+
+  - Sector ETF also breaking out: bonus +4
+
+  '

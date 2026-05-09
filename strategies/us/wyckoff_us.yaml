@@ -1,0 +1,235 @@
+name: wyckoff_us
+display_name: Wyckoff
+description: 'Wyckoff Method: market structure analysis through accumulation/distribution schematics, phase identification,
+  and spring/upthrust patterns.'
+category: framework
+core_rules:
+- 1
+- 2
+- 3
+- 4
+required_tools:
+- get_daily_history
+- analyze_trend
+- get_realtime_quote
+aliases:
+- us wyckoff
+- market structure
+- accumulation
+- distribution
+default_priority: 70
+market_regimes:
+- us_volatile
+region: us
+instructions: '**Wyckoff Market Structure Strategy**
+
+
+  Richard Wyckoff''s method for identifying accumulation and distribution through
+
+  price structure, volume analysis, and phase transitions. The US-market equivalent
+
+  of market structure / auction theory analysis.
+
+
+  ---
+
+
+  ## Step 1: Wyckoff Market Cycle
+
+
+  The market moves through four phases:
+
+  1. Accumulation: Smart money builds positions (trading range after decline)
+
+  2. Markup: Trend advances as public joins (breakout and trend)
+
+  3. Distribution: Smart money sells to latecomers (trading range after advance)
+
+  4. Markdown: Trend declines as supply overwhelms (breakdown and trend)
+
+
+  ---
+
+
+  ## Step 2: Accumulation Schematic
+
+
+  Using get_daily_history (120 days), identify the accumulation phases:
+
+
+  | Phase | Event                         | Volume Signature                        |
+
+  |-------|-------------------------------|-----------------------------------------|
+
+  | A     | Preliminary Support (PS) + Selling Climax (SC) | SC: extreme volume spike; AR: lower volume |
+
+  | B     | Secondary Test (ST)           | ST volume << SC volume (no supply)      |
+
+  | C     | Spring (shakeout)             | Brief break below support on low volume, immediate recovery |
+
+  | D     | Sign of Strength (SOS) + Last Point of Support (LPS) | SOS: high volume breakout; LPS: pullback on low volume
+  |
+
+  | E     | Breakout above trading range  | Expanding volume, confirms markup       |
+
+
+  ---
+
+
+  ## Step 3: Distribution Schematic
+
+
+  | Phase | Event                         | Volume Signature                        |
+
+  |-------|-------------------------------|-----------------------------------------|
+
+  | A     | Preliminary Supply (PSY) + Buying Climax (BC) | BC: extreme volume; AR: lower volume |
+
+  | B     | Secondary Test (ST)           | ST volume << BC volume (no demand)      |
+
+  | C     | Upthrust (UT)                 | Brief probe above resistance on high volume, immediate reversal |
+
+  | D     | Sign of Weakness (SOW) + Last Point of Supply (LPSY) | SOW: high volume breakdown; LPSY: rally on low volume |
+
+  | E     | Breakout below trading range  | Expanding volume, confirms markdown     |
+
+
+  ---
+
+
+  ## Step 4: Key Wyckoff Signals
+
+
+  ### Spring (Buy Signal)
+
+  - Price briefly breaks below support during accumulation Phase C
+
+  - Volume on the break is LOW (no supply)
+
+  - Price immediately recovers back into the range
+
+  - This is the highest-probability long entry in Wyckoff
+
+  - Stop: below spring low
+
+
+  ### Upthrust / UTAD (Sell Signal)
+
+  - Price briefly breaks above resistance during distribution Phase C
+
+  - Volume on the break is HIGH (distribution into strength)
+
+  - Price immediately reverses back into the range
+
+  - UTAD (Upthrust After Distribution): multiple UTs in sequence, each weaker
+
+  - This is the highest-probability short/exit signal
+
+  - Stop: above upthrust high
+
+
+  ---
+
+
+  ## Step 5: Phase and Volume Confirmation
+
+
+  Using analyze_trend for volume context:
+
+
+  | Phase          | Volume Pattern                                    | Confirmation |
+
+  |----------------|---------------------------------------------------|--------------|
+
+  | Accumulation   | Down waves on decreasing volume; up waves on increasing volume | Bullish divergence |
+
+  | Markup         | Rising volume on advances; contracting on pullbacks | Healthy trend |
+
+  | Distribution   | Up waves on decreasing volume; down waves on increasing volume | Bearish divergence |
+
+  | Markdown       | Rising volume on declines; contracting on bounces | Healthy downtrend |
+
+
+  ---
+
+
+  ## Step 6: Action Matrix by Phase
+
+
+  | Phase           | Action          | Position     | Key Level          |
+
+  |-----------------|-----------------|--------------|--------------------|
+
+  | Accumulation B  | Watch           | 0%           | SC low             |
+
+  | Accumulation C  | BUY (spring)    | 30-50%       | Spring low         |
+
+  | Accumulation D  | BUY (LPS)       | 20-30%       | Support zone       |
+
+  | Markup          | Hold / add dips | 50-70%       | 20/50 DMA          |
+
+  | Distribution B  | Hold, alert     | Maintain     | BC high            |
+
+  | Distribution C  | SELL (upthrust) | Exit / 10%   | Upthrust high      |
+
+  | Distribution D  | SELL (LPSY)     | Exit         | Resistance zone    |
+
+  | Markdown        | Avoid / short   | 0%           | --                 |
+
+
+  ---
+
+
+  ## Step 7: Effort vs Result (Wyckoff''s Law)
+
+
+  Compare volume (effort) with price range (result):
+
+  - High volume + wide range: harmony (trend continuation)
+
+  - High volume + narrow range: effort without result (potential reversal)
+
+  - Low volume + wide range: lack of effort (unsustainable, likely to reverse)
+
+  - Low volume + narrow range: no interest (consolidation, wait)
+
+
+  ---
+
+
+  ## Output Requirements
+
+
+  - Current Wyckoff phase with evidence
+
+  - Schematic position (A/B/C/D/E)
+
+  - Key signals present (spring, upthrust, SOS, SOW)
+
+  - Effort vs Result assessment
+
+  - Phase transition alert (e.g., "Accumulation Phase C spring may be forming")
+
+  - Action, position, key level to watch
+
+
+  ---
+
+
+  **Score Adjustments:**
+
+  - Accumulation Phase C spring confirmed: sentiment_score +20
+
+  - Accumulation Phase D LPS: sentiment_score +14
+
+  - Markup continuation: sentiment_score +12
+
+  - Distribution Phase C upthrust: sentiment_score -18
+
+  - Distribution Phase D LPSY: sentiment_score -12
+
+  - Markdown continuation: sentiment_score -15
+
+  - High volume + narrow range (effort without result): sentiment_score adjustment +/- 8 (direction dependent on context)
+
+  '

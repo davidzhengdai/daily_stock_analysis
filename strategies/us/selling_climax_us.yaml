@@ -1,0 +1,191 @@
+name: selling_climax_us
+display_name: Selling Climax
+description: Detect selling climaxes after extended declines. Uses volume spike, breadth washout, put/call ratio, and short
+  interest context.
+category: reversal
+core_rules:
+- 2
+- 3
+- 5
+required_tools:
+- get_daily_history
+- get_realtime_quote
+- analyze_trend
+- search_stock_news
+aliases:
+- us bottom
+- climax
+- capitulation
+- washout
+default_priority: 60
+market_regimes:
+- us_trending_down
+region: us
+instructions: '**Selling Climax Strategy**
+
+
+  Identify potential trend reversals after extended declines using volume climax,
+
+  breadth washout, and sentiment extremes. The best bottoms form when everyone who
+
+  wanted to sell has already sold.
+
+
+  ---
+
+
+  ## Step 1: Decline Qualification
+
+
+  Using get_daily_history (120 days):
+
+  - Max drawdown from 120-day high > 25% (REQUIRED)
+
+  - Duration since high > 40 trading days (bonus; rushed declines rarely form durable bottoms)
+
+  - Average true range (ATR) in last 10 days < 70% of ATR from 20-40 days ago: selling pressure exhausting
+
+
+  ---
+
+
+  ## Step 2: Volume Climax Detection
+
+
+  The selling climax is marked by a massive volume spike:
+
+
+  | Condition                                   | Points |
+
+  |---------------------------------------------|--------|
+
+  | Daily relative volume > 3.0x 20-day average | +3     |
+
+  | Daily relative volume > 5.0x (blow-off)     | +4     |
+
+  | Day closes green or in upper third of range  | +2     |
+
+  | Lower wick > 2x body (buyers absorb all selling) | +3  |
+
+  | Close above prior day''s high (outside day reversal) | +2  |
+
+  | Next day confirms with higher low            | +2     |
+
+
+  - Score >= 8: Textbook selling climax
+
+  - Score 5-7: Probable climax, needs confirmation
+
+  - Score < 5: Not a climax; likely continuation
+
+
+  ---
+
+
+  ## Step 3: Sentiment Extremes
+
+
+  Check for coincident sentiment signals:
+
+  - Put/call ratio > 1.2 (extreme fear)
+
+  - Short interest > 20% of float (highly shorted, squeeze fuel on reversal)
+
+  - News flow universally negative; analyst downgrades cluster; "death of the company" narratives appear
+
+  - Social media / Reddit sentiment extreme negative (contrarian indicator)
+
+  - VIX > 30 (fear regime — reversals from fear spikes are often violent)
+
+
+  ---
+
+
+  ## Step 4: Consecutive Validation (Critical)
+
+
+  A single climax day is not enough. Require:
+
+  - Next 2 sessions: no new low below climax day low
+
+  - Within 5 sessions: price must close above 5 EMA
+
+  - Within 10 sessions: higher low established (first step of trend change)
+
+  - If climax day low is violated within 5 days: climax failed, exit
+
+
+  ---
+
+
+  ## Step 5: Fundamental Catalyst Check
+
+
+  Using search_stock_news:
+
+  - Was there a specific catalyst for the selling? (earnings miss, guidance cut, scandal)
+
+  - If catalyst is one-time / non-structural: bottom may form quickly
+
+  - If catalyst is structural (secular decline, bankruptcy risk): avoid; climax is just a pause
+
+  - Look for insider buying (officers/directors buying on the open market): powerful confirmation signal
+
+
+  ---
+
+
+  ## Step 6: Position Sizing by Signal Strength
+
+
+  | Signal                        | Position | Stop              | Add Condition                       |
+
+  |-------------------------------|----------|-------------------|-------------------------------------|
+
+  | Textbook climax (>= 8 pts)    | 20-30%   | Climax day low    | 5 days above 10 EMA, add 10%        |
+
+  | Probable climax (5-7 pts)     | 10-15%   | Climax day low -2%| 7 days no new low, add 5%           |
+
+  | Weak signal (3-4 pts)         | 5%       | Recent low -2%    | 10-day validation, add 5%           |
+
+
+  Reversal trades are inherently lower probability than trend trades.
+
+  Position sizes are deliberately smaller. Never average down.
+
+
+  ---
+
+
+  ## Output Requirements
+
+
+  - Max drawdown and days since high
+
+  - Volume climax score breakdown
+
+  - Sentiment indicators (put/call, short interest, VIX)
+
+  - Consecutive validation status
+
+  - Fundamental catalyst assessment
+
+  - Position size and stop
+
+
+  ---
+
+
+  **Score Adjustments:**
+
+  - Textbook climax (> 8) + insider buying: sentiment_score +14
+
+  - Probable climax (5-7) + sentiment extreme: sentiment_score +10
+
+  - Weak climax + validation in progress: sentiment_score +5
+
+  - Climax low violated: sentiment_score -8 (failed setup)
+
+  - Structural decline / bankruptcy risk: sentiment_score -20 (VETO)
+
+  '

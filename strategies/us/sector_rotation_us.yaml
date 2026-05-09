@@ -1,0 +1,205 @@
+name: sector_rotation_us
+display_name: Sector Rotation
+description: GICS sector momentum rotation. Rank sectors by momentum and flow, rotate capital into leaders. Uses sector ETFs
+  as benchmarks.
+category: trend
+core_rules:
+- 2
+- 3
+- 7
+required_tools:
+- get_daily_history
+- analyze_trend
+- get_realtime_quote
+- get_sector_rankings
+- search_stock_news
+aliases:
+- us rotation
+- sector rotation
+- relative rotation
+default_priority: 75
+market_regimes:
+- us_trending_up
+- us_sideways
+region: us
+instructions: '**Sector Rotation Strategy**
+
+
+  Rotate capital into leading GICS sectors and out of lagging ones.
+
+  Uses sector ETF performance as benchmark for institutional flow.
+
+
+  ---
+
+
+  ## Step 1: Sector Momentum Ranking
+
+
+  Using get_sector_rankings, rank all GICS sectors:
+
+
+  | Metric                       | Weight | Rationale                          |
+
+  |------------------------------|--------|------------------------------------|
+
+  | 5-day return (percentile)    | 40%    | Short-term momentum                |
+
+  | 10-day return (percentile)   | 30%    | Intermediate momentum              |
+
+  | 5-day volume delta vs 20-day | 20%    | Capital flow confirmation          |
+
+  | % stocks above 20 DMA        | 10%    | Breadth (broad participation)      |
+
+
+  Composite = weighted rank sum. Lower rank = better momentum.
+
+
+  ---
+
+
+  ## Step 2: ETF Flow Confirmation
+
+
+  Cross-reference sector rankings with sector ETF flows:
+
+  - Sector ETF 5-day volume / 20-day average > 1.3: institutional money rotating in
+
+  - Sector ETF price making higher highs while volume expanding: confirmed
+
+  - Sector ranked top 5 but ETF volume declining: hollow rally, rotation unsustainable
+
+  - Sector ranked bottom 5 but ETF volume rising: potential bottom, watch for reversal
+
+
+  ---
+
+
+  ## Step 3: Relative Rotation Graph (RRG) Logic
+
+
+  Classify sectors into four quadrants based on relative strength and momentum:
+
+  - Leading (RS up, momentum up): OVERWEIGHT. These are the rotation targets.
+
+  - Weakening (RS up, momentum down): HOLD. Prepare to rotate out.
+
+  - Lagging (RS down, momentum down): UNDERWEIGHT / AVOID.
+
+  - Improving (RS down, momentum up): WATCH. Potential future leaders.
+
+
+  Typical RRG path: Improving -> Leading -> Weakening -> Lagging -> Improving (clockwise).
+
+
+  ---
+
+
+  ## Step 4: Stock Selection Within Sector
+
+
+  Within each Leading quadrant sector, screen for:
+
+
+  | Criterion                          | Threshold                     |
+
+  |------------------------------------|-------------------------------|
+
+  | 5-day return > sector average      | Required                      |
+
+  | 5-day avg dollar volume > median   | Required (liquidity)          |
+
+  | RS vs sector ETF over 20 days > 1.0| Required (leading, not lagging) |
+
+  | 50 DMA > 200 DMA                   | Preferred (trend alignment)   |
+
+  | Deviation from 20 EMA < 6%         | Do not chase extended stocks  |
+
+
+  ---
+
+
+  ## Step 5: Rotation Signals
+
+
+  Rotate IN:
+
+  - Sector enters Leading quadrant from Improving: strongest signal (anticipatory)
+
+  - Sector already in Leading, rank improving: continuation
+
+  - Sector ETF relative volume > 1.5x, making new 20-day high vs SPY: institutional sponsorship
+
+
+  Rotate OUT:
+
+  - Sector enters Lagging quadrant from Weakening: exit
+
+  - Sector in Leading but momentum decelerating (RS up, momentum down): trim 50%
+
+  - Sector ETF relative volume declining for 5+ days: interest fading
+
+
+  ---
+
+
+  ## Step 6: Position Management
+
+
+  | Sector Quadrant | Portfolio Weight | Action                          |
+
+  |-----------------|------------------|---------------------------------|
+
+  | Leading         | 30-40% each      | Max 3 sectors simultaneously    |
+
+  | Improving       | 10-20%           | Anticipatory, small positions   |
+
+  | Weakening       | Reduce to 10%    | Trim, do not add                |
+
+  | Lagging         | 0%               | Exit fully                      |
+
+
+  Risk Controls:
+
+  - Single sector max 40% of portfolio
+
+  - Maximum 3 sectors held simultaneously
+
+  - SPY daily decline > 2%: pause all new rotation entries
+
+  - Any position down 3% within 5 days of entry: stop out
+
+
+  ---
+
+
+  ## Output Requirements
+
+
+  - Top 3 Leading quadrant sectors with momentum scores
+
+  - Stock''s sector quadrant classification
+
+  - Stock''s intra-sector ranking
+
+  - Rotation signal (in/out/hold)
+
+  - Weight and position recommendation
+
+
+  ---
+
+
+  **Score Adjustments:**
+
+  - Sector in Leading + stock #1 in sector: sentiment_score +15
+
+  - Sector in Leading + stock top 3: sentiment_score +12
+
+  - Sector in Improving + stock leading: sentiment_score +8
+
+  - Sector entering Lagging: sentiment_score -10
+
+  - Broad market selloff (SPY -2%): global -5
+
+  '
