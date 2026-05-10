@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [文档] 新增 Moomoo OpenD 安装、配置、Docker 连通性与 Web UI 验证指南。
 - [修复] 兼容本地模型返回中文评分字段、嵌套中文仪表盘、对象型 `系统评分` 和 `system_score`（如 `系统评分: 48/100` / `系统评分.系统评分: 52` / `system_score: 48`），避免分析结果总分误回退为 50。
 - [修复] Docker Compose 默认启用根目录 `litellm_config.yaml`，优先使用 `deepseek-smart-model` 并在失败时回退到 `ollama/qwen3:8b`，并避免空环境变量覆盖 `.env` 中的 LLM Provider API Key。
+- [修复] `openai/gpt-5.5` 通过 LiteLLM 调用时自动使用服务端要求的默认 temperature，避免因 `temperature=0.7` 被 OpenAI 拒绝后回退到本地模型。
+- [修复] Docker Compose 不再硬编码 `LITELLM_MODEL` / `LITELLM_FALLBACK_MODELS`，避免覆盖 `.env` 中的 YAML 路由选择。
+- [修复] LLM fallback 成功时日志显示实际响应模型，避免主模型失败后仍打印为主模型响应成功。
 
 ## [3.15.0] - 2026-05-05
 

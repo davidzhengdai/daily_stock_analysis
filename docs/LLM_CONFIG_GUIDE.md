@@ -192,13 +192,14 @@ LITELLM_MODEL=ollama/qwen3:8b
 - 如果当前环境没有任何有效 Agent 模型链路，问股页面会继续按失败语义返回，并直接展示后端真实配置诊断；补齐任一有效模型来源后即可恢复，无需额外执行配置迁移脚本。
 - 推荐的新配置方式仍然是显式设置 `LITELLM_MODEL` / `AGENT_LITELLM_MODEL` 或使用 `LLM_CHANNELS`；legacy provider keys 目前保留为兼容回退路径，方便旧 `.env`、本地 macOS 开发环境和历史部署平滑继续运行。
 
-### Kimi K2.6 固定 temperature 兼容说明
+### 固定 temperature 兼容说明
 
 - Moonshot 官方说明 Kimi API 兼容 OpenAI 接口，Base URL 使用 `https://api.moonshot.ai/v1`：<https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart>
 - LiteLLM 官方要求 OpenAI Compatible 渠道模型名使用 `openai/` 前缀：<https://docs.litellm.ai/docs/providers/openai_compatible>
 - Moonshot 官方兼容性文档区分两种固定值：**thinking 模式固定 `1.0`，non-thinking 模式固定 `0.6`**；传其它值会被接口拒绝：<https://platform.moonshot.ai/docs/guide/compatibility#parameters-differences-in-request-body>
 - 当前仓库的运行时依赖约束是 `litellm>=1.80.10,!=1.82.7,!=1.82.8,<2.0.0`（见 `requirements.txt`）；本次兼容逻辑按该约束回归验证了主分析、大盘复盘、Agent 直连 LiteLLM，以及系统设置页的渠道连通性测试。
 - 因此本项目会在请求发出前按**实际请求模式**归一化 `kimi-k2.6` 及其 `kimi-k2.6-*` 变体：默认 / thinking 路径使用 `temperature=1.0`；如果你的 LiteLLM YAML 路由别名里显式写了 `litellm_params.extra_body.thinking.type: disabled`（或等价 non-thinking 配置），则自动切到 `temperature=0.6`。你在 `.env` 或 Web 设置里保存的 `LLM_TEMPERATURE` 不会被改写。
+- `openai/gpt-5.5` 同样会在请求发出前自动使用 OpenAI 服务端要求的默认 `temperature=1.0`，避免 YAML 别名（如 `openai-smart-model`）继承全局 `0.7` 后被接口拒绝。
 - `SystemConfigService` 在 Web 设置保存 / 桌面端 `.env` 导入时只更新你提交的 key，不会因为切到 Kimi 静默清空、迁移或重写已有 `LLM_TEMPERATURE`；渠道测试请求里临时使用的 `1.0/0.6` 也不会回写到配置文件。
 - 非 Kimi 主模型、非 Kimi fallback 以及切回普通模型后的请求，仍继续使用你配置的温度；也就是说旧配置无需迁移，切换模型即可自动恢复原行为。
 - 本仓库兼容性回归覆盖见：`tests/test_llm_channel_config.py`、`tests/test_market_analyzer_generate_text.py`、`tests/test_agent_pipeline.py`、`tests/test_system_config_service.py`。
@@ -249,7 +250,7 @@ model_list:
       api_base: http://localhost:11434
 ```
 
-Docker Compose 默认挂载根目录 `litellm_config.yaml` 到容器内 `/app/litellm_config.yaml`，并显式设置 `LITELLM_CONFIG=/app/litellm_config.yaml`、`LITELLM_MODEL=deepseek-smart-model`、`LITELLM_FALLBACK_MODELS=ollama/qwen3:8b`。如果沿用仓库根目录示例中的 `os.environ/DEEPSEEK_API_KEY`，请在 `.env` 中提供 `DEEPSEEK_API_KEY`；其他 Provider Key（如 `OPENAI_API_KEY(S)`、`ANTHROPIC_API_KEY(S)`、`GEMINI_API_KEY(S)` 与 `LITELLM_API_KEY`）也通过同一个 `.env` 注入容器，方便后续 YAML 路由引用。
+Docker Compose 默认挂载根目录 `litellm_config.yaml` 到容器内 `/app/litellm_config.yaml`，并显式设置 `LITELLM_CONFIG=/app/litellm_config.yaml`；`LITELLM_MODEL` 与 `LITELLM_FALLBACK_MODELS` 由 `.env` 控制，避免部署文件覆盖 Web 设置页或手工 `.env` 中的路由选择。如果沿用仓库根目录示例中的 `os.environ/DEEPSEEK_API_KEY`，请在 `.env` 中提供 `DEEPSEEK_API_KEY`；其他 Provider Key（如 `OPENAI_API_KEY(S)`、`ANTHROPIC_API_KEY(S)`、`GEMINI_API_KEY(S)` 与 `LITELLM_API_KEY`）也通过同一个 `.env` 注入容器，方便后续 YAML 路由引用。
 
 ### GitHub Actions配置说明
 

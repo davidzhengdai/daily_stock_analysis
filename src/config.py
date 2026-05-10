@@ -60,12 +60,15 @@ ANSPIRE_LLM_MODEL_DEFAULT = "Doubao-Seed-2.0-lite"
 # - https://platform.moonshot.ai/docs/guide/compatibility#parameters-differences-in-request-body
 # - https://huggingface.co/moonshotai/Kimi-K2.6
 # - https://docs.litellm.ai/docs/providers/openai_compatible
-# Only the strict Kimi K2.6 family is normalized here; other models and
-# fallbacks continue using the configured runtime temperature.
+# Only provider-enforced fixed-temperature families are normalized here; other
+# models and fallbacks continue using the configured runtime temperature.
 _FIXED_TEMPERATURE_LITELLM_MODELS: Dict[str, Dict[str, float]] = {
     "kimi-k2.6": {
         "thinking": 1.0,
         "non_thinking": 0.6,
+    },
+    "gpt-5.5": {
+        "thinking": 1.0,
     },
 }
 AGENT_MAX_STEPS_DEFAULT = 10

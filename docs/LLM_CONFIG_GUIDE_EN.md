@@ -192,13 +192,14 @@ LITELLM_MODEL=ollama/qwen3:8b
 - If the current environment has no valid Agent model path at all, the ask-stock page still returns a failure and now surfaces the backend's real configuration diagnosis. As soon as you restore any valid model source, the flow recovers without running any migration step.
 - The recommended forward path is still to configure `LITELLM_MODEL` / `AGENT_LITELLM_MODEL` explicitly or move to `LLM_CHANNELS`; legacy provider keys remain a compatibility fallback for older `.env` files, local macOS development, and existing deployments.
 
-### Kimi K2.6 Fixed-Temperature Compatibility Notes
+### Fixed-Temperature Compatibility Notes
 
 - Moonshot officially documents Kimi as an OpenAI-compatible API, with `https://api.moonshot.ai/v1` as the base URL: <https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart>
 - LiteLLM officially requires the `openai/` prefix for OpenAI-compatible model routing: <https://docs.litellm.ai/docs/providers/openai_compatible>
 - Moonshot's compatibility docs distinguish two fixed values: **thinking mode must use `1.0`, while non-thinking mode must use `0.6`**; other values are rejected by the API: <https://platform.moonshot.ai/docs/guide/compatibility#parameters-differences-in-request-body>
 - The current runtime dependency constraint in this repository is `litellm>=1.80.10,!=1.82.7,!=1.82.8,<2.0.0` (see `requirements.txt`); this compatibility fix is regression-covered under that constraint across the main analyzer, market review, direct Agent LiteLLM calls, and the system-settings channel connectivity test path.
 - This repository therefore normalizes `kimi-k2.6` and `kimi-k2.6-*` right before dispatch based on the **actual request mode**: default / thinking requests use `temperature=1.0`; if your LiteLLM YAML route alias explicitly sets `litellm_params.extra_body.thinking.type: disabled` (or an equivalent non-thinking override), it automatically switches to `temperature=0.6`. Your saved `LLM_TEMPERATURE` value in `.env` or the Web settings is not rewritten.
+- `openai/gpt-5.5` is also normalized to OpenAI's required default `temperature=1.0` before dispatch, so YAML aliases such as `openai-smart-model` do not inherit the global `0.7` value and get rejected by the API.
 - `SystemConfigService` only updates keys that you actually submit when saving from the Web settings page or importing a desktop `.env`; switching to Kimi does not silently clear, migrate, or rewrite an existing `LLM_TEMPERATURE`. The temporary `1.0/0.6` used for Kimi channel tests is request-scoped and is not persisted back into the config file.
 - Non-Kimi primary models, non-Kimi fallbacks, and any request after switching away from Kimi still use your configured temperature. Existing configs do not need migration; changing the model restores the original behavior automatically.
 - Repository-side compatibility coverage lives in `tests/test_llm_channel_config.py`, `tests/test_market_analyzer_generate_text.py`, `tests/test_agent_pipeline.py`, and `tests/test_system_config_service.py`.
@@ -237,7 +238,7 @@ model_list:
       api_base: http://localhost:11434
 ```
 
-Docker Compose mounts the root `litellm_config.yaml` to `/app/litellm_config.yaml` and explicitly sets `LITELLM_CONFIG=/app/litellm_config.yaml`, `LITELLM_MODEL=deepseek-smart-model`, and `LITELLM_FALLBACK_MODELS=ollama/qwen3:8b`. If you use the root example's `os.environ/DEEPSEEK_API_KEY`, provide `DEEPSEEK_API_KEY` in `.env`. Other provider keys such as `OPENAI_API_KEY(S)`, `ANTHROPIC_API_KEY(S)`, `GEMINI_API_KEY(S)`, and `LITELLM_API_KEY` are injected into the container through the same `.env` file for future YAML routes.
+Docker Compose mounts the root `litellm_config.yaml` to `/app/litellm_config.yaml` and explicitly sets `LITELLM_CONFIG=/app/litellm_config.yaml`; `LITELLM_MODEL` and `LITELLM_FALLBACK_MODELS` are controlled by `.env` so deployment config does not override Web settings or hand-edited `.env` routing choices. If you use the root example's `os.environ/DEEPSEEK_API_KEY`, provide `DEEPSEEK_API_KEY` in `.env`. Other provider keys such as `OPENAI_API_KEY(S)`, `ANTHROPIC_API_KEY(S)`, `GEMINI_API_KEY(S)`, and `LITELLM_API_KEY` are injected into the container through the same `.env` file for future YAML routes.
 
 > **Priority Rule**: YAML is king! If YAML is configured, both **Channels Mode** and **Simple Mode** are entirely ignored. Hierarchy: `YAML > Channels > Simple`.
 
