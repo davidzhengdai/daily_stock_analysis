@@ -227,6 +227,7 @@ AGENT_CONTEXT_PROTECTED_TURNS=
 - 对已经产生部分内容的流式响应，系统不会在半截输出后切换参数；仍沿用原有“同模型非流式重试 / fallback 模型”的稳定路径，避免拼接出不一致的回答。
 - `SystemConfigService` 在 Web 设置保存 / 桌面端 `.env` 导入时只更新你提交的 key，不会因为切到严格 temperature 模型静默清空、迁移或重写已有 `LLM_TEMPERATURE`；渠道测试请求里的临时参数策略也不会回写到配置文件。
 - 非严格主模型、非严格 fallback 以及切回普通模型后的请求，仍继续使用你配置的温度；也就是说旧配置无需迁移，切换模型即可自动恢复原行为。
+- `openai/gpt-5.5` 同样会在请求发出前自动使用 OpenAI 服务端要求的默认 `temperature=1.0`，避免 YAML 别名（如 `openai-smart-model`）继承全局 `0.7` 后被接口拒绝。
 - 本仓库兼容性回归覆盖见：`tests/test_llm_channel_config.py`、`tests/test_market_analyzer_generate_text.py`、`tests/test_agent_pipeline.py`、`tests/test_system_config_service.py`。
 - 最小回滚方式：直接回退本次 LLM 参数适配相关改动，无需单独迁移已有 `LLM_TEMPERATURE` 配置。
 
@@ -281,7 +282,7 @@ model_list:
       api_base: http://localhost:11434
 ```
 
-Docker Compose 默认挂载根目录 `litellm_config.yaml` 到容器内 `/app/litellm_config.yaml`，并显式设置 `LITELLM_CONFIG=/app/litellm_config.yaml`、`LITELLM_MODEL=deepseek-smart-model`、`LITELLM_FALLBACK_MODELS=ollama/qwen3:8b`。如果沿用仓库根目录示例中的 `os.environ/DEEPSEEK_API_KEY`，请在 `.env` 中提供 `DEEPSEEK_API_KEY`；其他 Provider Key（如 `OPENAI_API_KEY(S)`、`ANTHROPIC_API_KEY(S)`、`GEMINI_API_KEY(S)` 与 `LITELLM_API_KEY`）也通过同一个 `.env` 注入容器，方便后续 YAML 路由引用。
+Docker Compose 默认挂载根目录 `litellm_config.yaml` 到容器内 `/app/litellm_config.yaml`，并显式设置 `LITELLM_CONFIG=/app/litellm_config.yaml`；`LITELLM_MODEL` 与 `LITELLM_FALLBACK_MODELS` 由 `.env` 控制，避免部署文件覆盖 Web 设置页或手工 `.env` 中的路由选择。如果沿用仓库根目录示例中的 `os.environ/DEEPSEEK_API_KEY`，请在 `.env` 中提供 `DEEPSEEK_API_KEY`；其他 Provider Key（如 `OPENAI_API_KEY(S)`、`ANTHROPIC_API_KEY(S)`、`GEMINI_API_KEY(S)` 与 `LITELLM_API_KEY`）也通过同一个 `.env` 注入容器，方便后续 YAML 路由引用。
 
 ### GitHub Actions配置说明
 

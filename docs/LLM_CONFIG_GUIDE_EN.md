@@ -206,6 +206,7 @@ For the single-agent ask-stock path, the backend also keeps a provider-aware tra
 - For streaming responses that already produced partial content, the runtime does not switch parameters mid-output. It keeps the existing same-model non-stream retry / fallback-model path to avoid stitching inconsistent answers together.
 - `SystemConfigService` only updates keys that you actually submit when saving from the Web settings page or importing a desktop `.env`; switching to a strict-temperature model does not silently clear, migrate, or rewrite an existing `LLM_TEMPERATURE`. Temporary request-time parameter strategies are not persisted back into the config file.
 - Non-strict primary models, non-strict fallbacks, and any request after switching back to a regular model still use your configured temperature. Existing configs do not need migration; changing the model restores the original behavior automatically.
+- `openai/gpt-5.5` is also normalized to OpenAI's required default `temperature=1.0` before dispatch, so YAML aliases such as `openai-smart-model` do not inherit the global `0.7` value and get rejected by the API.
 - Repository-side compatibility coverage lives in `tests/test_llm_channel_config.py`, `tests/test_market_analyzer_generate_text.py`, `tests/test_agent_pipeline.py`, and `tests/test_system_config_service.py`.
 - Minimal rollback: revert only the LLM generation-parameter adaptation change set; no separate `LLM_TEMPERATURE` migration is required.
 
@@ -248,7 +249,7 @@ model_list:
       api_base: http://localhost:11434
 ```
 
-Docker Compose mounts the root `litellm_config.yaml` to `/app/litellm_config.yaml` and explicitly sets `LITELLM_CONFIG=/app/litellm_config.yaml`, `LITELLM_MODEL=deepseek-smart-model`, and `LITELLM_FALLBACK_MODELS=ollama/qwen3:8b`. If you use the root example's `os.environ/DEEPSEEK_API_KEY`, provide `DEEPSEEK_API_KEY` in `.env`. Other provider keys such as `OPENAI_API_KEY(S)`, `ANTHROPIC_API_KEY(S)`, `GEMINI_API_KEY(S)`, and `LITELLM_API_KEY` are injected into the container through the same `.env` file for future YAML routes.
+Docker Compose mounts the root `litellm_config.yaml` to `/app/litellm_config.yaml` and explicitly sets `LITELLM_CONFIG=/app/litellm_config.yaml`; `LITELLM_MODEL` and `LITELLM_FALLBACK_MODELS` are controlled by `.env` so deployment config does not override Web settings or hand-edited `.env` routing choices. If you use the root example's `os.environ/DEEPSEEK_API_KEY`, provide `DEEPSEEK_API_KEY` in `.env`. Other provider keys such as `OPENAI_API_KEY(S)`, `ANTHROPIC_API_KEY(S)`, `GEMINI_API_KEY(S)`, and `LITELLM_API_KEY` are injected into the container through the same `.env` file for future YAML routes.
 
 > **Priority Rule**: YAML is king! If YAML is configured, both **Channels Mode** and **Simple Mode** are entirely ignored. Hierarchy: `YAML > Channels > Simple`.
 
