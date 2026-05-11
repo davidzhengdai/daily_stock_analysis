@@ -833,6 +833,12 @@ class Config:
     backtest_min_age_days: int = 14
     backtest_engine_version: str = "v1"
     backtest_neutral_band_pct: float = 2.0
+
+    # === 模型基准测试自动标注 ===
+    # 开启后，每次分析自动在 context_snapshot 中标注 model_id + 性能数据（延迟/Token/成本），
+    # 使得回测评估后可以自动产出跨模型对比报告，无需手动运行 benchmark CLI。
+    benchmark_auto_tag: bool = True
+    benchmark_auto_report: bool = True
     
     # === 日志配置 ===
     log_dir: str = "./logs"  # 日志文件目录
@@ -1597,6 +1603,8 @@ class Config:
             backtest_eval_window_days=parse_env_int(os.getenv('BACKTEST_EVAL_WINDOW_DAYS'), 10, field_name='BACKTEST_EVAL_WINDOW_DAYS', minimum=1),
             backtest_min_age_days=parse_env_int(os.getenv('BACKTEST_MIN_AGE_DAYS'), 14, field_name='BACKTEST_MIN_AGE_DAYS', minimum=1),
             backtest_engine_version=os.getenv('BACKTEST_ENGINE_VERSION', 'v1'),
+            benchmark_auto_tag=os.getenv('BENCHMARK_AUTO_TAG', 'true').lower() == 'true',
+            benchmark_auto_report=os.getenv('BENCHMARK_AUTO_REPORT', 'true').lower() == 'true',
             backtest_neutral_band_pct=parse_env_float(
                 os.getenv('BACKTEST_NEUTRAL_BAND_PCT'),
                 2.0,

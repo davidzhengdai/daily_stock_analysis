@@ -491,12 +491,14 @@ class StockAnalysisPipeline:
                 )
 
             self._emit_progress(64, f"{stock_name}：正在请求 LLM 生成报告")
+            _benchmark_t0 = time.perf_counter()
             result = self.analyzer.analyze(
                 enhanced_context,
                 news_context=news_context,
                 progress_callback=self._emit_progress,
                 stream_progress_callback=_on_llm_stream,
             )
+            _benchmark_latency_ms = (time.perf_counter() - _benchmark_t0) * 1000
 
             # Step 7.5a: 技术评分兜底 — LLM 未输出评分时使用 trend_result.signal_score
             if result and result.sentiment_score == 50 and trend_result is not None:
@@ -543,6 +545,17 @@ class StockAnalysisPipeline:
                         realtime_quote=realtime_quote,
                         chip_data=chip_data
                     )
+                    # === Benchmark auto-tag: 每次分析自动标注模型+性能数据 ===
+                    if getattr(self.config, 'benchmark_auto_tag', True):
+                        try:
+                            from src.services.model_benchmark import BenchmarkTagger
+                            context_snapshot = BenchmarkTagger.enrich_context_snapshot(
+                                existing_snapshot=context_snapshot,
+                                model_id=BenchmarkTagger.get_current_model_id(self.config),
+                                latency_ms=_benchmark_latency_ms,
+                            )
+                        except Exception as _benchmark_exc:
+                            logger.debug("Benchmark auto-tag skipped: %s", _benchmark_exc)
                     self.db.save_analysis_history(
                         result=result,
                         query_id=query_id,
@@ -897,7 +910,9 @@ class StockAnalysisPipeline:
                 message = f"Analyze stock {code} ({stock_name}) and return the full decision dashboard JSON in English."
             else:
                 message = f"请分析股票 {code} ({stock_name})，并生成决策仪表盘报告。"
+            _benchmark_t0 = time.perf_counter()
             agent_result = executor.run(message, context=initial_context)
+            _benchmark_latency_ms = (time.perf_counter() - _benchmark_t0) * 1000
 
             # 转换为 AnalysisResult
             result = self._agent_result_to_analysis_result(
@@ -963,6 +978,22 @@ class StockAnalysisPipeline:
             if result and result.success:
                 try:
                     initial_context["stock_name"] = resolved_stock_name
+                    # === Benchmark auto-tag: Agent 路径自动标注模型+性能数据 ===
+                    if getattr(self.config, 'benchmark_auto_tag', True):
+                        try:
+                            from src.services.model_benchmark import BenchmarkTagger
+                            model_id = (
+                                agent_result.model
+                                or BenchmarkTagger.get_current_model_id(self.config)
+                            )
+                            initial_context = BenchmarkTagger.enrich_context_snapshot(
+                                existing_snapshot=initial_context,
+                                model_id=model_id,
+                                latency_ms=_benchmark_latency_ms,
+                                agent_result=agent_result,
+                            )
+                        except Exception as _benchmark_exc:
+                            logger.debug("Benchmark auto-tag skipped (agent): %s", _benchmark_exc)
                     self.db.save_analysis_history(
                         result=result,
                         query_id=query_id,
