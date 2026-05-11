@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design: Model Benchmark — Multi-LLM Stock Prediction Validation</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --muted: #555;
+    --border: #e0e0e0;
+    --code-bg: #f5f5f5;
+    --accent: #2563eb;
+    --accent-dim: #dbeafe;
+    --warn-bg: #fffbeb;
+    --warn-border: #f59e0b;
+    --info-bg: #eff6ff;
+    --info-border: #3b82f6;
+    --tip-bg: #f0fdf4;
+    --tip-border: #22c55e;
+    --danger-bg: #fef2f2;
+    --danger-border: #ef4444;
+    --radius: 6px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    color: var(--fg);
+    background: var(--bg);
+    line-height: 1.7;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+  h2 { font-size: 1.5rem; margin-top: 2.5rem; margin-bottom: 0.75rem; color: var(--accent); }
+  h3 { font-size: 1.15rem; margin-top: 1.75rem; margin-bottom: 0.5rem; }
+  h4 { font-size: 1rem; margin-top: 1.25rem; margin-bottom: 0.4rem; }
+  p { margin-bottom: 1rem; }
+  ul, ol { margin: 0 0 1rem 1.5rem; }
+  li { margin-bottom: 0.35rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: var(--mono);
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    overflow-x: auto;
+    margin-bottom: 1.25rem;
+    font-size: 0.88em;
+    line-height: 1.5;
+  }
+  pre code { background: transparent; padding: 0; font-size: inherit; }
+  strong { color: #111; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+    font-size: 0.92em;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.6em 0.85em;
+    text-align: left;
+  }
+  th { background: var(--code-bg); font-weight: 600; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  .callout {
+    border-left: 4px solid;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .callout-info    { background: var(--info-bg); border-color: var(--info-border); }
+  .callout-warning { background: var(--warn-bg); border-color: var(--warn-border); }
+  .callout-tip     { background: var(--tip-bg); border-color: var(--tip-border); }
+  .callout-danger  { background: var(--danger-bg); border-color: var(--danger-border); }
+  .callout-title   { font-weight: 700; margin-bottom: 0.3rem; }
+
+  nav.toc {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 2rem;
+  }
+  nav.toc summary { font-weight: 700; cursor: pointer; }
+  nav.toc ol { margin-top: 0.5rem; }
+
+  details {
+    margin-bottom: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.75rem 1rem;
+  }
+  details summary { font-weight: 600; cursor: pointer; color: var(--accent); }
+  details[open] { background: var(--code-bg); }
+  details > *:not(summary) { margin-top: 0.75rem; }
+
+  .meta-box {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.75rem 1.25rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.88em;
+  }
+  .meta-box dt { font-weight: 600; color: var(--accent); margin-top: 0.4rem; }
+  .meta-box dd { margin-left: 0; color: var(--muted); margin-bottom: 0.4rem; }
+
+  .diagram {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    font-family: var(--mono);
+    font-size: 0.85em;
+    line-height: 1.6;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  .formula {
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    font-family: var(--mono);
+    font-size: 0.88em;
+  }
+
+  @media print {
+    body { max-width: 100%; padding: 0; font-size: 11pt; }
+    .callout { break-inside: avoid; }
+  }
+  @media (max-width: 640px) {
+    body { padding: 1rem; }
+    pre { font-size: 0.8em; }
+    h1 { font-size: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Design: Model Benchmark</h1>
+<p><strong>Multi-LLM Stock Prediction Accuracy Validation for US Equities</strong></p>
+
+<dl class="meta-box">
+  <dt>Status</dt><dd>Implemented</dd>
+  <dt>Module</dt><dd><code>src/services/model_benchmark.py</code></dd>
+  <dt>Date</dt><dd>2026-05-11</dd>
+  <dt>Dependencies</dt><dd><code>BacktestEngine</code>, <code>BacktestService</code>, <code>AnalysisHistory</code>, <code>AgentFactory</code></dd>
+  <dt>CLI Entry</dt><dd><code>python -m src.services.model_benchmark [--analyze|--evaluate|--report|--full]</code></dd>
+</dl>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<nav class="toc">
+  <details open>
+  <summary>Contents</summary>
+  <ol>
+    <li><a href="#motivation">Motivation &amp; Problem Statement</a></li>
+    <li><a href="#architecture">Architecture Overview</a></li>
+    <li><a href="#scoring">Scoring Formula</a></li>
+    <li><a href="#workflow">Three-Phase Workflow</a></li>
+    <li><a href="#data-model">Data Model &amp; Storage</a></li>
+    <li><a href="#model-override">Model Override Mechanism</a></li>
+    <li><a href="#cli">CLI Interface</a></li>
+    <li><a href="#edge-cases">Edge Cases &amp; Error Handling</a></li>
+    <li><a href="#limitations">Limitations &amp; Future Work</a></li>
+  </ol>
+  </details>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="motivation">1. Motivation &amp; Problem Statement</h2>
+
+<p>The system supports multiple LLM backends (Anthropic Claude, Google Gemini, OpenAI GPT, DeepSeek, Ollama local models, and OpenAI-compatible proxies like Anspire/AIHubMix). Each model produces different stock analysis results — different <em>operation_advice</em>, <em>decision_type</em>, <em>stop_loss</em>, and <em>take_profit</em> levels.</p>
+
+<p><strong>Core question:</strong> Which model produces the most <em>actionable and accurate</em> predictions for US stocks?</p>
+
+<p>Manual comparison is infeasible because:</p>
+<ul>
+  <li>Each analysis run costs money (API fees) and time (LLM latency)</li>
+  <li>Subjective judgment ("this report reads well") does not correlate with actual prediction accuracy</li>
+  <li>US market dynamics differ from CN — a model strong on A-shares may underperform on US equities</li>
+</ul>
+
+<p><strong>Solution:</strong> An automated benchmarking system that runs identical analyses through multiple models, backtests each prediction against actual future price data, and ranks models by a composite accuracy score.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="architecture">2. Architecture Overview</h2>
+
+<div class="diagram">
+┌──────────────────────────────────────────────────────────────────┐
+│                    ModelBenchmarkService                          │
+│                                                                   │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌────────────┐ │
+│  │ DISCOVER │───▶│ ANALYZE  │───▶│ EVALUATE │───▶│   REPORT   │ │
+│  │ models   │    │ N stocks │    │ backtest │    │ leaderboard│ │
+│  │          │    │ x M models│   │ results  │    │ + recommend│ │
+│  └──────────┘    └──────────┘    └──────────┘    └────────────┘ │
+│       │               │                │                │        │
+│       ▼               ▼                ▼                ▼        │
+│  Config.         AgentFactory    BacktestEngine     BenchmarkReport
+│  llm_model_list  (per model)     BacktestService    (text + JSON)
+└──────────────────────────────────────────────────────────────────┘
+</div>
+
+<h3>Key Design Decisions</h3>
+
+<table>
+<thead><tr><th>Decision</th><th>Rationale</th></tr></thead>
+<tbody>
+<tr><td>Zero schema changes</td><td><code>model_id</code> stored in existing <code>analysis_history.context_snapshot</code> JSON; no migration needed</td></tr>
+<tr><td>Reuses BacktestEngine</td><td>Existing win/loss/neutral classification, stop-loss/take-profit simulation, direction accuracy — all reused verbatim</td></tr>
+<tr><td>Env-var override for model switching</td><td><code>_ModelOverride</code> context manager temporarily sets <code>LITELLM_MODEL</code> + <code>AGENT_LITELLM_MODEL</code>, reloads config via <code>setup_env(override=True)</code></td></tr>
+<tr><td>Benchmark tagging via <code>context_snapshot</code></td><td><code>{"model_id": "...", "benchmark": true}</code> — report phase JOINs <code>backtest_results</code> ↔ <code>analysis_history</code> to filter by model</td></tr>
+<tr><td>5-day default eval window</td><td>US equities move faster than A-shares; 5 trading days is one calendar week and sufficient for short-term signal validation</td></tr>
+<tr><td>Separate analyze/evaluate phases</td><td>Analysis runs immediately; evaluation must wait for forward price data. Decoupling allows scheduling each phase independently</td></tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="scoring">3. Scoring Formula</h2>
+
+<p>The composite score is a weighted sum of five normalized metrics, scaled to 0–100:</p>
+
+<div class="formula">
+composite_score = 100 x (
+    direction_accuracy_norm * 0.35 +
+    win_rate_norm           * 0.30 +
+    excess_return_norm      * 0.20 +
+    consistency_norm        * 0.10 +
+    conviction_bonus        * 0.05
+)
+</div>
+
+<h3>Metric Definitions</h3>
+
+<table>
+<thead><tr><th>Metric</th><th>Weight</th><th>Raw Value</th><th>Normalization</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>Direction Accuracy</strong></td>
+  <td>35%</td>
+  <td>% of predictions where direction_correct=true</td>
+  <td>Linear: raw% &divide; 100</td>
+</tr>
+<tr>
+  <td><strong>Win Rate</strong></td>
+  <td>30%</td>
+  <td>win &divide; (win + loss), neutrals excluded</td>
+  <td>Linear: raw% &divide; 100</td>
+</tr>
+<tr>
+  <td><strong>Excess Return</strong></td>
+  <td>20%</td>
+  <td>Mean actual <code>stock_return_pct</code> across all completed evals</td>
+  <td>Sigmoid: 1/(1+e<sup>-r/5</sup>) — maps +10%→0.88, 0%→0.50, -10%→0.12</td>
+</tr>
+<tr>
+  <td><strong>Consistency</strong></td>
+  <td>10%</td>
+  <td>1 &minus; CV where CV = |stdev(returns) / mean(returns)|</td>
+  <td>Clamp: max(0, 1 &minus; CV/2). CV=0→1.0, CV&ge;2→0.0</td>
+</tr>
+<tr>
+  <td><strong>Conviction Bonus</strong></td>
+  <td>5%</td>
+  <td>Rewards decisive models that are correct; penalizes bold-but-wrong</td>
+  <td>decisive_ratio*0.4 + correct_when_decisive*0.6</td>
+</tr>
+</tbody>
+</table>
+
+<h3>Conviction Bonus Detail</h3>
+
+<p>A model is "decisive" when it outputs <code>position_recommendation=long</code> (i.e., it actually recommends buying, not just holding cash):</p>
+
+<pre><code>decisive_ratio = count(position=long) / total_analyses
+correct_ratio  = count(decisive AND win) / count(decisive AND (win OR loss))
+conviction     = decisive_ratio * 0.4 + correct_ratio * 0.6</code></pre>
+
+<p>A model that always says "hold" gets conviction = 0.5 (neutral). A model that takes bold long positions and is right gets &gt; 0.5. A model that takes bold long positions and is wrong gets &lt; 0.5.</p>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="workflow">4. Three-Phase Workflow</h2>
+
+<h3>Phase 1: Analyze (Day 0)</h3>
+<pre><code>python -m src.services.model_benchmark --analyze --stocks AAPL,NVDA,MSFT</code></pre>
+<ol>
+  <li><code>discover_models()</code> reads <code>config.llm_model_list</code> (aggregated from LLM_CHANNELS + legacy env vars)</li>
+  <li>For each model, <code>_ModelOverride</code> temporarily sets <code>LITELLM_MODEL</code></li>
+  <li><code>build_agent_executor()</code> creates a fresh agent with the overridden model</li>
+  <li>Full pipeline runs (Technical → Intel → Decision) for each stock</li>
+  <li>Dashboard output is stored in <code>analysis_history</code> with <code>context_snapshot={"model_id":"...","benchmark":true}</code></li>
+</ol>
+
+<h3>Phase 2: Evaluate (Day 5+)</h3>
+<pre><code>python -m src.services.model_benchmark --evaluate --days 5</code></pre>
+<ol>
+  <li>Calls <code>BacktestService.run_backtest()</code> which finds all pending analyses</li>
+  <li>For each, fetches forward daily bars via <code>DataFetcherManager</code></li>
+  <li><code>BacktestEngine.evaluate_single()</code> classifies each prediction as win/loss/neutral</li>
+  <li>Results stored in <code>backtest_results</code> table</li>
+</ol>
+
+<h3>Phase 3: Report</h3>
+<pre><code>python -m src.services.model_benchmark --report</code></pre>
+<ol>
+  <li>JOINs <code>backtest_results</code> ↔ <code>analysis_history</code> to get model_id for each result</li>
+  <li>Groups results by model_id, computes per-model metrics</li>
+  <li>Calculates composite score, ranks models</li>
+  <li>Outputs text leaderboard and JSON report, saves to <code>reports/</code></li>
+</ol>
+
+<h3>All-in-One</h3>
+<pre><code>python -m src.services.model_benchmark --full --stocks AAPL,TSLA</code></pre>
+<p>Runs all three phases sequentially. Useful for immediate testing when eval window is 0 (same-day analysis + evaluation).</p>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="data-model">5. Data Model &amp; Storage</h2>
+
+<h3>No new tables — reuse of existing schema</h3>
+
+<table>
+<thead><tr><th>Table</th><th>Field</th><th>Usage</th></tr></thead>
+<tbody>
+<tr>
+  <td><code>analysis_history</code></td>
+  <td><code>context_snapshot</code> (TEXT/JSON)</td>
+  <td>Stores <code>{"model_id":"openai/gpt-5.5","benchmark":true,"decision_type":"buy",...}</code></td>
+</tr>
+<tr>
+  <td><code>analysis_history</code></td>
+  <td><code>operation_advice</code></td>
+  <td>The model's trading advice — "买入", "Buy", "观望", etc.</td>
+</tr>
+<tr>
+  <td><code>analysis_history</code></td>
+  <td><code>stop_loss</code>, <code>take_profit</code></td>
+  <td>Sniper points from dashboard → used by BacktestEngine for simulated exit</td>
+</tr>
+<tr>
+  <td><code>backtest_results</code></td>
+  <td><code>analysis_history_id</code> (FK)</td>
+  <td>Links backtest outcome to the original analysis (and thus to model_id)</td>
+</tr>
+<tr>
+  <td><code>backtest_results</code></td>
+  <td><code>outcome</code>, <code>direction_correct</code>, <code>stock_return_pct</code></td>
+  <td>Per-prediction accuracy metrics</td>
+</tr>
+</tbody>
+</table>
+
+<h3>Report Query (conceptual)</h3>
+<pre><code>SELECT bt.*, ah.context_snapshot
+FROM backtest_results bt
+JOIN analysis_history ah ON bt.analysis_history_id = ah.id
+WHERE bt.eval_window_days = 5
+  AND bt.eval_status = 'completed'
+  AND ah.context_snapshot LIKE '%"benchmark": true%'</code></pre>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="model-override">6. Model Override Mechanism</h2>
+
+<p>The system normally reads the primary model from <code>LITELLM_MODEL</code> env var at startup. To run the same analysis through multiple models without restarting the process, <code>_ModelOverride</code> is a context manager that:</p>
+
+<ol>
+  <li>Saves current <code>LITELLM_MODEL</code> and <code>AGENT_LITELLM_MODEL</code></li>
+  <li>Sets both to the target model_id</li>
+  <li>Calls <code>setup_env(override=True)</code> to reload <code>Config</code> with the new model</li>
+  <li>On <code>__exit__</code>, restores original values and reloads again</li>
+</ol>
+
+<div class="callout callout-warning">
+<div class="callout-title">Thread Safety</div>
+<p>This mutates <em>process-level</em> environment variables. Concurrent benchmark runs on the same process are <strong>not supported</strong>. Each phase (analyze/evaluate/report) should run sequentially in its own process invocation.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="cli">7. CLI Interface</h2>
+
+<table>
+<thead><tr><th>Flag</th><th>Purpose</th><th>Example</th></tr></thead>
+<tbody>
+<tr><td><code>--list-models</code></td><td>Discover and display all configured models</td><td><code>--list-models</code></td></tr>
+<tr><td><code>--analyze</code></td><td>Run analysis for specified stocks through all (or selected) models</td><td><code>--analyze --stocks AAPL,NVDA --models anthropic/claude-sonnet-4-6</code></td></tr>
+<tr><td><code>--evaluate</code></td><td>Backtest stored predictions against actual price data</td><td><code>--evaluate --days 5</code></td></tr>
+<tr><td><code>--report</code></td><td>Generate comparison leaderboard from stored results</td><td><code>--report --json</code></td></tr>
+<tr><td><code>--full</code></td><td>Run all three phases in sequence</td><td><code>--full --stocks AAPL,TSLA</code></td></tr>
+<tr><td><code>--stocks</code></td><td>Comma-separated stock codes (required for --analyze / --full)</td><td><code>--stocks AAPL,NVDA,MSFT,TSLA,GOOGL</code></td></tr>
+<tr><td><code>--models</code></td><td>Limit to specific models (default: all discovered)</td><td><code>--models gemini/gemini-3.1-pro-preview,openai/gpt-5.5</code></td></tr>
+<tr><td><code>--days</code></td><td>Evaluation window in trading days (default: 5)</td><td><code>--days 10</code></td></tr>
+<tr><td><code>--json</code></td><td>Output report as JSON instead of formatted text</td><td><code>--report --json</code></td></tr>
+</tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="edge-cases">8. Edge Cases &amp; Error Handling</h2>
+
+<details>
+<summary><strong>No models configured</strong></summary>
+<p><code>discover_models()</code> returns empty list. CLI prints instructions for configuring <code>LLM_CHANNELS</code> or API keys.</p>
+</details>
+
+<details>
+<summary><strong>Stock limit exceeded</strong></summary>
+<p>Maximum 20 stocks per benchmark run. Prevents runaway API costs. Raises <code>ValueError</code>.</p>
+</details>
+
+<details>
+<summary><strong>Insufficient forward data</strong></summary>
+<p>BacktestEngine returns <code>eval_status="insufficient_data"</code>. These records are excluded from model scoring but counted separately.</p>
+</details>
+
+<details>
+<summary><strong>Model API failure during analysis</strong></summary>
+<p>Per-stock exception caught; error logged to <code>results["errors"]</code>. Other (stock, model) combinations continue unaffected.</p>
+</details>
+
+<details>
+<summary><strong>No benchmark-tagged results in database</strong></summary>
+<p><code>generate_report()</code> returns empty report with warning log. CLI prints "No benchmark data available."</p>
+</details>
+
+<details>
+<summary><strong>Config reload side effects</strong></summary>
+<p><code>_ModelOverride</code> calls <code>setup_env(override=True)</code> which reloads <code>dotenv</code>. This may affect other loaded modules. Mitigation: benchmark CLI always runs as a fresh process invocation.</p>
+</details>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<h2 id="limitations">9. Limitations &amp; Future Work</h2>
+
+<h3>Current Limitations</h3>
+<ul>
+  <li><strong>Process-level env mutation</strong> — <code>_ModelOverride</code> is not thread-safe. Parallel model analysis would require subprocess isolation.</li>
+  <li><strong>No cost tracking</strong> — Does not factor in API cost per model. A slightly less accurate but 10x cheaper model may be the practical best choice.</li>
+  <li><strong>Fixed eval window</strong> — All stocks share the same 5-day window. In practice, volatile vs stable stocks may need different horizons.</li>
+  <li><strong>No statistical significance test</strong> — Current ranking is purely score-based. Small sample sizes may produce misleading rankings.</li>
+  <li><strong>Single run per (stock, model)</strong> — LLM outputs have inherent randomness. Multiple runs per combination would give confidence intervals.</li>
+</ul>
+
+<h3>Planned Enhancements</h3>
+<table>
+<thead><tr><th>Enhancement</th><th>Priority</th><th>Effort</th></tr></thead>
+<tbody>
+<tr><td>Cost-per-prediction tracking (token usage + API pricing)</td><td>High</td><td>Medium</td></tr>
+<tr><td>Multi-run statistical significance (n=5 per stock-model combo)</td><td>Medium</td><td>High</td></tr>
+<tr><td>Per-sector breakdown (Tech vs Energy vs Healthcare accuracy)</td><td>Medium</td><td>Medium</td></tr>
+<tr><td>Time-decay weighting (more recent predictions weighted higher)</td><td>Low</td><td>Low</td></tr>
+<tr><td>Scheduled recurring benchmark (weekly via cron/GitHub Actions)</td><td>High</td><td>Medium</td></tr>
+<tr><td>Auto-select best model for production runs (feedback loop)</td><td>Low</td><td>High</td></tr>
+</tbody>
+</table>
+
+<hr>
+
+<h2>Related Documents</h2>
+<ul>
+  <li><a href="ENV_CONFIGURATION_GUIDE.html">ENV Configuration Guide</a> — how to configure LLM_CHANNELS for multi-model setup</li>
+  <li><a href="LINUX_DEPLOYMENT.html">Linux Deployment Guide</a> — deploying and scheduling benchmark runs</li>
+</ul>
+
+</body>
+</html>

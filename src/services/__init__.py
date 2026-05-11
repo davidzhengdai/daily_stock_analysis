@@ -22,6 +22,7 @@ def __getattr__(name: str):
         "StockService": "src.services.stock_service",
         "TaskService": "src.services.task_service",
         "get_task_service": "src.services.task_service",
+        "ModelBenchmarkService": "src.services.model_benchmark",
     }
     if name in _lazy_map:
         import importlib
@@ -36,5 +37,6 @@ __all__ = [
     "HistoryService",
     "StockService",
     "TaskService",
+    "ModelBenchmarkService",
     "get_task_service",
 ]
