@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>.env 配置 Step-by-Step 指南</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --muted: #555;
+    --border: #e0e0e0;
+    --code-bg: #f5f5f5;
+    --accent: #2563eb;
+    --accent-dim: #dbeafe;
+    --warn-bg: #fffbeb;
+    --warn-border: #f59e0b;
+    --info-bg: #eff6ff;
+    --info-border: #3b82f6;
+    --tip-bg: #f0fdf4;
+    --tip-border: #22c55e;
+    --danger-bg: #fef2f2;
+    --danger-border: #ef4444;
+    --radius: 6px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    color: var(--fg);
+    background: var(--bg);
+    line-height: 1.7;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+  h2 { font-size: 1.5rem; margin-top: 2.5rem; margin-bottom: 0.75rem; color: var(--accent); }
+  h3 { font-size: 1.15rem; margin-top: 1.75rem; margin-bottom: 0.5rem; }
+  h4 { font-size: 1rem; margin-top: 1.25rem; margin-bottom: 0.4rem; }
+  p { margin-bottom: 1rem; }
+  ul, ol { margin: 0 0 1rem 1.5rem; }
+  li { margin-bottom: 0.35rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: var(--mono);
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-size: 0.9em;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    overflow-x: auto;
+    margin-bottom: 1.25rem;
+    font-size: 0.88em;
+    line-height: 1.5;
+  }
+  pre code {
+    background: transparent;
+    padding: 0;
+    font-size: inherit;
+  }
+  strong { color: #111; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.5rem;
+    font-size: 0.92em;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.6em 0.85em;
+    text-align: left;
+  }
+  th { background: var(--code-bg); font-weight: 600; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+
+  .callout {
+    border-left: 4px solid;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .callout-info    { background: var(--info-bg);    border-color: var(--info-border); }
+  .callout-warning { background: var(--warn-bg);    border-color: var(--warn-border); }
+  .callout-tip     { background: var(--tip-bg);     border-color: var(--tip-border); }
+  .callout-danger  { background: var(--danger-bg);  border-color: var(--danger-border); }
+  .callout-title   { font-weight: 700; margin-bottom: 0.3rem; }
+
+  .step { counter-increment: step-counter; margin-bottom: 1.75rem; }
+  .step::before {
+    content: "Step " counter(step-counter);
+    display: block;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.3rem;
+  }
+  [data-steps] { counter-reset: step-counter; }
+
+  .option {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    background: #fafafa;
+  }
+  .option h4 { margin-top: 0; color: var(--accent); }
+
+  nav.toc {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 2rem;
+  }
+  nav.toc summary { font-weight: 700; cursor: pointer; }
+  nav.toc ol { margin-top: 0.5rem; }
+  nav.toc a { font-size: 0.93em; }
+
+  @media print {
+    body { max-width: 100%; padding: 0; font-size: 11pt; }
+    .callout { break-inside: avoid; }
+    pre { white-space: pre-wrap; word-wrap: break-word; }
+  }
+  @media (max-width: 640px) {
+    body { padding: 1rem; }
+    pre { font-size: 0.8em; }
+    h1 { font-size: 1.5rem; }
+  }
+</style>
+</head>
+<body>
+
+<h1>.env 配置 Step-by-Step 指南</h1>
+
+<p>本指南将一步步指导您完成 <code>.env</code> 文件的配置，确保系统能够正常运行。</p>
+
+<nav class="toc">
+  <details open>
+  <summary>配置概览</summary>
+  <ol>
+    <li>AI 模型配置（必须配置至少一个）</li>
+    <li>股票列表配置（必须配置）</li>
+    <li>通知渠道配置（必须配置至少一个）</li>
+    <li>可选功能配置</li>
+    <li>服务器配置</li>
+  </ol>
+  </details>
+</nav>
+
+<section data-steps>
+
+<div class="step">
+<h2 id="create-env">创建 .env 文件</h2>
+<pre><code># 在项目根目录下执行
+cp .env.example .env
+vim .env  # 或使用您喜欢的编辑器</code></pre>
+</div>
+
+<div class="step">
+<h2 id="ai-model">配置 AI 模型（至少选择一个）</h2>
+
+<div class="option">
+<h4>选项 A: Anspire（推荐，一Key多用）</h4>
+<pre><code># Anspire API Key（同时支持大模型和搜索）
+ANSPIRE_API_KEYS=your_anspire_api_key_here</code></pre>
+<p><strong>获取方式：</strong></p>
+<ol>
+  <li>访问 <a href="https://open.anspire.cn/?share_code=QFBC0FYC" target="_blank" rel="noopener">Anspire 开放平台</a></li>
+  <li>注册并获取 API Key</li>
+  <li>本项目用户有免费额度</li>
+</ol>
+</div>
+
+<div class="option">
+<h4>选项 B: AIHubMix（推荐，一Key多模型）</h4>
+<pre><code># AIHubMix API Key（支持全系模型）
+AIHUBMIX_KEY=your_aihubmix_api_key_here</code></pre>
+<p><strong>获取方式：</strong></p>
+<ol>
+  <li>访问 <a href="https://aihubmix.com/?aff=CfMq" target="_blank" rel="noopener">AIHubMix</a></li>
+  <li>注册并获取 API Key</li>
+  <li>本项目用户可享 10% 优惠</li>
+</ol>
+</div>
+
+<div class="option">
+<h4>选项 C: Google Gemini</h4>
+<pre><code># Gemini API Key
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.1-pro-preview</code></pre>
+<p><strong>获取方式：</strong></p>
+<ol>
+  <li>访问 <a href="https://aistudio.google.com/" target="_blank" rel="noopener">Google AI Studio</a></li>
+  <li>创建新的 API Key</li>
+  <li>免费额度有限，适合测试</li>
+</ol>
+</div>
+
+<div class="option">
+<h4>选项 D: Anthropic Claude</h4>
+<pre><code># Anthropic API Key
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+ANTHROPIC_MODEL=claude-sonnet-4-6</code></pre>
+<p><strong>获取方式：</strong></p>
+<ol>
+  <li>访问 <a href="https://console.anthropic.com/" target="_blank" rel="noopener">Anthropic Console</a></li>
+  <li>创建 API Key</li>
+  <li>按量付费，质量较高</li>
+</ol>
+</div>
+
+<div class="option">
+<h4>选项 E: OpenAI 兼容接口</h4>
+<pre><code># OpenAI API Key（或兼容接口如 DeepSeek、通义千问等）
+OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_BASE_URL=https://api.openai.com/v1  # 或其他兼容接口
+OPENAI_MODEL=gpt-4o-mini</code></pre>
+</div>
+</div>
+
+<div class="step">
+<h2 id="stock-list">配置股票列表（必须）</h2>
+
+<pre><code># 股票代码列表（逗号分隔）
+STOCK_LIST=600519,000001,300750</code></pre>
+
+<p><strong>股票代码格式：</strong></p>
+<ul>
+  <li><strong>A股</strong>: 6 位数字，如 <code>600519</code>（贵州茅台）</li>
+  <li><strong>港股</strong>: <code>hk</code> + 5 位数字，如 <code>hk00700</code>（腾讯控股）</li>
+  <li><strong>美股</strong>: 股票代码，如 <code>AAPL</code>（苹果）</li>
+</ul>
+
+<p><strong>示例配置：</strong></p>
+<pre><code># 只分析 A 股
+STOCK_LIST=600519,000001,300750
+
+# 混合市场
+STOCK_LIST=600519,hk00700,AAPL
+
+# 港股专用
+STOCK_LIST=hk00700,hk00941,hk00994</code></pre>
+</div>
+
+<div class="step">
+<h2 id="notify">配置通知渠道（至少选择一个）</h2>
+
+<div class="option">
+<h4>选项 A: 企业微信（推荐）</h4>
+<pre><code># 企业微信机器人 Webhook URL
+WECHAT_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_webhook_key</code></pre>
+<p><strong>配置步骤：</strong></p>
+<ol>
+  <li>在企业微信中创建机器人</li>
+  <li>获取 Webhook URL</li>
+  <li>复制 URL 中 <code>key=</code> 后面的部分</li>
+</ol>
+</div>
+
+<div class="option">
+<h4>选项 B: 飞书</h4>
+<pre><code># 飞书机器人 Webhook URL
+FEISHU_WEBHOOK_URL=https://open.feishu.cn/open-apis/bot/v2/hook/your_webhook_key</code></pre>
+<p><strong>配置步骤：</strong></p>
+<ol>
+  <li>在飞书中创建自定义机器人</li>
+  <li>获取 Webhook URL</li>
+  <li>如需签名验证，还需配置：</li>
+</ol>
+<pre><code>FEISHU_WEBHOOK_SECRET=your_secret_here</code></pre>
+</div>
+
+<div class="option">
+<h4>选项 C: Telegram</h4>
+<pre><code># Telegram Bot 配置
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id</code></pre>
+<p><strong>配置步骤：</strong></p>
+<ol>
+  <li>与 @BotFather 对话创建 Bot</li>
+  <li>获取 Bot Token</li>
+  <li>与您的 Bot 对话获取 Chat ID</li>
+</ol>
+</div>
+
+<div class="option">
+<h4>选项 D: 邮件通知</h4>
+<pre><code># 邮件配置
+EMAIL_SENDER=your_email@qq.com
+EMAIL_PASSWORD=your_authorization_code
+EMAIL_RECEIVERS=receiver1@example.com,receiver2@example.com</code></pre>
+<p><strong>配置步骤：</strong></p>
+<ol>
+  <li>使用 QQ 邮箱或其他 SMTP 服务</li>
+  <li>生成授权码（非登录密码）</li>
+  <li>配置收件人列表</li>
+</ol>
+</div>
+
+<div class="option">
+<h4>选项 E: 其他通知方式</h4>
+<pre><code># PushPlus（国内推送）
+PUSHPLUS_TOKEN=your_pushplus_token
+
+# Server酱（手机推送）
+SERVERCHAN3_SENDKEY=your_sendkey
+
+# 自定义 Webhook
+CUSTOM_WEBHOOK_URLS=https://your-webhook-url.com/notify</code></pre>
+</div>
+</div>
+
+<div class="step">
+<h2 id="search">配置搜索功能（可选但推荐）</h2>
+
+<div class="option">
+<h4>选项 A: SerpAPI（推荐）</h4>
+<pre><code># SerpAPI 实时金融新闻搜索
+SERPAPI_API_KEYS=your_serpapi_key_here</code></pre>
+</div>
+
+<div class="option">
+<h4>选项 B: Tavily</h4>
+<pre><code># Tavily 搜索 API
+TAVILY_API_KEYS=your_tavily_key_here</code></pre>
+</div>
+
+<div class="option">
+<h4>选项 C: 其他搜索服务</h4>
+<pre><code># Bocha 搜索
+BOCHA_API_KEYS=your_bocha_key_here
+
+# Brave Search
+BRAVE_API_KEYS=your_brave_key_here
+
+# MiniMax 搜索
+MINIMAX_API_KEYS=your_minimax_key_here</code></pre>
+</div>
+</div>
+
+<div class="step">
+<h2 id="schedule">配置定时任务（可选）</h2>
+<pre><code># 启用定时任务
+SCHEDULE_ENABLED=true
+SCHEDULE_TIME=18:00  # 每日执行时间（24小时制）
+
+# 启用大盘复盘
+MARKET_REVIEW_ENABLED=true</code></pre>
+</div>
+
+<div class="step">
+<h2 id="server">配置服务器参数（可选）</h2>
+<pre><code># Web 界面配置
+WEBUI_HOST=0.0.0.0  # 监听地址（0.0.0.0 表示所有接口）
+API_PORT=8000        # 端口号
+
+# 数据库路径
+DATABASE_PATH=./data/stock_analysis.db
+
+# 日志配置
+LOG_DIR=./logs
+LOG_LEVEL=INFO</code></pre>
+</div>
+
+</section>
+
+<hr>
+
+<h2>完整配置示例</h2>
+
+<h3>最小配置（仅必需项）</h3>
+<pre><code># AI 模型（选择一个）
+ANSPIRE_API_KEYS=your_anspire_key
+
+# 股票列表
+STOCK_LIST=600519,000001
+
+# 通知渠道（选择一个）
+WECHAT_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key</code></pre>
+
+<h3>推荐配置（完整功能）</h3>
+<pre><code># === AI 模型配置 ===
+ANSPIRE_API_KEYS=your_anspire_key
+GEMINI_API_KEY=your_gemini_key  # 备用
+
+# === 股票列表 ===
+STOCK_LIST=600519,000001,300750,hk00700,AAPL
+
+# === 通知渠道 ===
+WECHAT_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key
+EMAIL_SENDER=your_email@qq.com
+EMAIL_PASSWORD=your_auth_code
+
+# === 搜索配置 ===
+SERPAPI_API_KEYS=your_serpapi_key
+
+# === 定时任务 ===
+SCHEDULE_ENABLED=true
+SCHEDULE_TIME=18:00
+MARKET_REVIEW_ENABLED=true
+
+# === 服务器配置 ===
+WEBUI_HOST=0.0.0.0
+API_PORT=8000
+
+# === 数据源配置 ===
+TUSHARE_TOKEN=your_tushare_token  # 可选，用于更精准的数据</code></pre>
+
+<hr>
+
+<h2>配置验证</h2>
+
+<h3>验证步骤 1: 语法检查</h3>
+<pre><code># 检查 .env 文件语法
+python -c "
+import os
+from dotenv import load_dotenv
+load_dotenv()
+print('.env 文件语法正确')
+"</code></pre>
+
+<h3>验证步骤 2: 测试运行</h3>
+<pre><code># 干运行测试（不实际执行分析）
+python main.py --dry-run</code></pre>
+
+<h3>验证步骤 3: 检查配置完整性</h3>
+<pre><code># 启动应用查看配置状态
+python main.py --debug</code></pre>
+
+<hr>
+
+<h2>常见问题</h2>
+
+<details>
+<summary><strong>Q1: API Key 如何保密？</strong></summary>
+<p>确保 <code>.env</code> 文件不被提交到版本控制：</p>
+<pre><code># .gitignore 应该包含
+.env
+.env.local
+.env.*.local</code></pre>
+</details>
+
+<details>
+<summary><strong>Q2: 如何配置多个 API Key？</strong></summary>
+<p>某些服务支持多 Key 配置：</p>
+<pre><code># 多个 Gemini Key（逗号分隔）
+GEMINI_API_KEYS=key1,key2,key3
+
+# 多个搜索 Key
+ANSPIRE_API_KEYS=key1,key2,key3</code></pre>
+</details>
+
+<details>
+<summary><strong>Q3: 配置错误怎么办？</strong></summary>
+<p>查看日志文件定位问题：</p>
+<pre><code># 查看应用日志
+tail -f logs/stock_analysis_*.log
+
+# 重新配置
+vim .env
+python main.py --dry-run</code></pre>
+</details>
+
+<details>
+<summary><strong>Q4: 如何测试通知配置？</strong></summary>
+<p>手动发送测试消息：</p>
+<pre><code># 测试通知（需要先配置股票列表）
+python main.py --stocks 600519 --no-notify</code></pre>
+</details>
+
+<hr>
+
+<h2>重要提醒</h2>
+
+<div class="callout callout-warning">
+<div class="callout-title">必须配置</div>
+<p>AI 模型、股票列表、通知渠道 — 三者缺一不可。</p>
+</div>
+
+<div class="callout callout-danger">
+<div class="callout-title">API Key 安全</div>
+<p>不要泄露 API Key，不要提交到代码仓库。</p>
+</div>
+
+<div class="callout callout-tip">
+<div class="callout-title">渐进配置</div>
+<p>建议先配置最小版本，验证通过后再逐步添加功能。</p>
+</div>
+
+<ol style="margin-top: 1rem;">
+  <li><strong>必须配置项</strong>：AI 模型、股票列表、通知渠道</li>
+  <li><strong>API Key 安全</strong>：不要泄露 API Key，不要提交到代码仓库</li>
+  <li><strong>配置验证</strong>：使用 <code>--dry-run</code> 参数测试配置</li>
+  <li><strong>日志查看</strong>：遇到问题时查看日志文件</li>
+  <li><strong>逐步配置</strong>：建议先配置最小版本，再逐步添加功能</li>
+</ol>
+
+<hr>
+
+<h2>获取帮助</h2>
+
+<p>如果配置过程中遇到问题：</p>
+<ol>
+  <li>查看 <a href="FAQ.md">FAQ</a> 文档</li>
+  <li>检查日志文件 <code>logs/stock_analysis_*.log</code></li>
+  <li>使用 <code>python main.py --debug</code> 获取详细信息</li>
+  <li>在项目仓库提交 Issue</li>
+</ol>
+
+<div class="callout callout-info" style="margin-top: 2rem;">
+<p style="margin:0;"><strong>配置完成后，运行 <code>python main.py --dry-run</code> 验证配置正确性！</strong></p>
+</div>
+
+</body>
+</html>
