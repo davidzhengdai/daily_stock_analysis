@@ -81,6 +81,10 @@ model_list:
   #   litellm_params:
   #     model: ollama/qwen3:8b
   #     api_base: http://localhost:11434
+  # - model_name: ollama/kwangsuklee/Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF:latest
+  #   litellm_params:
+  #     model: ollama/kwangsuklee/Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF:latest
+  #     api_base: http://localhost:11434
 
 # ===================================
 # Router 设置（可选）

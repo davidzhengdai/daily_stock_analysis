@@ -98,7 +98,7 @@ describe('llmProviderTemplates', () => {
       gemini: 'gemini-3.1-pro-preview,gemini-3-flash-preview',
       anthropic: 'claude-sonnet-4-6,claude-opus-4-7',
       vertex_ai: 'gemini-3.1-pro-preview',
-      ollama: 'llama3.2,qwen2.5',
+      ollama: 'llama3.2,qwen2.5,kwangsuklee/Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF:latest',
     });
   });
 });
