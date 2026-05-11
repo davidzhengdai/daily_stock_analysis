@@ -1043,6 +1043,163 @@ class ModelBenchmarkService:
 
 
 # ---------------------------------------------------------------------------
+# BenchmarkTagger — passive / auto-tag every analysis for background scoring
+# ---------------------------------------------------------------------------
+
+class BenchmarkTagger:
+    """
+    被动评分标注器：在正常使用 main.py 运行分析时，自动为每一条分析结果标注
+    model_id + 性能元数据（延迟 / Token / 成本估算），使得后续回测评估后可以
+    自动产出跨模型对比报告，无需手动运行 benchmark CLI。
+
+    === 使用方式（由 pipeline 自动调用，用户无需操作） ===
+
+      from src.services.model_benchmark import BenchmarkTagger
+
+      # 在每次分析执行前后：
+      t0 = time.perf_counter()
+      result = run_analysis(...)
+      latency_ms = (time.perf_counter() - t0) * 1000
+
+      # 为 context_snapshot 注入 benchmark 标签：
+      enriched = BenchmarkTagger.enrich_context_snapshot(
+          existing_snapshot=original_context_snapshot,
+          model_id=config.litellm_model,
+          latency_ms=latency_ms,
+          agent_result=agent_result,   # Agent 路径传入，非 Agent 路径为 None
+      )
+
+      db.save_analysis_history(..., context_snapshot=enriched, ...)
+
+    === 存储格式（context_snapshot 内） ===
+
+      {
+          ...原有字段...,
+          "model_id": "anthropic/claude-sonnet-4-6",
+          "benchmark": true,
+          "benchmark_meta": {
+              "latency_ms": 3421.5,
+              "total_tokens": 8500,
+              "prompt_tokens": 5100,
+              "completion_tokens": 3400,
+              "estimated_cost_usd": 0.0663
+          }
+      }
+
+    只有含有 "benchmark": true 标记的分析记录，才会被 generate_report()
+    JOIN 查询纳入跨模型对比。
+    """
+
+    @staticmethod
+    def get_current_model_id(config) -> str:
+        """
+        获取当前正在使用的模型 ID。
+
+        优先级：
+        1. Agent 模式下的 AGENT_LITELLM_MODEL（显式配置）
+        2. Agent 模式下的 LITELLM_MODEL（fallback 继承）
+        3. 非 Agent 模式下的 LITELLM_MODEL
+        4. 环境变量 LITELLM_MODEL 兜底
+        """
+        # Check agent-specific model first
+        if getattr(config, 'agent_mode', False) or getattr(config, 'agent_skills', None):
+            agent_model = getattr(config, 'agent_litellm_model', '') or ''
+            if agent_model:
+                return agent_model
+        # Fall back to primary litellm model
+        primary = getattr(config, 'litellm_model', '') or ''
+        if primary:
+            return primary
+        # Last resort: env var
+        return os.environ.get('LITELLM_MODEL', 'unknown')
+
+    @staticmethod
+    def enrich_context_snapshot(
+        existing_snapshot: Optional[Dict[str, Any]],
+        model_id: str,
+        latency_ms: float,
+        agent_result: Any = None,
+    ) -> Dict[str, Any]:
+        """
+        为 context_snapshot 注入 benchmark 标注字段。
+
+        Args:
+            existing_snapshot: 原始 context_snapshot dict（可能为 None）
+            model_id: 当前使用的模型 ID（如 "anthropic/claude-sonnet-4-6"）
+            latency_ms: 分析耗时（毫秒）
+            agent_result: AgentResult 对象（Agent 路径传入，用于提取 Token 用量）
+
+        Returns:
+            注入 benchmark 字段后的新 dict（不修改原对象）
+        """
+        snapshot = dict(existing_snapshot) if existing_snapshot else {}
+
+        # 如果已有 benchmark 标记（例如 benchmark CLI 手动调用），保留不覆盖
+        # 但兼容日常路径未打标的情况
+        if snapshot.get("benchmark") and snapshot.get("model_id"):
+            # Already tagged, update perf meta only if missing
+            if not snapshot.get("benchmark_meta"):
+                snapshot["benchmark_meta"] = BenchmarkTagger._build_benchmark_meta(
+                    latency_ms, agent_result
+                )
+            return snapshot
+
+        # Extract token usage from AgentResult (agent path)
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+        if agent_result is not None:
+            total_tokens = getattr(agent_result, 'total_tokens', 0) or 0
+            stats = getattr(agent_result, 'stats', None)
+            if stats:
+                prompt_tokens = getattr(stats, 'total_prompt_tokens', 0) or 0
+                completion_tokens = getattr(stats, 'total_completion_tokens', 0) or 0
+            # 如果没有细分数据但有总量，估算 6:4 拆分
+            if not prompt_tokens and not completion_tokens and total_tokens:
+                prompt_tokens = int(total_tokens * 0.6)
+                completion_tokens = total_tokens - prompt_tokens
+
+        cost = estimate_cost(model_id, prompt_tokens, completion_tokens)
+
+        snapshot["model_id"] = model_id
+        snapshot["benchmark"] = True
+        snapshot["benchmark_meta"] = {
+            "latency_ms": round(latency_ms, 1),
+            "total_tokens": total_tokens,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "estimated_cost_usd": cost,
+        }
+        return snapshot
+
+    @staticmethod
+    def _build_benchmark_meta(
+        latency_ms: float,
+        agent_result: Any = None,
+    ) -> Dict[str, Any]:
+        """构建 benchmark_meta 子字典（内部复用）。"""
+        total_tokens = 0
+        prompt_tokens = 0
+        completion_tokens = 0
+        if agent_result is not None:
+            total_tokens = getattr(agent_result, 'total_tokens', 0) or 0
+            stats = getattr(agent_result, 'stats', None)
+            if stats:
+                prompt_tokens = getattr(stats, 'total_prompt_tokens', 0) or 0
+                completion_tokens = getattr(stats, 'total_completion_tokens', 0) or 0
+            if not prompt_tokens and not completion_tokens and total_tokens:
+                prompt_tokens = int(total_tokens * 0.6)
+                completion_tokens = total_tokens - prompt_tokens
+        return {
+            "latency_ms": round(latency_ms, 1),
+            "total_tokens": total_tokens,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "estimated_cost_usd": 0.0,  # model_id unknown at this point
+        }
+
+
+# ---------------------------------------------------------------------------
 # Report formatting (updated with performance section)
 # ---------------------------------------------------------------------------
 

@@ -559,6 +559,7 @@ class StockAnalysisPipeline:
                         else ("LLM returned empty result" if result is None else None)
                     ),
                 )
+                _benchmark_latency_ms = llm_duration_ms
             except Exception as exc:
                 record_llm_run(
                     success=False,
@@ -618,6 +619,17 @@ class StockAnalysisPipeline:
                         realtime_quote=realtime_quote,
                         chip_data=chip_data
                     )
+                    # === Benchmark auto-tag: 每次分析自动标注模型+性能数据 ===
+                    if getattr(self.config, 'benchmark_auto_tag', True):
+                        try:
+                            from src.services.model_benchmark import BenchmarkTagger
+                            context_snapshot = BenchmarkTagger.enrich_context_snapshot(
+                                existing_snapshot=context_snapshot,
+                                model_id=BenchmarkTagger.get_current_model_id(self.config),
+                                latency_ms=_benchmark_latency_ms,
+                            )
+                        except Exception as _benchmark_exc:
+                            logger.debug("Benchmark auto-tag skipped: %s", _benchmark_exc)
                     result.diagnostic_context_snapshot = context_snapshot
                     saved_count = self.db.save_analysis_history(
                         result=result,
@@ -1013,6 +1025,7 @@ class StockAnalysisPipeline:
             llm_started_at = time.monotonic()
             try:
                 agent_result = executor.run(message, context=initial_context)
+                _benchmark_latency_ms = (time.monotonic() - llm_started_at) * 1000
             except Exception as exc:
                 record_llm_run(
                     success=False,
@@ -1116,6 +1129,23 @@ class StockAnalysisPipeline:
                     )
                     result.diagnostic_context_snapshot = agent_context_snapshot
                     agent_context_snapshot["stock_name"] = resolved_stock_name
+                    # === Benchmark auto-tag: Agent 路径自动标注模型+性能数据 ===
+                    if getattr(self.config, 'benchmark_auto_tag', True):
+                        try:
+                            from src.services.model_benchmark import BenchmarkTagger
+                            model_id = (
+                                agent_result.model
+                                or BenchmarkTagger.get_current_model_id(self.config)
+                            )
+                            agent_context_snapshot = BenchmarkTagger.enrich_context_snapshot(
+                                existing_snapshot=agent_context_snapshot,
+                                model_id=model_id,
+                                latency_ms=_benchmark_latency_ms,
+                                agent_result=agent_result,
+                            )
+                        except Exception as _benchmark_exc:
+                            logger.debug("Benchmark auto-tag skipped (agent): %s", _benchmark_exc)
+                    result.diagnostic_context_snapshot = agent_context_snapshot
                     saved_count = self.db.save_analysis_history(
                         result=result,
                         query_id=query_id,

@@ -742,6 +742,34 @@ def run_full_analysis(
                     f"自动回测完成: processed={stats.get('processed')} saved={stats.get('saved')} "
                     f"completed={stats.get('completed')} insufficient={stats.get('insufficient')} errors={stats.get('errors')}"
                 )
+
+                # === Auto benchmark report: 回测后自动产出跨模型对比 ===
+                if getattr(config, 'benchmark_auto_report', True):
+                    try:
+                        from src.services.model_benchmark import ModelBenchmarkService, format_benchmark_report
+
+                        logger.info("正在生成自动模型基准测试报告...")
+                        bench_svc = ModelBenchmarkService()
+                        bench_report = bench_svc.generate_report(
+                            eval_window_days=getattr(config, 'backtest_eval_window_days', 10),
+                        )
+                        if bench_report.models:
+                            bench_text = format_benchmark_report(bench_report)
+                            logger.info("自动模型基准测试报告:\n%s", bench_text)
+                            # 可选：保存到 reports/ 目录
+                            try:
+                                from pathlib import Path
+                                reports_dir = Path("reports")
+                                reports_dir.mkdir(exist_ok=True)
+                                report_path = reports_dir / f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+                                report_path.write_text(bench_text, encoding="utf-8")
+                                logger.info("模型基准测试报告已保存: %s", report_path)
+                            except Exception as _save_exc:
+                                logger.debug("保存 benchmark 报告失败: %s", _save_exc)
+                        else:
+                            logger.info("暂无 benchmark 标注数据，跳过自动模型基准测试报告")
+                    except Exception as _benchmark_exc:
+                        logger.warning("自动模型基准测试报告生成失败（已忽略）: %s", _benchmark_exc)
         except Exception as e:
             logger.warning(f"自动回测失败（已忽略）: {e}")
 

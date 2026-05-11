@@ -163,7 +163,7 @@
   <dt>Status</dt><dd>Implemented</dd>
   <dt>Module</dt><dd><code>src/services/model_benchmark.py</code></dd>
   <dt>Date</dt><dd>2026-05-11</dd>
-  <dt>Dependencies</dt><dd><code>BacktestEngine</code>, <code>BacktestService</code>, <code>AnalysisHistory</code>, <code>AgentFactory</code></dd>
+  <dt>Dependencies</dt><dd><code>BacktestEngine</code>, <code>BacktestService</code>, <code>AnalysisHistory</code>, <code>AgentFactory</code>, <code>BenchmarkTagger</code></dd>
   <dt>CLI Entry</dt><dd><code>python -m src.services.model_benchmark [--analyze|--evaluate|--report|--full] [--parallel] [--debug] [--max-parallel N]</code></dd>
 </dl>
 
@@ -365,6 +365,39 @@ python -m src.services.model_benchmark --analyze --stocks AAPL,NVDA --parallel -
 <h3>All-in-One</h3>
 <pre><code>python -m src.services.model_benchmark --full --stocks AAPL,TSLA</code></pre>
 <p>Runs all three phases sequentially. Useful for immediate testing when eval window is 0 (same-day analysis + evaluation).</p>
+
+<h3>Phase 0: Passive Benchmarking (Zero-Click Background Collection)</h3>
+
+<div class="callout callout-tip">
+<div class="callout-title">核心设计理念：零操作、全自动</div>
+<p>用户<strong>无需</strong>显式调用 benchmark CLI。每次通过 <code>main.py</code> 正常分析股票时，系统自动在 <code>context_snapshot</code> 中标注当前使用的模型 ID 和性能数据（延迟 / Token / 成本估算），回测评估后自动产出跨模型对比报告。</p>
+</div>
+
+<p><strong>工作原理：</strong></p>
+<ol>
+  <li><strong>自动标注（BenchmarkTagger）</strong>：在 <code>StockAnalysisPipeline</code> 的每次分析执行前后，自动捕获 LLM 调用耗时（<code>time.perf_counter()</code>）、Token 用量（从 <code>AgentResult.stats</code> 提取）、模型 ID（从 <code>Config.litellm_model</code> 或 <code>AgentResult.model</code> 读取），写入 <code>context_snapshot.benchmark_meta</code></li>
+  <li><strong>被动积累</strong>：用户在日常使用中切换不同模型（今天用 Claude、明天用 Gemini），每条分析记录自动标注对应模型。日积月累，自然形成多模型对比数据集</li>
+  <li><strong>自动报告</strong>：回测完成后，若 <code>BENCHMARK_AUTO_REPORT=true</code>，自动调用 <code>ModelBenchmarkService.generate_report()</code>，JOIN 查询所有带 <code>"benchmark": true</code> 标记的回测结果，产出模型排名报告并保存到 <code>reports/benchmark_*.txt</code></li>
+</ol>
+
+<p><strong>配置项（.env）：</strong></p>
+<pre><code># 是否自动为每次分析标注模型+性能数据（默认 true）
+BENCHMARK_AUTO_TAG=true
+# 是否在回测完成后自动生成跨模型对比报告（默认 true）
+BENCHMARK_AUTO_REPORT=true</code></pre>
+
+<p><strong>Agent 与非 Agent 路径均覆盖：</strong></p>
+<ul>
+  <li><strong>非 Agent 路径</strong>（<code>analyzer.analyze()</code>）：标注 LLM 耗时；Token 数据通常不可用（传统路径不暴露 usage），<code>benchmark_meta.total_tokens=0</code></li>
+  <li><strong>Agent 路径</strong>（<code>executor.run()</code>）：标注 LLM 耗时 + 完整 Token 数据 + 成本估算，性能对比数据最完整</li>
+</ul>
+
+<p><strong>与显式 benchmark CLI 的关系：</strong></p>
+<ul>
+  <li>显式 benchmark CLI（<code>python -m src.services.model_benchmark --analyze ...</code>）仍然保留，用于<strong>主动</strong>对比多个模型（在单次运行中同时调用多个模型分析同一只股票）</li>
+  <li>被动标注（<code>BenchmarkTagger</code>）是<strong>互补</strong>机制，在日常使用中零成本收集数据，无需额外操作</li>
+  <li>两种路径产出的 <code>context_snapshot</code> 格式完全一致，共用同一套 <code>generate_report()</code> 查询逻辑</li>
+</ul>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <h2 id="data-model">5. Data Model &amp; Storage</h2>
