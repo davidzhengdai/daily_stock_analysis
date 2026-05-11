@@ -164,7 +164,7 @@
   <dt>Module</dt><dd><code>src/services/model_benchmark.py</code></dd>
   <dt>Date</dt><dd>2026-05-11</dd>
   <dt>Dependencies</dt><dd><code>BacktestEngine</code>, <code>BacktestService</code>, <code>AnalysisHistory</code>, <code>AgentFactory</code></dd>
-  <dt>CLI Entry</dt><dd><code>python -m src.services.model_benchmark [--analyze|--evaluate|--report|--full]</code></dd>
+  <dt>CLI Entry</dt><dd><code>python -m src.services.model_benchmark [--analyze|--evaluate|--report|--full] [--parallel] [--debug] [--max-parallel N]</code></dd>
 </dl>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -205,19 +205,38 @@
 <h2 id="architecture">2. Architecture Overview</h2>
 
 <div class="diagram">
-┌──────────────────────────────────────────────────────────────────┐
-│                    ModelBenchmarkService                          │
-│                                                                   │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌────────────┐ │
-│  │ DISCOVER │───▶│ ANALYZE  │───▶│ EVALUATE │───▶│   REPORT   │ │
-│  │ models   │    │ N stocks │    │ backtest │    │ leaderboard│ │
-│  │          │    │ x M models│   │ results  │    │ + recommend│ │
-│  └──────────┘    └──────────┘    └──────────┘    └────────────┘ │
-│       │               │                │                │        │
-│       ▼               ▼                ▼                ▼        │
-│  Config.         AgentFactory    BacktestEngine     BenchmarkReport
-│  llm_model_list  (per model)     BacktestService    (text + JSON)
-└──────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         ModelBenchmarkService                             │
+│                                                                           │
+│  ┌──────────┐    ┌──────────────────┐    ┌──────────┐    ┌────────────┐  │
+│  │ DISCOVER │───▶│     ANALYZE      │───▶│ EVALUATE │───▶│   REPORT   │  │
+│  │ models   │    │  ┌────────────┐  │    │ backtest │    │ leaderboard│  │
+│  │          │    │  │ Sequential │  │    │ results  │    │ + perf     │  │
+│  │          │    │  │  OR         │  │    │          │    │ ranking    │  │
+│  │          │    │  │ --parallel  │  │    │          │    │ + recommend│  │
+│  │          │    │  │ ThreadPool  │  │    │          │    │            │  │
+│  │          │    │  │ (model N    │  │    │          │    │            │  │
+│  │          │    │  │  stocks)    │  │    │          │    │            │  │
+│  │          │    │  └────────────┘  │    │          │    │            │  │
+│  │          │    │  ┌────────────┐  │    │          │    │            │  │
+│  │          │    │  │ --debug     │  │    │          │    │            │  │
+│  │          │    │  │ side-by-side│  │    │          │    │            │  │
+│  │          │    │  │ comparison  │  │    │          │    │            │  │
+│  │          │    │  └────────────┘  │    │          │    │            │  │
+│  └──────────┘    └──────────────────┘    └──────────┘    └────────────┘  │
+│       │                   │                      │                │       │
+│       ▼                   ▼                      ▼                ▼       │
+│  Config.            AgentFactory           BacktestEngine    BenchmarkReport
+│  llm_model_list     ThreadPoolExecutor     BacktestService   (text + JSON)
+│  MODEL_PRICING      _ModelOverride                              │          │
+│                     latency/token                               ▼          │
+│                     capture (perf)                   ┌─────────────────┐  │
+│                                                     │ Accuracy + Perf  │  │
+│                                                     │ leaderboards     │  │
+│                                                     │ cost-efficiency  │  │
+│                                                     │ value pick       │  │
+│                                                     └─────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────┘
 </div>
 
 <h3>Key Design Decisions</h3>
@@ -231,6 +250,9 @@
 <tr><td>Benchmark tagging via <code>context_snapshot</code></td><td><code>{"model_id": "...", "benchmark": true}</code> — report phase JOINs <code>backtest_results</code> ↔ <code>analysis_history</code> to filter by model</td></tr>
 <tr><td>5-day default eval window</td><td>US equities move faster than A-shares; 5 trading days is one calendar week and sufficient for short-term signal validation</td></tr>
 <tr><td>Separate analyze/evaluate phases</td><td>Analysis runs immediately; evaluation must wait for forward price data. Decoupling allows scheduling each phase independently</td></tr>
+<tr><td>Parallel execution (--parallel)</td><td><code>ThreadPoolExecutor</code> grouped by model: models run sequentially (env-var safety), stocks within each model run concurrently (speed). Configurable <code>--max-parallel</code> workers (default 3)</td></tr>
+<tr><td>Debug comparison (--debug)</td><td>Live side-by-side table per stock: Model | Signal | Conf | Latency | Tokens | Cost | SL/TP — with consensus/divergence analysis, fastest &amp; cheapest per stock highlighted</td></tr>
+<tr><td>Performance tracking</td><td>Latency via <code>time.perf_counter()</code>, token usage from agent result stats, cost estimation via per-model pricing table (<code>_MODEL_PRICING</code>). Stored in <code>benchmark_meta</code> within <code>context_snapshot</code>. Report includes performance leaderboard + cost-efficiency ranking</td></tr>
 </tbody>
 </table>
 
@@ -301,13 +323,25 @@ conviction     = decisive_ratio * 0.4 + correct_ratio * 0.6</code></pre>
 <h2 id="workflow">4. Three-Phase Workflow</h2>
 
 <h3>Phase 1: Analyze (Day 0)</h3>
-<pre><code>python -m src.services.model_benchmark --analyze --stocks AAPL,NVDA,MSFT</code></pre>
+<pre><code># Sequential (default) — one model at a time, one stock at a time
+python -m src.services.model_benchmark --analyze --stocks AAPL,NVDA,MSFT
+
+# Parallel — models sequential, stocks concurrent (faster)
+python -m src.services.model_benchmark --analyze --stocks AAPL,NVDA,MSFT --parallel
+
+# Parallel + Debug — live side-by-side comparison as results come in
+python -m src.services.model_benchmark --analyze --stocks AAPL,NVDA --parallel --debug
+
+# Limit concurrency
+python -m src.services.model_benchmark --analyze --stocks AAPL,NVDA --parallel --max-parallel 2</code></pre>
 <ol>
   <li><code>discover_models()</code> reads <code>config.llm_model_list</code> (aggregated from LLM_CHANNELS + legacy env vars)</li>
-  <li>For each model, <code>_ModelOverride</code> temporarily sets <code>LITELLM_MODEL</code></li>
+  <li>Work items are grouped by model_id; models are processed sequentially (for env-var safety via <code>_ModelOverride</code>)</li>
+  <li>Within each model group, stocks are dispatched concurrently via <code>ThreadPoolExecutor</code> (if <code>--parallel</code> is set)</li>
   <li><code>build_agent_executor()</code> creates a fresh agent with the overridden model</li>
   <li>Full pipeline runs (Technical → Intel → Decision) for each stock</li>
-  <li>Dashboard output is stored in <code>analysis_history</code> with <code>context_snapshot={"model_id":"...","benchmark":true}</code></li>
+  <li>If <code>--debug</code>: latency (<code>time.perf_counter()</code>), token usage, cost are captured and displayed in real-time side-by-side comparison table</li>
+  <li>Dashboard output is stored in <code>analysis_history</code> with <code>context_snapshot={"model_id":"...","benchmark":true,"benchmark_meta":{...}}</code></li>
 </ol>
 
 <h3>Phase 2: Evaluate (Day 5+)</h3>
@@ -390,7 +424,7 @@ WHERE bt.eval_window_days = 5
 
 <div class="callout callout-warning">
 <div class="callout-title">Thread Safety</div>
-<p>This mutates <em>process-level</em> environment variables. Concurrent benchmark runs on the same process are <strong>not supported</strong>. Each phase (analyze/evaluate/report) should run sequentially in its own process invocation.</p>
+<p>This mutates <em>process-level</em> environment variables. The parallel execution strategy (<code>--parallel</code>) mitigates this by grouping work items by model and processing model groups <strong>sequentially</strong> — only stocks within the same model group run concurrently via <code>ThreadPoolExecutor</code>. A <code>threading.Lock</code> guards env var mutations. Subprocess isolation is recommended for fully independent multi-model parallelism.</p>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -408,6 +442,9 @@ WHERE bt.eval_window_days = 5
 <tr><td><code>--models</code></td><td>Limit to specific models (default: all discovered)</td><td><code>--models gemini/gemini-3.1-pro-preview,openai/gpt-5.5</code></td></tr>
 <tr><td><code>--days</code></td><td>Evaluation window in trading days (default: 5)</td><td><code>--days 10</code></td></tr>
 <tr><td><code>--json</code></td><td>Output report as JSON instead of formatted text</td><td><code>--report --json</code></td></tr>
+<tr><td><code>--parallel, -p</code></td><td>Run model analyses concurrently via ThreadPoolExecutor (stocks within each model parallelized)</td><td><code>--parallel</code></td></tr>
+<tr><td><code>--max-parallel</code></td><td>Max concurrent stock invocations per model (default: 3)</td><td><code>--max-parallel 5</code></td></tr>
+<tr><td><code>--debug, -d</code></td><td>Capture performance metadata (latency, tokens, cost) and show live side-by-side comparison</td><td><code>--debug</code></td></tr>
 </tbody>
 </table>
 
@@ -441,7 +478,17 @@ WHERE bt.eval_window_days = 5
 
 <details>
 <summary><strong>Config reload side effects</strong></summary>
-<p><code>_ModelOverride</code> calls <code>setup_env(override=True)</code> which reloads <code>dotenv</code>. This may affect other loaded modules. Mitigation: benchmark CLI always runs as a fresh process invocation.</p>
+<p><code>_ModelOverride</code> calls <code>setup_env(override=True)</code> which reloads <code>dotenv</code>. This may affect other loaded modules. Mitigation: benchmark CLI always runs as a fresh process invocation. Parallel mode groups work by model to minimize env-var thrash.</p>
+</details>
+
+<details>
+<summary><strong>Rate limit throttling (--parallel mode)</strong></summary>
+<p>Running multiple model invocations concurrently may trigger API rate limits (especially for OpenAI and Anthropic). Mitigations: (a) use <code>--max-parallel</code> to limit concurrency (default 3), (b) models are still processed sequentially — only stocks within one model are parallelized, (c) fall back to sequential mode if rate-limit errors persist.</p>
+</details>
+
+<details>
+<summary><strong>Cost estimation accuracy</strong></summary>
+<p>Cost estimates use a hardcoded pricing table (<code>_MODEL_PRICING</code>) and token counts from the agent result metadata. Actual API billing may differ due to cached tokens, batch pricing, or provider-specific discounts. Estimates should be treated as <em>comparative</em> (Model A vs Model B) rather than <em>absolute</em> dollar amounts.</p>
 </details>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
@@ -449,8 +496,9 @@ WHERE bt.eval_window_days = 5
 
 <h3>Current Limitations</h3>
 <ul>
-  <li><strong>Process-level env mutation</strong> — <code>_ModelOverride</code> is not thread-safe. Parallel model analysis would require subprocess isolation.</li>
-  <li><strong>No cost tracking</strong> — Does not factor in API cost per model. A slightly less accurate but 10x cheaper model may be the practical best choice.</li>
+  <li><strong>Process-level env mutation</strong> — <code>_ModelOverride</code> is not thread-safe. Parallel mode (<code>--parallel</code>) mitigates by grouping work items by model and processing model groups sequentially with a <code>threading.Lock</code>. Full multi-model parallelism would require subprocess isolation.</li>
+  <li><strong><del>No cost tracking</del> ✅ Implemented</strong> — Cost estimation via <code>_MODEL_PRICING</code> table, token capture from agent stats, cost-efficiency ranking in performance leaderboard. Limitations: hardcoded prices, no real-time billing API integration.</li>
+  <li><strong><del>Sequential-only execution</del> ✅ Implemented</strong> — <code>--parallel</code> flag now supports concurrent stock analysis via <code>ThreadPoolExecutor</code> with per-model grouping.</li>
   <li><strong>Fixed eval window</strong> — All stocks share the same 5-day window. In practice, volatile vs stable stocks may need different horizons.</li>
   <li><strong>No statistical significance test</strong> — Current ranking is purely score-based. Small sample sizes may produce misleading rankings.</li>
   <li><strong>Single run per (stock, model)</strong> — LLM outputs have inherent randomness. Multiple runs per combination would give confidence intervals.</li>
@@ -460,7 +508,8 @@ WHERE bt.eval_window_days = 5
 <table>
 <thead><tr><th>Enhancement</th><th>Priority</th><th>Effort</th></tr></thead>
 <tbody>
-<tr><td>Cost-per-prediction tracking (token usage + API pricing)</td><td>High</td><td>Medium</td></tr>
+<tr><td><del>Cost-per-prediction tracking (token usage + API pricing)</del> ✅</td><td>—</td><td>Done</td></tr>
+<tr><td><del>Parallel execution (ThreadPoolExecutor per model group)</del> ✅</td><td>—</td><td>Done</td></tr>
 <tr><td>Multi-run statistical significance (n=5 per stock-model combo)</td><td>Medium</td><td>High</td></tr>
 <tr><td>Per-sector breakdown (Tech vs Energy vs Healthcare accuracy)</td><td>Medium</td><td>Medium</td></tr>
 <tr><td>Time-decay weighting (more recent predictions weighted higher)</td><td>Low</td><td>Low</td></tr>
