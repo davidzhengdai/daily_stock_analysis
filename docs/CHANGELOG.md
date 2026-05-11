@@ -130,6 +130,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] Moomoo OpenD 不可达时先执行短超时连接预检查，避免 SDK 重试阻塞股票分析流程。
 - [文档] 新增 Moomoo OpenD 安装、配置、Docker 连通性与 Web UI 验证指南。
 - [修复] 兼容本地模型返回中文评分字段、嵌套中文仪表盘、对象型 `系统评分` 和 `system_score`（如 `系统评分: 48/100` / `系统评分.系统评分: 52` / `system_score: 48`），避免分析结果总分误回退为 50。
+- [修复] Docker Compose 默认启用根目录 `litellm_config.yaml`，优先使用 `deepseek-smart-model` 并在失败时回退到 `ollama/qwen3:8b`，并避免空环境变量覆盖 `.env` 中的 LLM Provider API Key。
+- [修复] `openai/gpt-5.5` 通过 LiteLLM 调用时自动使用服务端要求的默认 temperature，避免因 `temperature=0.7` 被 OpenAI 拒绝后回退到本地模型。
+- [修复] Docker Compose 不再硬编码 `LITELLM_MODEL` / `LITELLM_FALLBACK_MODELS`，避免覆盖 `.env` 中的 YAML 路由选择。
+- [修复] LLM fallback 成功时日志显示实际响应模型，避免主模型失败后仍打印为主模型响应成功。
+- [改进] Ollama 本地模型示例与 Web 预设新增 `kwangsuklee/Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF:latest`。
+- [修复] 兼容本地模型在狙击点位中输出 `buy_price` / `stop_loss_price` / `target_price`，避免报告操作点位显示为 N/A 或待补充。
+- [改进] A 股多维情报搜索会把所属板块注入行业查询，并在行业维度无结果时使用产业链/景气度扩展查询兜底。
+- [修复] 兼容本地模型在操作点位中输出 `entry` / `target`，并修复报告中字符串型利好催化被拆成逐字项目的问题。
+- [修复] 避免服务启动初期并发请求拿到未初始化的数据库单例，导致历史详情偶发 404。
+- [修复] 报告补全重试返回非 JSON 时保留首轮已解析结果，避免任务因补全响应异常而失败。
+- [修复] 非 Agent 路径（标准 LLM 路径）分析完成后补充调用 `_backfill_agent_dashboard_fields`，确保 LLM 未输出狙击点位时能从技术数据（MA5/MA10/支撑位/阻力位）自动填充，解决策略点位全部显示"—"和报告作战计划段内容空白的问题。
+- [修复] 新增二次买入（secondary_buy）技术数据兜底，使用 MA10/MA20 作为保守买入参考价；统一三处 sniper `_is_missing` 判断，识别 LLM 逐字复制 Prompt 示例的 "XX元" 模板占位字符串并触发技术数据回退。
 
 ## [3.15.0] - 2026-05-05
 
