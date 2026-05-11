@@ -83,6 +83,83 @@ describe('SettingsField', () => {
     expect(screen.getAllByRole('button', { name: '删除' })).toHaveLength(2);
   });
 
+  it('allows optional select fields to be cleared when schema provides an empty option', () => {
+    const onChange = vi.fn();
+
+    render(
+      <SettingsField
+        item={{
+          key: 'NOTIFICATION_MIN_SEVERITY',
+          value: 'warning',
+          rawValueExists: true,
+          isMasked: false,
+          schema: {
+            key: 'NOTIFICATION_MIN_SEVERITY',
+            title: 'Notification Minimum Severity',
+            category: 'notification',
+            dataType: 'string',
+            uiControl: 'select',
+            isSensitive: false,
+            isRequired: false,
+            isEditable: true,
+            options: [
+              { label: 'Not set', value: '' },
+              { label: 'info', value: 'info' },
+              { label: 'warning', value: 'warning' },
+              { label: 'error', value: 'error' },
+              { label: 'critical', value: 'critical' },
+            ],
+            validation: { enum: ['', 'info', 'warning', 'error', 'critical'] },
+            displayOrder: 69,
+          },
+        }}
+        value="warning"
+        onChange={onChange}
+      />
+    );
+
+    const select = screen.getByLabelText('NOTIFICATION_MIN_SEVERITY');
+    expect(screen.getByRole('option', { name: 'Not set' })).not.toBeDisabled();
+    expect(screen.queryByRole('option', { name: '请选择' })).not.toBeInTheDocument();
+
+    fireEvent.change(select, { target: { value: '' } });
+
+    expect(onChange).toHaveBeenCalledWith('NOTIFICATION_MIN_SEVERITY', '');
+  });
+
+  it('renders localized custom webhook body template guidance', () => {
+    const onChange = vi.fn();
+
+    render(
+      <SettingsField
+        item={{
+          key: 'CUSTOM_WEBHOOK_BODY_TEMPLATE',
+          value: '',
+          rawValueExists: false,
+          isMasked: false,
+          schema: {
+            key: 'CUSTOM_WEBHOOK_BODY_TEMPLATE',
+            category: 'notification',
+            dataType: 'string',
+            uiControl: 'textarea',
+            isSensitive: false,
+            isRequired: false,
+            isEditable: true,
+            options: [],
+            validation: {},
+            displayOrder: 52,
+          },
+        }}
+        value=""
+        onChange={onChange}
+      />
+    );
+
+    expect(screen.getByLabelText('自定义 Webhook Body 模板')).toBeInTheDocument();
+    expect(screen.getByText(/会先于 Bark、Slack、Discord 等自动 payload 生效/)).toBeInTheDocument();
+    expect(screen.getByText(/裸 \$content \/ \$title 不做 JSON 转义/)).toBeInTheDocument();
+  });
+
   it('opens detailed field help when help metadata is available', () => {
     render(
       <SettingsField
