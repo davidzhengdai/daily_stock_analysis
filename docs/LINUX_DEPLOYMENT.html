@@ -632,11 +632,30 @@ docker-compose restart                          # Docker
 systemctl restart stock-analyzer                # Systemd</code></pre>
 
 <!-- ═══════════════════════════════════════════════════════════════ -->
+<h2>模型基准测试（Model Benchmark）</h2>
+
+<p>系统支持多模型对比验证，用于评估不同 LLM 对美股预测的准确度：</p>
+
+<pre><code># 发现所有已配置的模型
+python -m src.services.model_benchmark --list-models
+
+# 对指定美股运行多模型分析
+python -m src.services.model_benchmark --analyze --stocks AAPL,NVDA,MSFT
+
+# 等待评估窗口后运行回测
+python -m src.services.model_benchmark --evaluate --days 5
+
+# 生成对比排行榜
+python -m src.services.model_benchmark --report</code></pre>
+
+<p>详见 <a href="design-model-benchmark.html">Model Benchmark 设计文档</a>。</p>
+
 <h2>相关文档</h2>
 <ul>
   <li><a href="DEPLOY.md">部署指南</a> - 详细的部署说明</li>
   <li><a href="full-guide.md">完整配置指南</a> - 高级配置选项</li>
   <li><a href="desktop-package.md">桌面端打包说明</a> - 桌面应用部署</li>
+  <li><a href="design-model-benchmark.html">Model Benchmark 设计文档</a> - 多模型对比验证</li>
   <li><a href="FAQ.md">FAQ</a> - 常见问题解答</li>
 </ul>
 
