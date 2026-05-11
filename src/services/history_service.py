@@ -225,7 +225,7 @@ class HistoryService:
         if value is None:
             return None
         text = str(value).strip()
-        if not text or text in {"-", "—", "N/A"}:
+        if not text or text in {"-", "—", "N/A", "n/a", "NA", "待补充", "数据缺失"}:
             return None
         return text
 
@@ -624,14 +624,14 @@ class HistoryService:
             if risk_alerts:
                 report_lines.append("")
                 report_lines.append(f"**🚨 {labels['risk_alerts_label']}**:")
-                for alert in risk_alerts:
+                for alert in self._iter_markdown_items(risk_alerts):
                     report_lines.append(f"- {alert}")
             # 利好催化
             catalysts = intel.get('positive_catalysts', [])
             if catalysts:
                 report_lines.append("")
                 report_lines.append(f"**✨ {labels['positive_catalysts_label']}**:")
-                for cat in catalysts:
+                for cat in self._iter_markdown_items(catalysts):
                     report_lines.append(f"- {cat}")
             # 最新消息
             if intel.get('latest_news'):
@@ -743,7 +743,7 @@ class HistoryService:
                 "",
             ])
             # 狙击点位
-            sniper = battle.get('sniper_points', {})
+            sniper = DatabaseManager._find_sniper_in_dashboard(dashboard) or {}
             if sniper:
                 report_lines.extend([
                     f"**📍 {labels['action_points_heading']}**",
@@ -824,6 +824,43 @@ class HistoryService:
         if not text:
             return ""
         return text.replace('*', r'\*')
+
+    @staticmethod
+    def _format_markdown_item(value: Any) -> str:
+        """Format LLM list items that may be strings or structured dicts."""
+        if isinstance(value, dict):
+            parts = []
+            level = value.get("level") or value.get("等级")
+            title = value.get("title") or value.get("标题")
+            description = (
+                value.get("description")
+                or value.get("desc")
+                or value.get("summary")
+                or value.get("内容")
+            )
+            if level:
+                parts.append(str(level).strip())
+            if title:
+                parts.append(str(title).strip())
+            if description:
+                parts.append(str(description).strip())
+            if parts:
+                return "：".join(parts[:1] + ["；".join(parts[1:])]) if len(parts) > 1 else parts[0]
+            return "；".join(f"{k}: {v}" for k, v in value.items() if v not in (None, "", []))
+        return str(value).strip()
+
+    @classmethod
+    def _iter_markdown_items(cls, value: Any) -> List[str]:
+        """Yield displayable markdown bullets without splitting plain strings into characters."""
+        if value is None or value == "":
+            return []
+        raw_items = value if isinstance(value, list) else [value]
+        items: List[str] = []
+        for item in raw_items:
+            text = cls._format_markdown_item(item)
+            if text:
+                items.append(text)
+        return items
 
     @staticmethod
     def _clean_sniper_value(value: Any) -> str:

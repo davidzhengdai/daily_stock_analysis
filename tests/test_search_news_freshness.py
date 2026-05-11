@@ -496,6 +496,61 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
 
         self.assertIn("announcements", intel)
 
+    def test_search_comprehensive_intel_expands_industry_query_with_boards(self) -> None:
+        """A-share industry searches should use known board names when available."""
+        service, mock_search = self._create_service_with_mock_provider(
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+        mock_search.side_effect = [
+            _response([_result("latest_news", datetime.now().date().isoformat())]),
+            _response([_result("market_analysis", None)]),
+            _response([_result("risk_check", datetime.now().date().isoformat())]),
+            _response([_result("announcement", datetime.now().date().isoformat())]),
+            _response([_result("earnings", None)]),
+            _response([_result("industry", None)]),
+        ]
+
+        with patch("src.search_service.time.sleep"):
+            service.search_comprehensive_intel(
+                stock_code="600519",
+                stock_name="贵州茅台",
+                max_searches=6,
+                related_boards=[{"name": "白酒"}, {"name": "消费"}],
+            )
+
+        industry_query = mock_search.call_args_list[5].args[0]
+        self.assertIn("白酒", industry_query)
+        self.assertIn("消费", industry_query)
+
+    def test_search_comprehensive_intel_uses_industry_fallback_query_when_empty(self) -> None:
+        """If the first industry query returns no rows, retry with broader industry discovery terms."""
+        service, mock_search = self._create_service_with_mock_provider(
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+        mock_search.side_effect = [
+            _response([_result("latest_news", datetime.now().date().isoformat())]),
+            _response([_result("market_analysis", None)]),
+            _response([_result("risk_check", datetime.now().date().isoformat())]),
+            _response([_result("announcement", datetime.now().date().isoformat())]),
+            _response([_result("earnings", None)]),
+            _response([]),
+            _response([_result("industry_fallback", None)]),
+        ]
+
+        with patch("src.search_service.time.sleep"):
+            intel = service.search_comprehensive_intel(
+                stock_code="300508.SZ",
+                stock_name="维宏股份",
+                max_searches=6,
+            )
+
+        self.assertEqual([item.title for item in intel["industry"].results], ["industry_fallback"])
+        fallback_query = mock_search.call_args_list[6].args[0]
+        self.assertIn("产业链", fallback_query)
+        self.assertIn("景气度", fallback_query)
+
     def test_effective_window_helper_has_no_side_effect(self) -> None:
         """_effective_news_window_days should not mutate stored news_window_days."""
         service, _ = self._create_service_with_mock_provider(

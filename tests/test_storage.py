@@ -18,6 +18,20 @@ from src.config import Config
 from src.storage import DatabaseManager, StockDaily
 
 class TestStorage(unittest.TestCase):
+    def test_get_instance_initializes_existing_uninitialized_singleton(self):
+        """get_instance should not return a half-initialized singleton during startup races."""
+        DatabaseManager.reset_instance()
+        db = DatabaseManager.__new__(DatabaseManager)
+        db._initialized = False
+        DatabaseManager._instance = db
+
+        try:
+            instance = DatabaseManager.get_instance()
+            self.assertTrue(getattr(instance, "_initialized", False))
+            with instance.get_session() as session:
+                self.assertIsNotNone(session)
+        finally:
+            DatabaseManager.reset_instance()
     
     def test_parse_sniper_value(self):
         """测试解析狙击点位数值"""

@@ -194,7 +194,7 @@ export const LLM_PROVIDER_TEMPLATES: LLMProviderTemplate[] = [
     label: 'Ollama（本地）',
     protocol: 'ollama',
     baseUrl: 'http://127.0.0.1:11434',
-    placeholderModels: 'llama3.2,qwen2.5',
+    placeholderModels: 'llama3.2,qwen2.5,kwangsuklee/Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF:latest',
     capabilities: ['local-runtime'],
     configHint: '需要本机、Docker 或 self-hosted runner 能访问 Ollama 服务。',
     officialSources: [{ label: 'Ollama API', url: 'https://github.com/ollama/ollama/blob/main/docs/api.md' }],
@@ -231,5 +231,5 @@ export const MODEL_PLACEHOLDERS_BY_PROTOCOL: Record<ChannelProtocol, string> = {
   gemini: 'gemini-3.1-pro-preview,gemini-3-flash-preview',
   anthropic: 'claude-sonnet-4-6,claude-opus-4-7',
   vertex_ai: 'gemini-3.1-pro-preview',
-  ollama: 'llama3.2,qwen2.5',
+  ollama: 'llama3.2,qwen2.5,kwangsuklee/Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF:latest',
 };

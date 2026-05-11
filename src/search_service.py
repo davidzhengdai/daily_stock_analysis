@@ -3640,12 +3640,45 @@ class SearchService:
             success=False,
             error_message="事件搜索失败"
         )
+
+    @staticmethod
+    def _extract_related_board_names(related_boards: Optional[List[Any]]) -> List[str]:
+        """Return unique board/industry names suitable for search query expansion."""
+        if not related_boards:
+            return []
+
+        names: List[str] = []
+        seen = set()
+        for item in related_boards:
+            if isinstance(item, str):
+                raw_name = item
+            elif isinstance(item, dict):
+                raw_name = (
+                    item.get("name")
+                    or item.get("板块名称")
+                    or item.get("板块")
+                    or item.get("industry")
+                    or item.get("type")
+                )
+            else:
+                raw_name = None
+
+            name = str(raw_name or "").strip()
+            if not name or name.lower() in {"none", "null", "nan", "n/a", "na"}:
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            names.append(name)
+
+        return names
     
     def search_comprehensive_intel(
         self,
         stock_code: str,
         stock_name: str,
-        max_searches: int = 3
+        max_searches: int = 3,
+        related_boards: Optional[List[Any]] = None,
     ) -> Dict[str, SearchResponse]:
         """
         多维度情报搜索（同时使用多个引擎、多个维度）
@@ -3668,6 +3701,8 @@ class SearchService:
 
         is_foreign = self._is_foreign_stock(stock_code)
         is_index_etf = self.is_index_or_etf(stock_code, stock_name)
+        related_board_names = self._extract_related_board_names(related_boards)
+        related_board_terms = " ".join(related_board_names[:3])
 
         if is_foreign:
             search_dimensions = [
@@ -3709,8 +3744,14 @@ class SearchService:
                     'name': 'industry',
                     'query': (
                         f"{stock_name} {stock_code} index sector allocation holdings"
-                        if is_index_etf else f"{stock_name} industry competitors market share outlook"
+                        if is_index_etf
+                        else (
+                            f"{stock_name} {related_board_terms} industry competitors market share outlook"
+                            if related_board_terms
+                            else f"{stock_name} business products industry competitors market share outlook"
+                        )
                     ),
+                    'fallback_query': f"{stock_name} {stock_code} industry sector supply chain outlook",
                     'desc': '行业分析',
                     'tavily_topic': None,
                     'strict_freshness': False,
@@ -3783,8 +3824,14 @@ class SearchService:
                     'name': 'industry',
                     'query': (
                         f"{stock_name} 指数成分股 行业配置 权重"
-                        if is_index_etf else f"{stock_name} 所在行业 竞争对手 市场份额 行业前景"
+                        if is_index_etf
+                        else (
+                            f"{stock_name} {related_board_terms} 行业 景气度 产业链 下游需求 竞争格局"
+                            if related_board_terms
+                            else f"{stock_name} 主营业务 产品 产业链 行业景气度 下游需求 竞争格局"
+                        )
                     ),
+                    'fallback_query': f"{stock_name} 行业 产业链 下游需求 景气度 最新",
                     'desc': '行业分析',
                     'tavily_topic': None,
                     'strict_freshness': False,
@@ -3882,6 +3929,32 @@ class SearchService:
                     response,
                     max_results=target_per_dimension,
                 )
+
+            fallback_query = dim.get("fallback_query")
+            if fallback_query and not filtered_response.results:
+                logger.info("[情报搜索] %s: 首轮无结果，使用扩展查询: %s", dim['desc'], fallback_query)
+                fallback_response = None
+                fallback_provider = last_provider
+                for attempt in range(min(n, 3)):
+                    provider = available_providers[(provider_index + attempt) % n]
+                    fallback_provider = provider
+                    fallback_response = provider.search(
+                        fallback_query,
+                        max_results=provider_max_results,
+                        days=search_days,
+                    )
+                    if fallback_response.success and fallback_response.results:
+                        break
+                    if attempt < min(n, 3) - 1:
+                        time.sleep(0.2)
+
+                fallback_filtered = self._normalize_and_limit_response(
+                    fallback_response,
+                    max_results=target_per_dimension,
+                )
+                if fallback_filtered.success and fallback_filtered.results:
+                    filtered_response = fallback_filtered
+                    last_provider = fallback_provider
             results[dim['name']] = filtered_response
             search_count += 1
 

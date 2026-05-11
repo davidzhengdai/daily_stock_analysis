@@ -1748,6 +1748,11 @@ class GeminiAnalyzer:
             current_prompt = prompt
             retry_count = 0
             max_retries = config.report_integrity_retry if config.report_integrity_enabled else 0
+            best_result: Optional[AnalysisResult] = None
+            best_missing_fields: List[str] = []
+            best_response_text: Optional[str] = None
+            best_model_used: Optional[str] = None
+            best_llm_usage: Optional[Dict[str, Any]] = None
 
             while True:
                 start_time = time.time()
@@ -1761,6 +1766,22 @@ class GeminiAnalyzer:
                         response_validator=self._validate_json_response,
                     )
                 except _AllModelsFailedError as exc:
+                    if best_result is not None and best_result.success:
+                        logger.warning(
+                            "[LLM JSON] %s(%s): integrity retry returned invalid JSON, using previous parsed result",
+                            name,
+                            code,
+                        )
+                        self._apply_placeholder_fill(best_result, best_missing_fields)
+                        result = best_result
+                        result.raw_response = best_response_text
+                        result.search_performed = bool(news_context)
+                        result.market_snapshot = self._build_market_snapshot(context)
+                        result.model_used = best_model_used
+                        result.report_language = report_language
+                        model_used = best_model_used
+                        llm_usage = best_llm_usage
+                        break
                     if exc.last_response_text is not None:
                         logger.warning(
                             "[LLM JSON] %s(%s): all models returned invalid JSON, using text fallback",
@@ -1802,6 +1823,11 @@ class GeminiAnalyzer:
                 pass_integrity, missing_fields = self._check_content_integrity(result)
                 if pass_integrity:
                     break
+                best_result = result
+                best_missing_fields = missing_fields
+                best_response_text = response_text
+                best_model_used = model_used
+                best_llm_usage = llm_usage
                 if retry_count < max_retries:
                     current_prompt = self._build_integrity_retry_prompt(
                         prompt,
@@ -2396,6 +2422,7 @@ class GeminiAnalyzer:
                 json_str = self._fix_json_string(json_str)
                 
                 data = json.loads(json_str)
+                data = self._coerce_parsed_response_dict(data)
 
                 # Schema validation (lenient: on failure, continue with raw dict)
                 try:
@@ -2412,6 +2439,8 @@ class GeminiAnalyzer:
                     synthesized = self._synthesize_dashboard_from_cn(data)
                     if synthesized:
                         dashboard = synthesized if not isinstance(dashboard, dict) else {**synthesized, **dashboard}
+                if isinstance(dashboard, dict):
+                    self._normalize_dashboard_sniper_aliases(dashboard, data)
 
                 # 优先使用 AI 返回的股票名称（如果原名称无效或包含代码）
                 ai_stock_name = self._get_first_present(data, 'stock_name', '股票名称', '名称')
@@ -2573,6 +2602,23 @@ class GeminiAnalyzer:
         return None
 
     @staticmethod
+    def _coerce_parsed_response_dict(data: Any) -> Dict[str, Any]:
+        """Normalize repaired JSON into one response dict.
+
+        Some local models emit multiple fenced JSON objects in one answer.
+        json_repair/json.loads can recover that as a list; prefer the last dict
+        because integrity-retry prompts usually append the corrected full JSON
+        after the previous attempt.
+        """
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, list):
+            for item in reversed(data):
+                if isinstance(item, dict):
+                    return item
+        raise ValueError("LLM response JSON root is not an object")
+
+    @staticmethod
     def _synthesize_dashboard_from_cn(data: Dict[str, Any]) -> Dict[str, Any]:
         """Build a minimal dashboard dict from Chinese-keyed LLM output.
 
@@ -2628,6 +2674,90 @@ class GeminiAnalyzer:
                 }
             }
         }
+
+    @staticmethod
+    def _normalize_dashboard_sniper_aliases(dashboard: Dict[str, Any], data: Optional[Dict[str, Any]] = None) -> None:
+        """Normalize common LLM sniper point aliases into the report schema.
+
+        Local models sometimes return readable keys such as ``buy_price`` or
+        ``target_price`` inside ``sniper_points``.  The renderer and history
+        extraction expect ideal_buy / secondary_buy / stop_loss / take_profit.
+        """
+        if not isinstance(dashboard, dict):
+            return
+
+        battle_plan = dashboard.get("battle_plan")
+        if not isinstance(battle_plan, dict):
+            return
+
+        sniper_points = battle_plan.get("sniper_points")
+        if not isinstance(sniper_points, dict):
+            return
+
+        sources: List[Dict[str, Any]] = [sniper_points]
+
+        def _collect_nested_sniper_points(value: Any, collected: List[Dict[str, Any]], depth: int = 0) -> None:
+            if depth > 5 or not isinstance(value, dict):
+                return
+            nested = value.get("sniper_points")
+            if isinstance(nested, dict) and nested:
+                collected.append(nested)
+            for child in value.values():
+                if isinstance(child, dict):
+                    _collect_nested_sniper_points(child, collected, depth + 1)
+
+        if isinstance(data, dict):
+            top_level = data.get("specific_sniper_points")
+            if isinstance(top_level, dict):
+                sources.append(top_level)
+            cn_top_level = data.get("具体狙击点位") or data.get("操作点位") or data.get("狙击点位")
+            if isinstance(cn_top_level, dict):
+                sources.append(cn_top_level)
+            _collect_nested_sniper_points(data, sources)
+
+        def _is_missing(value: Any) -> bool:
+            if value is None:
+                return True
+            if isinstance(value, str):
+                normalized = value.strip()
+                if normalized in {"", "N/A", "n/a", "NA", "待补充", "数据缺失"}:
+                    return True
+                if "XX" in normalized:  # template placeholder, e.g. "XX元（在MA5附近）"
+                    return True
+            return False
+
+        def _first_alias(*keys: str) -> Any:
+            for source in sources:
+                for key in keys:
+                    value = source.get(key)
+                    if not _is_missing(value):
+                        return value
+            return None
+
+        alias_map = {
+            "ideal_buy": (
+                "ideal_buy", "buy_price", "buy_zone", "entry", "entry_price", "entry_point",
+                "理想买入点", "理想入场位", "买入价", "买入点",
+            ),
+            "secondary_buy": (
+                "secondary_buy", "secondary_buy_price", "secondary_entry_price",
+                "次优买入点", "次优入场位", "保守买入点",
+            ),
+            "stop_loss": (
+                "stop_loss", "stop_loss_price", "stop_price",
+                "止损位", "止损价", "止损价格",
+            ),
+            "take_profit": (
+                "take_profit", "target", "target_price", "take_profit_price", "profit_target",
+                "目标位", "目标价", "止盈位", "止盈价",
+            ),
+        }
+
+        for canonical_key, aliases in alias_map.items():
+            if _is_missing(sniper_points.get(canonical_key)):
+                value = _first_alias(*aliases)
+                if value is not None:
+                    sniper_points[canonical_key] = value
 
     @staticmethod
     def _get_first_present(data: Dict[str, Any], *keys: Any, default: Any = None) -> Any:

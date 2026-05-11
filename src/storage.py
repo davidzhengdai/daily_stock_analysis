@@ -17,6 +17,7 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import time
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any, TYPE_CHECKING, Tuple, Callable, TypeVar
@@ -636,12 +637,14 @@ class DatabaseManager:
     
     _instance: Optional['DatabaseManager'] = None
     _initialized: bool = False
+    _instance_lock = threading.RLock()
     
     def __new__(cls, *args, **kwargs):
         """单例模式实现"""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
+        with cls._instance_lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance._initialized = False
         return cls._instance
     
     def __init__(self, db_url: Optional[str] = None):
@@ -651,68 +654,71 @@ class DatabaseManager:
         Args:
             db_url: 数据库连接 URL（可选，默认从配置读取）
         """
-        if getattr(self, '_initialized', False):
-            return
+        with self._instance_lock:
+            if getattr(self, '_initialized', False):
+                return
 
-        config = get_config()
-        if db_url is None:
-            db_url = config.get_db_url()
+            config = get_config()
+            if db_url is None:
+                db_url = config.get_db_url()
 
-        self._db_url = db_url
-        self._sqlite_wal_enabled = config.sqlite_wal_enabled
-        self._sqlite_busy_timeout_ms = config.sqlite_busy_timeout_ms
-        self._sqlite_write_retry_max = config.sqlite_write_retry_max
-        self._sqlite_write_retry_base_delay = config.sqlite_write_retry_base_delay
+            self._db_url = db_url
+            self._sqlite_wal_enabled = config.sqlite_wal_enabled
+            self._sqlite_busy_timeout_ms = config.sqlite_busy_timeout_ms
+            self._sqlite_write_retry_max = config.sqlite_write_retry_max
+            self._sqlite_write_retry_base_delay = config.sqlite_write_retry_base_delay
 
-        engine_kwargs = {
-            "echo": False,
-            "pool_pre_ping": True,
-        }
-        if str(db_url).startswith("sqlite:") and self._sqlite_busy_timeout_ms > 0:
-            engine_kwargs["connect_args"] = {
-                "timeout": self._sqlite_busy_timeout_ms / 1000,
+            engine_kwargs = {
+                "echo": False,
+                "pool_pre_ping": True,
             }
+            if str(db_url).startswith("sqlite:") and self._sqlite_busy_timeout_ms > 0:
+                engine_kwargs["connect_args"] = {
+                    "timeout": self._sqlite_busy_timeout_ms / 1000,
+                }
 
-        # 创建数据库引擎
-        self._engine = create_engine(
-            db_url,
-            **engine_kwargs,
-        )
-        self._is_sqlite_engine = self._engine.url.get_backend_name() == 'sqlite'
-        self._sqlite_file_db = self._is_sqlite_engine and self._is_file_sqlite_database()
-        self._install_sqlite_pragma_handler()
-        
-        # 创建 Session 工厂
-        self._SessionLocal = sessionmaker(
-            bind=self._engine,
-            autocommit=False,
-            autoflush=False,
-        )
-        
-        # 创建所有表
-        Base.metadata.create_all(self._engine)
+            # 创建数据库引擎
+            self._engine = create_engine(
+                db_url,
+                **engine_kwargs,
+            )
+            self._is_sqlite_engine = self._engine.url.get_backend_name() == 'sqlite'
+            self._sqlite_file_db = self._is_sqlite_engine and self._is_file_sqlite_database()
+            self._install_sqlite_pragma_handler()
 
-        self._initialized = True
-        logger.info(f"数据库初始化完成: {db_url}")
+            # 创建 Session 工厂
+            self._SessionLocal = sessionmaker(
+                bind=self._engine,
+                autocommit=False,
+                autoflush=False,
+            )
 
-        # 注册退出钩子，确保程序退出时关闭数据库连接
-        atexit.register(DatabaseManager._cleanup_engine, self._engine)
+            # 创建所有表
+            Base.metadata.create_all(self._engine)
+
+            self._initialized = True
+            logger.info(f"数据库初始化完成: {db_url}")
+
+            # 注册退出钩子，确保程序退出时关闭数据库连接
+            atexit.register(DatabaseManager._cleanup_engine, self._engine)
     
     @classmethod
     def get_instance(cls) -> 'DatabaseManager':
         """获取单例实例"""
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
+        with cls._instance_lock:
+            if cls._instance is None or not getattr(cls._instance, '_initialized', False):
+                cls._instance = cls()
+            return cls._instance
     
     @classmethod
     def reset_instance(cls) -> None:
         """重置单例（用于测试）"""
-        if cls._instance is not None:
-            if hasattr(cls._instance, '_engine') and cls._instance._engine is not None:
-                cls._instance._engine.dispose()
-            cls._instance._initialized = False
-            cls._instance = None
+        with cls._instance_lock:
+            if cls._instance is not None:
+                if hasattr(cls._instance, '_engine') and cls._instance._engine is not None:
+                    cls._instance._engine.dispose()
+                cls._instance._initialized = False
+                cls._instance = None
 
     @classmethod
     def _cleanup_engine(cls, engine) -> None:
@@ -1820,6 +1826,55 @@ class DatabaseManager:
         }
 
     @staticmethod
+    def normalize_sniper_point_aliases(raw_points: Any) -> Dict[str, Any]:
+        """Return sniper_points with common local-model aliases copied to canonical keys."""
+        if not isinstance(raw_points, dict):
+            return {}
+
+        normalized = dict(raw_points)
+
+        def _is_missing(value: Any) -> bool:
+            if value is None:
+                return True
+            if isinstance(value, str):
+                text = value.strip()
+                if text in {"", "-", "—", "N/A", "n/a", "NA", "待补充", "数据缺失"}:
+                    return True
+                if "XX" in text:  # template placeholder, e.g. "XX元（在MA5附近）"
+                    return True
+            return False
+
+        alias_map = {
+            "ideal_buy": (
+                "ideal_buy", "buy_price", "buy_zone", "entry", "entry_price", "entry_point",
+                "理想买入点", "理想入场位", "买入价", "买入点",
+            ),
+            "secondary_buy": (
+                "secondary_buy", "secondary_buy_price", "secondary_entry_price",
+                "次优买入点", "次优入场位", "保守买入点",
+            ),
+            "stop_loss": (
+                "stop_loss", "stop_loss_price", "stop_price",
+                "止损位", "止损价", "止损价格",
+            ),
+            "take_profit": (
+                "take_profit", "target", "target_price", "take_profit_price", "profit_target",
+                "目标位", "目标价", "止盈位", "止盈价",
+            ),
+        }
+
+        for canonical_key, aliases in alias_map.items():
+            if not _is_missing(normalized.get(canonical_key)):
+                continue
+            for alias in aliases:
+                value = raw_points.get(alias)
+                if not _is_missing(value):
+                    normalized[canonical_key] = value
+                    break
+
+        return normalized
+
+    @staticmethod
     def _find_sniper_in_dashboard(d: dict) -> Optional[Dict[str, Any]]:
         """
         Recursively search for sniper_points in a dashboard dict.
@@ -1829,21 +1884,45 @@ class DatabaseManager:
         if not isinstance(d, dict):
             return None
 
+        def _has_displayable_points(points: Dict[str, Any]) -> bool:
+            for key in ("ideal_buy", "secondary_buy", "stop_loss", "take_profit"):
+                value = points.get(key)
+                if value is None:
+                    continue
+                if isinstance(value, str):
+                    stripped = value.strip()
+                    if stripped in {"", "-", "—", "N/A", "n/a", "NA", "待补充", "数据缺失"}:
+                        continue
+                    if "XX" in stripped:  # template placeholder
+                        continue
+                return True
+            return False
+
+        def _normalize_candidate(points: Any) -> Optional[Dict[str, Any]]:
+            normalized = DatabaseManager.normalize_sniper_point_aliases(points)
+            return normalized if _has_displayable_points(normalized) else None
+
         # Direct: d has sniper_points keys at top level
-        if "ideal_buy" in d:
-            return d
+        if any(key in d for key in ("ideal_buy", "buy_price", "buy_zone", "entry", "entry_price", "target", "理想买入点")):
+            candidate = _normalize_candidate(d)
+            if candidate:
+                return candidate
 
         # d.sniper_points
         sp = d.get("sniper_points")
         if isinstance(sp, dict) and sp:
-            return sp
+            candidate = _normalize_candidate(sp)
+            if candidate:
+                return candidate
 
         # d.battle_plan.sniper_points
         bp = d.get("battle_plan")
         if isinstance(bp, dict):
             sp = bp.get("sniper_points")
             if isinstance(sp, dict) and sp:
-                return sp
+                candidate = _normalize_candidate(sp)
+                if candidate:
+                    return candidate
 
         # d.dashboard.battle_plan.sniper_points (double-nested)
         inner = d.get("dashboard")
@@ -1852,7 +1931,29 @@ class DatabaseManager:
             if isinstance(bp, dict):
                 sp = bp.get("sniper_points")
                 if isinstance(sp, dict) and sp:
-                    return sp
+                    candidate = _normalize_candidate(sp)
+                    if candidate:
+                        return candidate
+
+        # Last resort: local models may place battle_plan under a non-standard
+        # parent such as dashboard.intelligence.battle_plan.
+        def _find_nested(value: Any, depth: int = 0) -> Optional[Dict[str, Any]]:
+            if depth > 5 or not isinstance(value, dict):
+                return None
+            nested = value.get("sniper_points")
+            if isinstance(nested, dict) and nested:
+                candidate = _normalize_candidate(nested)
+                if candidate:
+                    return candidate
+            for child in value.values():
+                found = _find_nested(child, depth + 1)
+                if found:
+                    return found
+            return None
+
+        nested = _find_nested(d)
+        if nested:
+            return nested
 
         return None
 

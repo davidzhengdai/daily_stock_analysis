@@ -72,7 +72,7 @@ GEMINI_API_KEY=AIzac...
 ```env
 # Ollama 无需 API Key，本地运行 ollama serve 后即可使用
 OLLAMA_API_BASE=http://localhost:11434
-LITELLM_MODEL=ollama/qwen3:8b
+LITELLM_MODEL=ollama/kwangsuklee/Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF:latest
 ```
 
 > **重要**：Ollama 必须使用 `OLLAMA_API_BASE` 配置，**不要**使用 `OPENAI_BASE_URL`，否则系统会错误拼接 URL（如 404、`api/generate/api/show`）。远程 Ollama 时，将 `OLLAMA_API_BASE` 设为实际地址（如 `http://192.168.1.100:11434`）。当前依赖约束为 `litellm>=1.80.10,!=1.82.7,!=1.82.8,<2.0.0`（与 requirements.txt 一致）。
@@ -172,10 +172,10 @@ LLM_CHANNELS=ollama
 
 # 2. 配置 Ollama 地址（本地默认 11434 端口）
 LLM_OLLAMA_BASE_URL=http://localhost:11434
-LLM_OLLAMA_MODELS=qwen3:8b,llama3.2
+LLM_OLLAMA_MODELS=qwen3:8b,kwangsuklee/Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF:latest,llama3.2
 
 # 3. 指定主模型
-LITELLM_MODEL=ollama/qwen3:8b
+LITELLM_MODEL=ollama/kwangsuklee/Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF:latest
 ```
 
 ### MiniMax 渠道模型填写说明

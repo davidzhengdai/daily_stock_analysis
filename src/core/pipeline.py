@@ -388,7 +388,12 @@ class StockAnalysisPipeline:
                 intel_results = self.search_service.search_comprehensive_intel(
                     stock_code=code,
                     stock_name=stock_name,
-                    max_searches=7
+                    max_searches=7,
+                    related_boards=(
+                        fundamental_context.get("belong_boards")
+                        if isinstance(fundamental_context, dict)
+                        else None
+                    ),
                 )
 
                 # 格式化情报报告
@@ -515,6 +520,11 @@ class StockAnalysisPipeline:
             # Step 7.7: price_position fallback
             if result:
                 fill_price_position_if_needed(result, trend_result, realtime_quote)
+
+            # Step 7.8: backfill dashboard sniper points from trend data when LLM didn't provide them
+            if result and result.success and trend_result is not None:
+                _rpt_lang = normalize_report_language(getattr(self.config, "report_language", "zh"))
+                self._backfill_agent_dashboard_fields(result, trend_result, _rpt_lang)
 
             # Step 8: 保存分析历史记录
             if result and result.success:
@@ -1180,12 +1190,18 @@ class StockAnalysisPipeline:
     def _is_agent_placeholder_text(text: str) -> bool:
         if not text:
             return True
-        return text.lower() in {"n/a", "na", "none", "null", "unknown", "tbd"} or text in {
+        if text.lower() in {"n/a", "na", "none", "null", "unknown", "tbd"} or text in {
             "未知",
             "待补充",
             "数据缺失",
             "无",
-        }
+        }:
+            return True
+        # LLMs sometimes echo the prompt's example template verbatim, e.g.
+        # "理想买入点：XX元（在MA5附近）" — uppercase "XX" is always a placeholder.
+        if "XX" in text:
+            return True
+        return False
 
     @staticmethod
     def _is_agent_field_missing(
@@ -1355,6 +1371,11 @@ class StockAnalysisPipeline:
                     trend_result,
                     report_language,
                 )
+            if self._is_agent_field_missing(sniper_points.get("secondary_buy"), scalar=True):
+                sniper_points["secondary_buy"] = self._secondary_buy_fallback_from_trend(
+                    trend_result,
+                    report_language,
+                )
 
     @staticmethod
     def _stop_loss_fallback_from_trend(
@@ -1388,6 +1409,19 @@ class StockAnalysisPipeline:
         levels = getattr(trend_result, "resistance_levels", None) if trend_result else None
         if levels:
             return levels[0]
+        return "To be completed" if report_language == "en" else "待补充"
+
+    @staticmethod
+    def _secondary_buy_fallback_from_trend(
+        trend_result: Optional[TrendAnalysisResult],
+        report_language: str,
+    ) -> Any:
+        """Secondary (conservative) entry near MA10; fall back to MA20."""
+        if trend_result:
+            for attr in ("ma10", "ma20"):
+                val = getattr(trend_result, attr, None)
+                if val and float(val) > 0:
+                    return round(float(val), 2)
         return "To be completed" if report_language == "en" else "待补充"
 
     @staticmethod

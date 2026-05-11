@@ -627,6 +627,24 @@ def get_analysis_status(task_id: str) -> TaskStatus:
                 if change_pct is None:
                     change_pct = realtime_quote_raw.get('pct_chg')
 
+            raw_sniper_points = {}
+            if isinstance(raw_result, dict):
+                for candidate in (raw_result.get("dashboard"), raw_result):
+                    if not isinstance(candidate, dict):
+                        continue
+                    raw_sniper_points = DatabaseManager._find_sniper_in_dashboard(candidate) or raw_sniper_points
+                    if any(raw_sniper_points.get(k) for k in ("ideal_buy", "secondary_buy", "stop_loss", "take_profit")):
+                        break
+
+            def _display_strategy_value(field: str) -> Optional[str]:
+                raw_value = raw_sniper_points.get(field)
+                if raw_value is not None:
+                    text = str(raw_value).strip()
+                    if text and text not in {"-", "—", "N/A", "n/a", "NA", "待补充", "数据缺失"}:
+                        return text
+                db_value = getattr(record, field, None)
+                return str(db_value) if db_value is not None else None
+
             # Build report from DB record so completed tasks return real data
             report_dict = AnalysisReport(
                 meta=ReportMeta(
@@ -648,10 +666,10 @@ def get_analysis_status(task_id: str) -> TaskStatus:
                     analysis_summary=record.analysis_summary,
                 ),
                 strategy=ReportStrategy(
-                    ideal_buy=str(getattr(record, 'ideal_buy', None)) if getattr(record, 'ideal_buy', None) is not None else None,
-                    secondary_buy=str(getattr(record, 'secondary_buy', None)) if getattr(record, 'secondary_buy', None) is not None else None,
-                    stop_loss=str(getattr(record, 'stop_loss', None)) if getattr(record, 'stop_loss', None) is not None else None,
-                    take_profit=str(getattr(record, 'take_profit', None)) if getattr(record, 'take_profit', None) is not None else None,
+                    ideal_buy=_display_strategy_value("ideal_buy"),
+                    secondary_buy=_display_strategy_value("secondary_buy"),
+                    stop_loss=_display_strategy_value("stop_loss"),
+                    take_profit=_display_strategy_value("take_profit"),
                 ),
             ).model_dump()
             return TaskStatus(

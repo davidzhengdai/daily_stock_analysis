@@ -565,6 +565,67 @@ class TestAnalyzerGenerateText:
         assert result.code == "600519"
         assert result.search_performed is True
 
+    def test_integrity_retry_invalid_json_keeps_previous_valid_result(self):
+        """A bad integrity retry should not discard the first valid parsed report."""
+        from src.analyzer import AnalysisResult, _AllModelsFailedError
+
+        analyzer = self._make_analyzer()
+        analyzer._config_override = SimpleNamespace(
+            gemini_request_delay=0,
+            report_language="zh",
+            litellm_model="provider/primary-model",
+            litellm_fallback_models=[],
+            llm_temperature=0.7,
+            llm_model_list=[],
+            report_integrity_enabled=True,
+            report_integrity_retry=1,
+        )
+
+        first_result = AnalysisResult(
+            code="600519",
+            name="贵州茅台",
+            sentiment_score=70,
+            trend_prediction="震荡",
+            operation_advice="持有",
+            analysis_summary="首轮 JSON 可解析",
+            success=True,
+        )
+        retry_error = _AllModelsFailedError(
+            "all failed",
+            last_response_text="### System:\n补全提示片段",
+            last_model="provider/primary-model",
+            last_usage={"prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25},
+        )
+
+        with patch.object(analyzer, "is_available", return_value=True), \
+             patch.object(analyzer, "_get_analysis_system_prompt", return_value="system"), \
+             patch.object(analyzer, "_format_prompt", return_value="prompt"), \
+             patch.object(
+                 analyzer,
+                 "_call_litellm",
+                 side_effect=[
+                     ("{\"analysis_summary\":\"ok\"}", "provider/primary-model", {"prompt_tokens": 10}),
+                     retry_error,
+                 ],
+             ), \
+             patch.object(analyzer, "_parse_response", return_value=first_result) as mock_parse, \
+             patch.object(analyzer, "_build_market_snapshot", return_value={}), \
+             patch.object(analyzer, "_check_content_integrity", return_value=(False, ["dashboard.core_conclusion.one_sentence"])), \
+             patch.object(analyzer, "_build_integrity_retry_prompt", return_value="retry prompt"), \
+             patch.object(analyzer, "_apply_placeholder_fill") as mock_fill, \
+             patch("src.analyzer.persist_llm_usage"):
+
+            result = analyzer.analyze(
+                {"code": "600519", "stock_name": "贵州茅台"},
+                news_context=None,
+            )
+
+        assert mock_parse.call_count == 1
+        mock_fill.assert_called_once_with(first_result, ["dashboard.core_conclusion.one_sentence"])
+        assert result.success is True
+        assert result.analysis_summary == "首轮 JSON 可解析"
+        assert result.error_message is None
+
 
 # ---------------------------------------------------------------------------
 # market_analyzer uses generate_text(), not private attributes

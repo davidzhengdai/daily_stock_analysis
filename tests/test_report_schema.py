@@ -171,6 +171,103 @@ class TestAnalyzerSchemaFallback(unittest.TestCase):
 
         self.assertEqual(result.sentiment_score, 48)
 
+    def test_parse_response_normalizes_sniper_point_aliases(self) -> None:
+        """Local models may return buy_price/stop_loss_price/target_price aliases."""
+        analyzer = GeminiAnalyzer()
+        response = json.dumps({
+            "stock_name": "维宏股份（300508.SZ）",
+            "system_score": 35,
+            "operation_advice": "持有",
+            "decision_type": "hold",
+            "analysis_summary": "等待回调",
+            "dashboard": {
+                "core_conclusion": {"one_sentence": "乖离率过高，等待回调"},
+                "intelligence": {"risk_alerts": []},
+                "battle_plan": {
+                    "sniper_points": {
+                        "buy_price": "36.07 元（回踩 MA20 支撑）",
+                        "stop_loss_price": "34.50 元（跌破 MA10 且放量确认）",
+                        "target_price": "42.00 元（前期高点阻力区）",
+                    }
+                },
+            },
+            "specific_sniper_points": {
+                "buy_price": "36.07 元（回踩 MA20 支撑）",
+                "stop_loss_price": "34.50 元（跌破 MA10 且放量确认）",
+                "target_price": "42.00 元（前期高点阻力区）",
+            },
+        }, ensure_ascii=False)
+
+        result = analyzer._parse_response(response, "300508.SZ", "维宏股份")
+
+        sniper = result.dashboard["battle_plan"]["sniper_points"]
+        self.assertEqual(sniper["ideal_buy"], "36.07 元（回踩 MA20 支撑）")
+        self.assertEqual(sniper["stop_loss"], "34.50 元（跌破 MA10 且放量确认）")
+        self.assertEqual(sniper["take_profit"], "42.00 元（前期高点阻力区）")
+
+    def test_parse_response_uses_nested_sniper_aliases_when_canonical_block_is_placeholder(self) -> None:
+        """Local models may place useful sniper aliases under a non-standard parent."""
+        analyzer = GeminiAnalyzer()
+        response = json.dumps({
+            "stock_name": "维宏股份（300508.SZ）",
+            "operation_advice": "持有",
+            "decision_type": "hold",
+            "analysis_summary": "等待回踩",
+            "dashboard": {
+                "core_conclusion": {"one_sentence": "等待回踩确认"},
+                "intelligence": {
+                    "risk_alerts": [],
+                    "battle_plan": {
+                        "sniper_points": {
+                            "buy_zone": "34.80 - 35.20（回踩 MA5 支撑区）",
+                            "stop_loss": "37.20（跌破今日低点）",
+                            "target_price": "41.50（前高压力区）",
+                        }
+                    },
+                },
+                "battle_plan": {"sniper_points": {"stop_loss": "待补充"}},
+            },
+        }, ensure_ascii=False)
+
+        result = analyzer._parse_response(response, "300508.SZ", "维宏股份")
+
+        sniper = result.dashboard["battle_plan"]["sniper_points"]
+        self.assertEqual(sniper["ideal_buy"], "34.80 - 35.20（回踩 MA5 支撑区）")
+        self.assertEqual(sniper["stop_loss"], "37.20（跌破今日低点）")
+        self.assertEqual(sniper["take_profit"], "41.50（前高压力区）")
+
+    def test_parse_response_accepts_repaired_json_list_root(self) -> None:
+        """json_repair may recover repeated local-model JSON blocks as a list."""
+        analyzer = GeminiAnalyzer()
+        payload = [
+            {"stock_name": "旧输出", "operation_advice": "持有"},
+            {
+                "stock_name": "维宏股份（300508.SZ）",
+                "operation_advice": "持有",
+                "decision_type": "hold",
+                "analysis_summary": "等待回调",
+                "dashboard": {
+                    "core_conclusion": {"one_sentence": "等待回调确认"},
+                    "intelligence": {"risk_alerts": []},
+                    "battle_plan": {
+                        "sniper_points": {
+                            "buy_price": "37.50 元",
+                            "stop_loss_price": "36.00 元",
+                            "target_price": "41.00 元",
+                        }
+                    },
+                },
+            },
+        ]
+
+        result = analyzer._parse_response(json.dumps(payload, ensure_ascii=False), "300508.SZ", "维宏股份")
+
+        self.assertTrue(result.success)
+        sniper = result.dashboard["battle_plan"]["sniper_points"]
+        self.assertEqual(sniper["ideal_buy"], "37.50 元")
+        self.assertEqual(sniper["stop_loss"], "36.00 元")
+        self.assertEqual(sniper["take_profit"], "41.00 元")
+
     def test_parse_response_accepts_nested_chinese_dashboard_score(self) -> None:
         """Local Chinese models may put the score under nested dashboard/technical sections."""
         analyzer = GeminiAnalyzer()

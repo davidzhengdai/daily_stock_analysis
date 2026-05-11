@@ -373,6 +373,102 @@ class AnalysisHistoryTestCase(unittest.TestCase):
         self.assertEqual(detail.get("stop_loss"), "跌破 110 元止损")
         self.assertEqual(detail.get("take_profit"), "目标位：150.0元")
 
+    def test_history_detail_normalizes_raw_sniper_aliases(self) -> None:
+        """History detail should recover local-model sniper point aliases from raw_result."""
+        result = self._build_result()
+        saved = self.db.save_analysis_history(
+            result=result,
+            query_id="query_alias_sniper_001",
+            report_type="simple",
+            news_content="新闻摘要",
+            context_snapshot=None,
+            save_snapshot=False,
+        )
+        self.assertEqual(saved, 1)
+
+        with self.db.get_session() as session:
+            row = session.query(AnalysisHistory).filter(
+                AnalysisHistory.query_id == "query_alias_sniper_001"
+            ).first()
+            if row is None:
+                self.fail("未找到保存的历史记录")
+            row.raw_result = json.dumps({
+                "dashboard": {
+                    "battle_plan": {"sniper_points": {"stop_loss": "待补充"}},
+                    "intelligence": {
+                        "battle_plan": {
+                            "sniper_points": {
+                                "buy_zone": "34.80 - 35.20（回踩 MA5 支撑区）",
+                                "stop_loss": "37.20（跌破今日低点）",
+                                "target_price": "41.50（前高压力区）",
+                            }
+                        }
+                    },
+                }
+            }, ensure_ascii=False)
+            session.commit()
+            record_id = row.id
+
+        service = HistoryService(self.db)
+        detail = service.get_history_detail_by_id(record_id)
+
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail.get("ideal_buy"), "34.80 - 35.20（回踩 MA5 支撑区）")
+        self.assertEqual(detail.get("stop_loss"), "37.20（跌破今日低点）")
+        self.assertEqual(detail.get("take_profit"), "41.50（前高压力区）")
+
+    def test_history_markdown_normalizes_raw_sniper_aliases(self) -> None:
+        """Markdown report should use normalized nested sniper aliases too."""
+        result = self._build_result()
+        result.dashboard = {
+            "core_conclusion": {"one_sentence": "等待回踩确认"},
+            "battle_plan": {
+                "sniper_points": {
+                    "entry": "36.50 元",
+                    "stop_loss": "37.20（跌破今日低点）",
+                    "target": "41.50（前高压力区）",
+                }
+            },
+            "intelligence": {
+                "risk_alerts": [{"level": "高", "description": "乖离率过高"}],
+                "positive_catalysts": "制造业复苏政策对数控机床行业有长期利好",
+                "battle_plan": {
+                    "sniper_points": {
+                        "buy_zone": "34.80 - 35.20（回踩 MA5 支撑区）",
+                        "stop_loss": "37.20（跌破今日低点）",
+                        "target_price": "41.50（前高压力区）",
+                    }
+                }
+            },
+        }
+        saved = self.db.save_analysis_history(
+            result=result,
+            query_id="query_alias_markdown_001",
+            report_type="full",
+            news_content="新闻摘要",
+            context_snapshot=None,
+            save_snapshot=False,
+        )
+        self.assertEqual(saved, 1)
+
+        with self.db.get_session() as session:
+            row = session.query(AnalysisHistory).filter(
+                AnalysisHistory.query_id == "query_alias_markdown_001"
+            ).first()
+            if row is None:
+                self.fail("未找到保存的历史记录")
+            record_id = row.id
+
+        markdown = HistoryService(self.db).get_markdown_report(str(record_id))
+
+        self.assertIn("36.50 元", markdown)
+        self.assertIn("37.20（跌破今日低点）", markdown)
+        self.assertIn("41.50（前高压力区）", markdown)
+        self.assertIn("- 高：乖离率过高", markdown)
+        self.assertIn("- 制造业复苏政策对数控机床行业有长期利好", markdown)
+        self.assertNotIn("- 制", markdown)
+        self.assertNotIn("| 🎯 理想买入点 | N/A |", markdown)
+
     def test_history_detail_falls_back_to_numeric_sniper_columns(self) -> None:
         """History detail should still fall back to stored numeric sniper columns when raw strings are unavailable."""
         result = self._build_result()
