@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 非 Agent 路径（标准 LLM 路径）分析完成后补充调用 `_backfill_agent_dashboard_fields`，确保 LLM 未输出狙击点位时能从技术数据（MA5/MA10/支撑位/阻力位）自动填充，解决策略点位全部显示"—"和报告作战计划段内容空白的问题。
 - [修复] 新增二次买入（secondary_buy）技术数据兜底，使用 MA10/MA20 作为保守买入参考价；统一三处 sniper `_is_missing` 判断，识别 LLM 逐字复制 Prompt 示例的 "XX元" 模板占位字符串并触发技术数据回退。
 - [新功能] 通知网关新增 ntfy 一等渠道，支持通过 `NTFY_URL` / `NTFY_TOKEN` 推送并接入 Web 测试、路由、Actions 与诊断。
+- [新功能] 通知网关新增 Gotify 一等渠道，支持通过 `GOTIFY_URL` / `GOTIFY_TOKEN` 推送 Markdown 文本并接入 Web 测试、路由、Actions 与诊断。
+- [修复] 收紧 ntfy 结构化校验，避免 URL 编码空白 topic 被误判为有效通知端点。
+- [文档] 补充 Bark custom webhook 示例和 WebPush / Apprise 通知渠道评估，明确本轮不新增运行时依赖或配置入口。
 - [修复] 聚合报告通知按静态渠道隔离发送失败，并补充自定义 Webhook 部分成功诊断与脱敏测试。
 - [修复] 未配置 Tushare / Longbridge 凭据时不再实例化对应可选 fetcher，避免缺失凭据的数据源进入候选集。
 - [修复] Longbridge 遇到连接关闭类异常后会进入冷却期，并在美股/港股实时与日线请求中临时跳过该数据源，避免请求级频繁重连。
