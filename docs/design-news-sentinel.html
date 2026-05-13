@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design: News Sentinel — 主动新闻抓取与市场情报服务</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --muted: #555;
+    --border: #e0e0e0;
+    --code-bg: #f5f5f5;
+    --accent: #2563eb;
+    --accent-dim: #dbeafe;
+    --warn-bg: #fffbeb;
+    --warn-border: #f59e0b;
+    --info-bg: #eff6ff;
+    --info-border: #3b82f6;
+    --tip-bg: #f0fdf4;
+    --tip-border: #22c55e;
+    --danger-bg: #fef2f2;
+    --danger-border: #ef4444;
+    --phase-bg: #f8faff;
+    --phase-border: #c7d7fc;
+    --radius: 6px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font);
+    color: var(--fg);
+    background: var(--bg);
+    line-height: 1.7;
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem;
+  }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+  h2 { font-size: 1.5rem; margin-top: 2.5rem; margin-bottom: 0.75rem; color: var(--accent); border-left: 4px solid var(--accent); padding-left: 0.75rem; }
+  h3 { font-size: 1.15rem; margin-top: 1.75rem; margin-bottom: 0.5rem; }
+  h4 { font-size: 1rem; margin-top: 1.25rem; margin-bottom: 0.4rem; font-weight: 600; }
+  p { margin-bottom: 1rem; }
+  ul, ol { margin: 0 0 1rem 1.5rem; }
+  li { margin-bottom: 0.35rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code {
+    font-family: var(--mono);
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    font-size: 0.88em;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    overflow-x: auto;
+    margin-bottom: 1.25rem;
+    font-family: var(--mono);
+    font-size: 0.85em;
+    line-height: 1.5;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1.25rem;
+    font-size: 0.92em;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--code-bg); font-weight: 600; }
+  tr:nth-child(even) { background: #fafafa; }
+  .meta { color: var(--muted); font-size: 0.9em; margin-bottom: 2rem; }
+  .badge {
+    display: inline-block;
+    padding: 0.1em 0.55em;
+    border-radius: 999px;
+    font-size: 0.78em;
+    font-weight: 600;
+    vertical-align: middle;
+  }
+  .badge-blue  { background: #dbeafe; color: #1d4ed8; }
+  .badge-green { background: #dcfce7; color: #15803d; }
+  .badge-orange{ background: #ffedd5; color: #c2410c; }
+  .badge-red   { background: #fee2e2; color: #b91c1c; }
+  .badge-gray  { background: #f1f5f9; color: #475569; }
+  .callout {
+    border-radius: var(--radius);
+    padding: 0.85rem 1rem;
+    margin-bottom: 1.25rem;
+    border-left: 4px solid;
+  }
+  .callout-info    { background: var(--info-bg);   border-color: var(--info-border); }
+  .callout-tip     { background: var(--tip-bg);    border-color: var(--tip-border); }
+  .callout-warn    { background: var(--warn-bg);   border-color: var(--warn-border); }
+  .callout-danger  { background: var(--danger-bg); border-color: var(--danger-border); }
+  .callout-title   { font-weight: 700; margin-bottom: 0.25rem; }
+  .toc {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2rem;
+  }
+  .toc h3 { margin-top: 0; font-size: 1rem; }
+  .toc ol { margin-bottom: 0; }
+  .toc li { margin-bottom: 0.2rem; }
+  .diagram {
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: var(--radius);
+    padding: 1.25rem;
+    font-family: var(--mono);
+    font-size: 0.82em;
+    line-height: 1.55;
+    overflow-x: auto;
+    margin-bottom: 1.25rem;
+  }
+  .diagram .dim   { color: #64748b; }
+  .diagram .hi    { color: #7dd3fc; }
+  .diagram .grn   { color: #86efac; }
+  .diagram .ylw   { color: #fde68a; }
+  .diagram .red   { color: #fca5a5; }
+  .diagram .orn   { color: #fdba74; }
+  .phase-box {
+    background: var(--phase-bg);
+    border: 1px solid var(--phase-border);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .phase-box h4 { margin-top: 0; color: var(--accent); }
+  details { margin-bottom: 0.75rem; }
+  summary { cursor: pointer; font-weight: 600; padding: 0.4rem 0; user-select: none; }
+  summary:hover { color: var(--accent); }
+  details[open] summary { margin-bottom: 0.5rem; }
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  @media (max-width: 640px) { .two-col { grid-template-columns: 1fr; } }
+  .card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.85rem 1rem;
+  }
+  .card h4 { margin-top: 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+</style>
+</head>
+<body>
+
+<h1>News Sentinel — 主动新闻抓取与市场情报服务</h1>
+<p class="meta">
+  文档类型：需求 / 架构设计 / 开发计划 &nbsp;·&nbsp;
+  状态：<span class="badge badge-orange">草稿</span> &nbsp;·&nbsp;
+  目标系统：<code>daily_stock_analysis</code> &nbsp;·&nbsp;
+  创建日期：2026-05-12
+</p>
+
+<div class="toc">
+  <h3>目录</h3>
+  <ol>
+    <li><a href="#overview">需求概述与目标</a></li>
+    <li><a href="#arch">系统架构</a></li>
+    <li><a href="#components">核心组件设计</a></li>
+    <li><a href="#data-model">数据模型</a></li>
+    <li><a href="#sources">抓取源清单</a></li>
+    <li><a href="#llm">LLM 分析流水线</a></li>
+    <li><a href="#lifecycle">调度与生命周期管理</a></li>
+    <li><a href="#notification">通知与集成协议</a></li>
+    <li><a href="#api">对外接口设计</a></li>
+    <li><a href="#integration">与现有系统的集成</a></li>
+    <li><a href="#config">配置参考</a></li>
+    <li><a href="#plan">开发计划</a></li>
+    <li><a href="#risks">风险与缓解</a></li>
+  </ol>
+</div>
+
+<!-- ═══════════════════════════════════════════════ 1. Overview ══ -->
+<h2 id="overview">1. 需求概述与目标</h2>
+
+<h3>1.1 背景</h3>
+<p>
+  当前系统的新闻获取策略是<strong>被动拉取（pull-on-demand）</strong>：每次分析单只股票时，临时调用第三方搜索 API（Tavily / SerpAPI / Bocha / EastMoney RSS 等）获取最新资讯。这种模式的缺陷：
+</p>
+<ul>
+  <li>每次分析耗时长，受 API 限速和网络延迟影响</li>
+  <li>无法主动感知市场突发事件，缺乏预判能力</li>
+  <li>无法跨股票/行业做宏观归纳，找到共同催化剂</li>
+  <li>对第三方 API 依赖高，成本不可控</li>
+</ul>
+
+<h3>1.2 目标</h3>
+<p><strong>News Sentinel</strong> 是一个独立的主动情报服务，目标是：</p>
+<ol>
+  <li>周期性地直接抓取行业、财经、政策、监管、突发等各类网站，无需 API Key</li>
+  <li>使用 LLM 对每条新闻进行分类标注和市场影响优先级评分</li>
+  <li>将新闻本地缓存，向股票分析服务提供高效查询接口</li>
+  <li>周期性淘汰低价值过期内容，长期索引高影响力新闻作为知识底座</li>
+  <li>每轮抓取完成后执行综合宏观分析，若发现市场机会则主动通知股票分析服务触发深度分析</li>
+</ol>
+
+<h3>1.3 设计原则</h3>
+<ul>
+  <li><strong>渐进增强</strong>：服务不可用时，现有股票分析流程自动降级至原有 SearchService，不阻断主流程</li>
+  <li><strong>成本优先</strong>：优先免费渠道（RSS / 直接抓取），LLM 调用批量化、有限速</li>
+  <li><strong>最小侵入</strong>：以独立进程运行，通过 REST 接口与主服务通信，不共享进程内存</li>
+  <li><strong>可审计</strong>：每条新闻保留来源、抓取时间、LLM 分析理由，便于回溯</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════ 2. Architecture ══ -->
+<h2 id="arch">2. 系统架构</h2>
+
+<h3>2.1 整体架构图</h3>
+
+<div class="diagram">
+<span class="dim">┌─────────────────────────────────────────────────────────────────────────────────┐</span>
+<span class="dim">│                          NEWS SENTINEL SERVICE                                  │</span>
+<span class="dim">│                                                                                 │</span>
+<span class="dim">│  ┌──────────────┐   ┌────────────────────────────────────────────────────────┐ │</span>
+<span class="dim">│  │</span> <span class="ylw">  Scheduler   </span><span class="dim">│──▶│</span>              <span class="hi">Spider Engine</span>                              <span class="dim">│ │</span>
+<span class="dim">│  │</span> <span class="ylw">  (APScheduler</span><span class="dim">│   │</span>  <span class="grn">RSSSpider</span>  <span class="grn">HTMLSpider</span>  <span class="grn">SitemapSpider</span>  <span class="grn">APISpider</span>  <span class="dim">│ │</span>
+<span class="dim">│  │</span> <span class="ylw">   / cron)    </span><span class="dim">│   │</span>  Finance    Gov/Reg    Industry       Breaking    <span class="dim">│ │</span>
+<span class="dim">│  └──────────────┘   └─────────────────────┬──────────────────────────────────┘ │</span>
+<span class="dim">│                                           │ raw articles                        │</span>
+<span class="dim">│                      ┌────────────────────▼──────────────────────────────────┐ │</span>
+<span class="dim">│                      │</span>               <span class="hi">Processing Pipeline</span>                    <span class="dim">│ │</span>
+<span class="dim">│                      │</span>  <span class="grn">Dedup</span> ──▶ <span class="grn">Normalizer</span> ──▶ <span class="grn">LLM Classifier</span>          <span class="dim">│ │</span>
+<span class="dim">│                      │</span>             (batch)      category / priority /        <span class="dim">│ │</span>
+<span class="dim">│                      │</span>                           entities / sentiment         <span class="dim">│ │</span>
+<span class="dim">│                      └────────────────────┬──────────────────────────────────┘ │</span>
+<span class="dim">│                                           │ enriched articles                   │</span>
+<span class="dim">│                      ┌────────────────────▼──────────────────────────────────┐ │</span>
+<span class="dim">│                      │</span>               <span class="hi">News Store</span>                             <span class="dim">│ │</span>
+<span class="dim">│                      │</span>  SQLite/PostgreSQL + FTS5  ·  TTL Purger             <span class="dim">│ │</span>
+<span class="dim">│                      │</span>  hot_cache (Redis optional)                          <span class="dim">│ │</span>
+<span class="dim">│                      └──────┬─────────────────────┬─────────────────────────┘ │</span>
+<span class="dim">│                             │                     │                             │</span>
+<span class="dim">│         ┌───────────────────▼──────┐  ┌───────────▼──────────────────────────┐ │</span>
+<span class="dim">│         │</span>      <span class="hi">Query Interface</span>      <span class="dim">│  │</span>      <span class="orn">Comprehensive Analyzer</span>         <span class="dim">│ │</span>
+<span class="dim">│         │</span> REST /api/v1/sentinel/*   <span class="dim">│  │</span> post-cycle LLM macro synthesis     <span class="dim">│ │</span>
+<span class="dim">│         │</span> by code/sector/category   <span class="dim">│  │</span> opportunity detection              <span class="dim">│ │</span>
+<span class="dim">│         └───────────────────────────┘  └───────────┬──────────────────────────┘ │</span>
+<span class="dim">│                                                    │ opportunity event            │</span>
+<span class="dim">│                                         ┌──────────▼──────────────────────────┐ │</span>
+<span class="dim">│                                         │</span>       <span class="red">Notifier</span>                    <span class="dim">│ │</span>
+<span class="dim">│                                         │</span> webhook · queue · push             <span class="dim">│ │</span>
+<span class="dim">│                                         └──────────┬──────────────────────────┘ │</span>
+<span class="dim">└────────────────────────────────────────────────────┼────────────────────────────┘</span>
+                                                      │
+<span class="dim">┌────────────────────────────────────────────────────▼────────────────────────────┐</span>
+<span class="dim">│                       MAIN DSA SERVICE  (existing)                              │</span>
+<span class="dim">│</span>  StockAnalysisPipeline  ·  SearchService (fallback)  ·  NotificationService   <span class="dim">│</span>
+<span class="dim">└─────────────────────────────────────────────────────────────────────────────────┘</span>
+</div>
+
+<h3>2.2 部署模式</h3>
+<div class="two-col">
+  <div class="card">
+    <h4>模式 A：内嵌进程（初期推荐）</h4>
+    <p>作为 <code>main.py --sentinel</code> 子进程或后台线程运行，随主服务启动。通信通过 SQLite 共享数据库 + 内部函数调用。</p>
+    <ul>
+      <li>部署简单，无需额外端口</li>
+      <li>适合单机 / Docker 单容器场景</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>模式 B：独立微服务（长期目标）</h4>
+    <p>独立进程运行，通过 HTTP REST API 通信。可独立扩展、重启，支持多实例。</p>
+    <ul>
+      <li>需要 <code>uvicorn server_sentinel:app</code></li>
+      <li>适合生产环境 / Docker Compose 多容器</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ 3. Components ══ -->
+<h2 id="components">3. 核心组件设计</h2>
+
+<h3>3.1 Spider Engine（抓取引擎）</h3>
+<p>
+  基于 <strong>httpx + BeautifulSoup4</strong>（轻量，无需 Scrapy 进程模型）实现可插拔的 Spider 注册表。每个 Spider 对应一个数据源，实现统一的 <code>SpiderBase</code> 接口。
+</p>
+<div class="callout callout-info">
+  <div class="callout-title">为何不用 Scrapy 框架</div>
+  Scrapy 是进程级框架，与 asyncio 集成复杂，且现有代码库基于 threading。初期使用 <code>httpx.AsyncClient</code> + <code>asyncio</code> 更容易集成进现有调度器，成熟后再迁移。
+</div>
+
+<pre>
+# src/services/sentinel/spiders/base.py
+class SpiderBase(ABC):
+    name: str                     # e.g. "eastmoney_rss"
+    category: str                 # finance / gov / industry / breaking
+    interval_minutes: int = 30    # per-spider scrape interval
+    max_items_per_run: int = 50
+    timeout_seconds: int = 10
+
+    @abstractmethod
+    async def fetch(self) -> list[RawArticle]:
+        """Fetch raw articles from source. Returns deduplicated by URL."""
+        ...
+
+    def is_enabled(self, config: SentinelConfig) -> bool:
+        return True
+</pre>
+
+<pre>
+# RawArticle (unprocessed)
+@dataclass
+class RawArticle:
+    url: str
+    title: str
+    content: str        # full text or excerpt
+    published_at: datetime | None
+    source_name: str    # "东方财富"
+    source_url: str     # base domain
+    spider_name: str
+    fetched_at: datetime = field(default_factory=datetime.utcnow)
+    language: str = "zh"   # zh / en
+</pre>
+
+<h3>3.2 Processing Pipeline（处理流水线）</h3>
+
+<pre>
+RawArticle → Deduplicator → ContentNormalizer → LLMClassifier → NewsItem
+</pre>
+
+<h4>3.2.1 Deduplicator</h4>
+<ul>
+  <li>SHA-256 of <code>normalize(url)</code> as primary key</li>
+  <li>SimHash of <code>title + content[:200]</code> for near-duplicate detection（阈值 Hamming distance ≤ 3）</li>
+  <li>Already-seen items are skipped before LLM call</li>
+</ul>
+
+<h4>3.2.2 ContentNormalizer</h4>
+<ul>
+  <li>清理 HTML 标签、广告锚文本、导航菜单文本</li>
+  <li>截断内容至 2000 字符（LLM 上下文预算）</li>
+  <li>语言检测（langdetect），标注 <code>language</code></li>
+  <li>时间规范化为 UTC datetime</li>
+</ul>
+
+<h4>3.2.3 LLM Classifier（批量分类）</h4>
+<p>每批 10-20 条新闻聚合成单次 LLM 调用，降低 API 成本。</p>
+<pre>
+# 单条新闻 LLM 分类 prompt 示例（批量版嵌入 JSON array）
+"""
+你是专业的金融新闻分析师。请对以下新闻进行分类和评估，返回 JSON 数组。
+
+每条新闻输出字段：
+- category: finance|policy|industry|regulatory|macro|breaking|company|other
+- priority: 1(低影响)~5(极高影响，可能引发市场波动)
+- sentiment: bullish|bearish|neutral
+- market_scope: stock_specific|sector|market_wide|macro
+- affected_sectors: ["半导体","新能源",...] 最多3个
+- affected_stocks: ["600519","NVDA",...] 仅明确提及的代码
+- impact_horizon: intraday|short_term(1-5d)|medium_term(1-4w)|long_term(1m+)
+- reasoning: 20字内说明为何给此优先级
+- is_actionable: true/false  是否需要立即触发股票分析
+
+新闻列表：
+{news_json_array}
+"""
+</pre>
+
+<div class="callout callout-warn">
+  <div class="callout-title">LLM 调用成本控制</div>
+  <ul>
+    <li>每轮最多分类 200 条（超出排队到下一轮）</li>
+    <li>低优先级来源（如博客聚合）只在非高峰时段分类</li>
+    <li>已分类内容 24h 内不重新分类（除非内容发生变化）</li>
+    <li>使用系统中已配置的 LLM（本地模型优先，节省 API 费用）</li>
+  </ul>
+</div>
+
+<h3>3.3 News Store（新闻存储）</h3>
+<p>使用 SQLite（与主 DB 分离）作为持久层，可选 Redis 作为热缓存。</p>
+
+<pre>
+# 数据库路径（独立，不与主 DB 合并）
+SENTINEL_DB = data/sentinel.db
+</pre>
+
+<h3>3.4 TTL Purger（过期清理）</h3>
+
+<table>
+  <thead>
+    <tr><th>优先级</th><th>保留时长</th><th>清理策略</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>P5（极高影响）</td><td>永久保留</td><td>只标记 <code>is_archived=true</code>，不删除</td></tr>
+    <tr><td>P4（高影响）</td><td>90 天</td><td>超期后降为 archived</td></tr>
+    <tr><td>P3（中等）</td><td>30 天</td><td>超期后软删除</td></tr>
+    <tr><td>P2（低）</td><td>7 天</td><td>硬删除</td></tr>
+    <tr><td>P1（极低）</td><td>24 小时</td><td>硬删除</td></tr>
+  </tbody>
+</table>
+
+<h3>3.5 Comprehensive Analyzer（综合分析器）</h3>
+<p>
+  每轮抓取完毕后运行一次，聚合最近 N 条高优先级新闻（P3+），由 LLM 做宏观归纳。
+</p>
+
+<pre>
+# 综合分析 prompt 骨架
+"""
+以下是过去 {window} 小时内的重要市场资讯（共 {count} 条，已按优先级排序）：
+{news_digest}
+
+请完成：
+1. 宏观主题归纳（最多3条）：当前市场最主要的催化剂或风险
+2. 板块机会信号：哪些板块可能在未来1-5个交易日出现异动
+3. 具体股票线索（如有）：值得立即分析的股票代码及理由
+4. 风险提示：需警惕的重大系统性风险
+5. 综合判断：整体市场情绪（极度悲观/悲观/中性/乐观/极度乐观）
+
+输出 JSON，字段：themes, sector_opportunities, stock_leads, risk_alerts, market_mood
+"""
+</pre>
+
+<p>若 <code>stock_leads</code> 非空且置信度 ≥ 0.7，自动向主服务发送分析触发通知。</p>
+
+<!-- ═══════════════════════════════════════════════ 4. Data Model ══ -->
+<h2 id="data-model">4. 数据模型</h2>
+
+<h3>4.1 news_items（新闻条目）</h3>
+<pre>
+CREATE TABLE news_items (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    url_hash        TEXT NOT NULL UNIQUE,          -- SHA-256(normalized_url)
+    simhash         INTEGER,                        -- 64-bit SimHash for near-dedup
+    url             TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    content         TEXT,                           -- first 2000 chars
+    source_name     TEXT NOT NULL,
+    source_url      TEXT NOT NULL,
+    spider_name     TEXT NOT NULL,
+    language        TEXT DEFAULT 'zh',
+
+    -- LLM classification
+    category        TEXT,      -- finance/policy/industry/regulatory/macro/breaking/company/other
+    priority        INTEGER,   -- 1-5
+    sentiment       TEXT,      -- bullish/bearish/neutral
+    market_scope    TEXT,      -- stock_specific/sector/market_wide/macro
+    affected_sectors TEXT,     -- JSON array
+    affected_stocks  TEXT,     -- JSON array of stock codes
+    impact_horizon   TEXT,     -- intraday/short_term/medium_term/long_term
+    llm_reasoning   TEXT,      -- 20-char reasoning
+    is_actionable   INTEGER DEFAULT 0,
+
+    -- lifecycle
+    published_at    TEXT,      -- ISO8601 UTC
+    fetched_at      TEXT NOT NULL,
+    analyzed_at     TEXT,
+    expires_at      TEXT,      -- computed from priority + published_at
+    is_expired      INTEGER DEFAULT 0,
+    is_archived     INTEGER DEFAULT 0,
+
+    CONSTRAINT priority_range CHECK (priority BETWEEN 1 AND 5)
+);
+
+CREATE INDEX idx_news_priority    ON news_items(priority DESC, fetched_at DESC);
+CREATE INDEX idx_news_category    ON news_items(category, is_expired);
+CREATE INDEX idx_news_stocks      ON news_items(affected_stocks);  -- JSON, use LIKE for now
+CREATE INDEX idx_news_fetched     ON news_items(fetched_at DESC);
+CREATE VIRTUAL TABLE news_fts USING fts5(
+    title, content, source_name,
+    content='news_items', content_rowid='id'
+);
+</pre>
+
+<h3>4.2 cycle_analyses（综合分析轮次记录）</h3>
+<pre>
+CREATE TABLE cycle_analyses (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    cycle_at         TEXT NOT NULL,          -- ISO8601 UTC, cycle completion time
+    news_count       INTEGER,               -- number of items analyzed
+    themes           TEXT,                  -- JSON: [{theme, confidence, sectors}]
+    sector_opps      TEXT,                  -- JSON: [{sector, signal, horizon}]
+    stock_leads      TEXT,                  -- JSON: [{code, name, reason, confidence}]
+    risk_alerts      TEXT,                  -- JSON array of strings
+    market_mood      TEXT,
+    triggered_stocks TEXT,                  -- JSON: codes that triggered analysis
+    model_used       TEXT,
+    created_at       TEXT DEFAULT (datetime('now'))
+);
+</pre>
+
+<h3>4.3 spider_runs（抓取运行日志）</h3>
+<pre>
+CREATE TABLE spider_runs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    spider_name  TEXT NOT NULL,
+    started_at   TEXT NOT NULL,
+    finished_at  TEXT,
+    items_fetched INTEGER DEFAULT 0,
+    items_new     INTEGER DEFAULT 0,
+    items_deduped INTEGER DEFAULT 0,
+    error_msg     TEXT,
+    status        TEXT DEFAULT 'running'  -- running/ok/error/partial
+);
+</pre>
+
+<!-- ═══════════════════════════════════════════════ 5. Sources ══ -->
+<h2 id="sources">5. 抓取源清单</h2>
+
+<div class="callout callout-info">
+  <div class="callout-title">选源原则</div>
+  优先免费、RSS 可用、无强 JS 渲染的来源。需要复杂 JS 渲染的来源使用 playwright-stealth 或暂时跳过。所有抓取遵守各站 robots.txt，设置合理 User-Agent 和请求间隔（≥2s/site）。
+</div>
+
+<h3>5.1 A 股财经资讯</h3>
+<table>
+  <thead>
+    <tr><th>来源</th><th>实现方式</th><th>频率</th><th>已有 Provider</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>东方财富财经</td><td>RSS / API</td><td>15 min</td><td>✅ EastMoneyNewsProvider</td></tr>
+    <tr><td>财联社</td><td>RSS</td><td>15 min</td><td>✅ CLSNewsProvider</td></tr>
+    <tr><td>证券时报</td><td>RSS 抓取</td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>上海证券报</td><td>RSS 抓取</td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>第一财经</td><td>RSS</td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>新浪财经</td><td>RSS</td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>同花顺财经</td><td>HTML 抓取</td><td>60 min</td><td>需新建</td></tr>
+  </tbody>
+</table>
+
+<h3>5.2 政策与监管</h3>
+<table>
+  <thead>
+    <tr><th>来源</th><th>URL 模板</th><th>实现方式</th><th>频率</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>中国证监会</td><td>csrc.gov.cn/csrc/c101924/</td><td>HTML 列表页</td><td>60 min</td></tr>
+    <tr><td>中国央行（PBoC）</td><td>pbc.gov.cn/rmyh/</td><td>HTML 列表页</td><td>60 min</td></tr>
+    <tr><td>国家发改委</td><td>ndrc.gov.cn/xwdt/</td><td>HTML 列表页</td><td>60 min</td></tr>
+    <tr><td>国务院新闻</td><td>gov.cn/xinwen/</td><td>RSS</td><td>60 min</td></tr>
+    <tr><td>上交所公告</td><td>sse.com.cn</td><td>HTML 列表页</td><td>30 min</td></tr>
+    <tr><td>深交所公告</td><td>szse.cn</td><td>HTML 列表页</td><td>30 min</td></tr>
+    <tr><td>香港证监会（SFC）</td><td>sfc.hk/en/news-and-announcements</td><td>HTML 列表页</td><td>60 min</td></tr>
+  </tbody>
+</table>
+
+<h3>5.3 行业与产业链</h3>
+<table>
+  <thead>
+    <tr><th>来源</th><th>说明</th><th>实现方式</th><th>频率</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>工信部</td><td>工业/科技政策</td><td>HTML</td><td>120 min</td></tr>
+    <tr><td>财新</td><td>深度财经报道</td><td>RSS（免费部分）</td><td>60 min</td></tr>
+    <tr><td>36Kr</td><td>科技/创投</td><td>RSS</td><td>60 min</td></tr>
+    <tr><td>虎嗅</td><td>科技/商业</td><td>RSS</td><td>60 min</td></tr>
+    <tr><td>新能源行业协会</td><td>新能源政策</td><td>HTML</td><td>120 min</td></tr>
+    <tr><td>中国半导体行业协会</td><td>芯片政策</td><td>HTML</td><td>120 min</td></tr>
+  </tbody>
+</table>
+
+<h3>5.4 国际财经（港股/美股）</h3>
+<table>
+  <thead>
+    <tr><th>来源</th><th>实现方式</th><th>频率</th><th>已有 Provider</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Google News（中文）</td><td>RSS</td><td>15 min</td><td>✅ GoogleNewsCNRSSProvider</td></tr>
+    <tr><td>Google News（英文）</td><td>RSS</td><td>15 min</td><td>✅ GoogleNewsRSSProvider</td></tr>
+    <tr><td>Bing News</td><td>RSS</td><td>15 min</td><td>✅ BingNewsRSSProvider</td></tr>
+    <tr><td>Yahoo Finance</td><td>RSS</td><td>30 min</td><td>✅ YahooFinanceNewsProvider</td></tr>
+    <tr><td>Reuters（免费版）</td><td>RSS</td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>港交所公告</td><td>HTML</td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>SEC EDGAR (8-K/6-K)</td><td>RSS</td><td>30 min</td><td>需新建</td></tr>
+  </tbody>
+</table>
+
+<h3>5.5 社交热点（辅助）</h3>
+<table>
+  <thead>
+    <tr><th>来源</th><th>说明</th><th>实现方式</th><th>频率</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>微博热搜财经相关</td><td>过滤财经标签</td><td>HTML（无需登录）</td><td>30 min</td></tr>
+    <tr><td>雪球热帖</td><td>散户情绪参考</td><td>HTML / API</td><td>60 min</td></tr>
+  </tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════ 6. LLM Pipeline ══ -->
+<h2 id="llm">6. LLM 分析流水线</h2>
+
+<h3>6.1 分类批次策略</h3>
+<pre>
+                 每批 ≤ 20 条
+                 每次 LLM 调用
+                    ┌───────┐
+Raw Articles ──────▶│ Batch │──▶ LLM Call ──▶ Classification Result
+   (N 条)     split └───────┘               (JSON array N items)
+              into
+              ceil(N/20) batches
+</pre>
+
+<ul>
+  <li>批次间隔：1 秒（避免 API 限速）</li>
+  <li>重试策略：3 次，指数退避</li>
+  <li>若 LLM 调用失败：标记 <code>analyzed_at=null</code>，下次循环重试</li>
+  <li>使用与主服务相同的 LLM 配置（复用 <code>GeminiAnalyzer</code> 底层调用）</li>
+</ul>
+
+<h3>6.2 优先级评分公式</h3>
+<p>LLM 返回原始 priority（1-5），结合规则调整：</p>
+<pre>
+final_priority = clip(
+    llm_priority
+    + gov_source_bonus(+1 if category='policy' and source in GOV_SOURCES)
+    + freshness_bonus(+1 if age &lt; 1h)
+    + recurrence_penalty(-1 if similar item seen in last 6h)
+    , 1, 5
+)
+</pre>
+
+<h3>6.3 综合分析触发条件</h3>
+<table>
+  <thead>
+    <tr><th>触发条件</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>本轮新增 P4/P5 新闻 ≥ 3 条</td><td>高影响新闻集中涌现</td></tr>
+    <tr><td>单一板块 P3+ 新闻 ≥ 5 条</td><td>板块集中事件</td></tr>
+    <tr><td>任意 P5 新闻出现</td><td>极端事件（如央行降息、重大政策）</td></tr>
+    <tr><td>定时触发（每 4 小时）</td><td>常规宏观梳理，即使无高影响新闻</td></tr>
+  </tbody>
+</table>
+
+<h3>6.4 股票触发逻辑</h3>
+<pre>
+for lead in cycle_analysis.stock_leads:
+    if lead.confidence >= 0.70:
+        notify_stock_service(
+            code=lead.code,
+            reason=lead.reason,
+            priority="high",
+            source_cycle_id=cycle.id,
+        )
+</pre>
+
+<!-- ═══════════════════════════════════════════════ 7. Lifecycle ══ -->
+<h2 id="lifecycle">7. 调度与生命周期管理</h2>
+
+<h3>7.1 调度时间表</h3>
+<table>
+  <thead>
+    <tr><th>任务</th><th>触发方式</th><th>默认间隔</th><th>高频窗口（交易时段）</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>高频源抓取（财联社、东财）</td><td>interval</td><td>15 min</td><td>5 min（09:00-15:30 / 21:00-04:00 ET）</td></tr>
+    <tr><td>常规源抓取</td><td>interval</td><td>30 min</td><td>15 min</td></tr>
+    <tr><td>低频源抓取（政府/监管）</td><td>interval</td><td>60 min</td><td>30 min</td></tr>
+    <tr><td>LLM 批量分类</td><td>事件驱动（新文章入库后触发）</td><td>—</td><td>—</td></tr>
+    <tr><td>综合分析</td><td>轮次结束后 + 定时</td><td>4 h</td><td>每轮抓取后评估是否触发</td></tr>
+    <tr><td>TTL 清理</td><td>cron</td><td>每天 03:00</td><td>—</td></tr>
+    <tr><td>FTS5 重建索引</td><td>cron</td><td>每天 04:00</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h3>7.2 抓取轮次（Cycle）生命周期</h3>
+<div class="diagram">
+<span class="grn">START</span> ──▶ spawn spiders (parallel, max_concurrency=5)
+         │
+         ├── spider_1: fetch → normalize → deduplicate → queue
+         ├── spider_2: fetch → normalize → deduplicate → queue
+         └── ...
+         │
+         ▼
+     all spiders done OR timeout (CYCLE_TIMEOUT_MINUTES=10)
+         │
+         ▼
+     batch_classify(queued_articles, batch_size=20)
+         │
+         ▼
+     update news_store (insert / update priority)
+         │
+         ▼
+     evaluate_cycle_trigger_conditions()
+         │
+    ┌────┴────┐
+   yes        no
+    │          │
+    ▼          ▼
+run_comprehensive_analysis()   <span class="dim">skip, log</span>
+    │
+    ▼
+check stock_leads.confidence
+    │
+  ≥ 0.7
+    │
+    ▼
+notify_stock_service(codes)
+    │
+    ▼
+<span class="grn">END CYCLE</span>
+</div>
+
+<h3>7.3 优雅停机</h3>
+<ul>
+  <li>收到 SIGTERM/SIGINT 时，完成当前抓取批次，跳过 LLM 分类，安全写库后退出</li>
+  <li>未分类文章保留 <code>analyzed_at=null</code>，下次启动续处理</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════ 8. Notification ══ -->
+<h2 id="notification">8. 通知与集成协议</h2>
+
+<h3>8.1 通知事件类型</h3>
+<table>
+  <thead>
+    <tr><th>事件</th><th>触发条件</th><th>Payload 字段</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>stock.analysis.trigger</code></td><td>综合分析发现高置信度股票线索</td><td>code, name, reason, confidence, cycle_id</td></tr>
+    <tr><td><code>market.opportunity</code></td><td>板块/市场级机会信号</td><td>scope, sectors, signal, horizon, summary</td></tr>
+    <tr><td><code>policy.alert</code></td><td>P4+ 政策类新闻</td><td>title, source, url, priority, summary</td></tr>
+    <tr><td><code>breaking.alert</code></td><td>P5 任意类别</td><td>title, source, url, category, summary</td></tr>
+    <tr><td><code>cycle.completed</code></td><td>每轮综合分析完成</td><td>cycle_id, mood, themes_count, leads_count</td></tr>
+  </tbody>
+</table>
+
+<h3>8.2 通知传输方式</h3>
+<div class="two-col">
+  <div class="card">
+    <h4>方式 A：内部回调（内嵌模式）</h4>
+    <p>直接调用 <code>StockAnalysisPipeline.enqueue_analysis(code)</code> 函数</p>
+    <pre style="margin-top:0.5rem">
+# 主服务注册回调
+sentinel.on_event("stock.analysis.trigger",
+    pipeline.enqueue_analysis)</pre>
+  </div>
+  <div class="card">
+    <h4>方式 B：HTTP Webhook（独立微服务模式）</h4>
+    <p>POST 到主服务的 webhook 端点</p>
+    <pre style="margin-top:0.5rem">
+POST /api/v1/internal/sentinel-notify
+Authorization: Bearer {SENTINEL_WEBHOOK_SECRET}
+{
+  "event": "stock.analysis.trigger",
+  "payload": {...}
+}</pre>
+  </div>
+</div>
+
+<h3>8.3 现有通知渠道集成</h3>
+<p>
+  <code>policy.alert</code> 和 <code>breaking.alert</code> 直接发送至飞书/Telegram（复用 <code>NotificationService</code>），
+  格式与现有股票分析报告保持一致。
+</p>
+
+<!-- ═══════════════════════════════════════════════ 9. API ══ -->
+<h2 id="api">9. 对外接口设计</h2>
+
+<h3>9.1 新闻查询接口</h3>
+<pre>
+GET /api/v1/sentinel/news
+  ?stock_code=600519        # 过滤 affected_stocks 含该代码
+  &amp;sector=半导体             # 过滤 affected_sectors
+  &amp;category=policy          # finance/policy/industry/regulatory/macro/breaking
+  &amp;priority_min=3           # 最低优先级
+  &amp;hours=24                 # 最近 N 小时
+  &amp;limit=20
+  &amp;language=zh
+
+Response 200:
+{
+  "total": 42,
+  "items": [
+    {
+      "id": 123,
+      "title": "国务院发布...",
+      "url": "https://...",
+      "source_name": "国务院新闻办",
+      "category": "policy",
+      "priority": 5,
+      "sentiment": "neutral",
+      "market_scope": "market_wide",
+      "affected_sectors": ["金融", "地产"],
+      "affected_stocks": [],
+      "impact_horizon": "medium_term",
+      "llm_reasoning": "央行政策调整影响全市场",
+      "published_at": "2026-05-12T08:30:00Z",
+      "fetched_at": "2026-05-12T08:45:00Z"
+    }
+  ]
+}
+</pre>
+
+<pre>
+GET /api/v1/sentinel/news/search?q=降息&amp;limit=10   # FTS5 全文检索
+
+GET /api/v1/sentinel/cycles/latest                 # 最近一次综合分析结果
+
+GET /api/v1/sentinel/cycles/{id}                   # 指定轮次详情
+
+GET /api/v1/sentinel/status                        # 服务状态：running spiders, last cycle, db size
+
+POST /api/v1/sentinel/trigger                      # 手动触发一次完整抓取循环（需鉴权）
+</pre>
+
+<h3>9.2 股票分析服务消费接口</h3>
+<p>现有 <code>SearchService.search_comprehensive_intel()</code> 增加可选参数 <code>use_sentinel_cache</code>：</p>
+<pre>
+# search_service.py 修改（最小侵入）
+def search_comprehensive_intel(
+    self,
+    stock_code: str,
+    stock_name: str,
+    ...
+    use_sentinel_cache: bool = True,   # NEW: 优先从 Sentinel 缓存拉取
+) -> Dict[str, SearchResponse]:
+    if use_sentinel_cache and self._sentinel_client:
+        cached = self._sentinel_client.get_news_for_stock(stock_code, hours=6)
+        if cached.items:
+            return self._merge_cached_with_fresh(cached, stock_name)
+    # fallback: original search logic
+    ...
+</pre>
+
+<!-- ═══════════════════════════════════════════════ 10. Integration ══ -->
+<h2 id="integration">10. 与现有系统的集成</h2>
+
+<h3>10.1 集成映射</h3>
+<table>
+  <thead>
+    <tr><th>现有组件</th><th>集成点</th><th>变更幅度</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>SearchService</code></td><td>新增 <code>SentinelCacheClient</code> 可选后端；已有逻辑不变</td><td>小（新增参数+fallback）</td></tr>
+    <tr><td><code>StockAnalysisPipeline</code></td><td>新增 <code>enqueue_analysis</code> 接受外部触发</td><td>小（已有 task_queue 机制）</td></tr>
+    <tr><td><code>Scheduler</code></td><td>注册 Sentinel 调度任务</td><td>小（add_background_task）</td></tr>
+    <tr><td><code>NotificationService</code></td><td>Sentinel 借用现有渠道发送 policy/breaking 通知</td><td>零（直接调用现有接口）</td></tr>
+    <tr><td><code>DatabaseManager</code></td><td>Sentinel 使用独立 DB，不共享</td><td>零</td></tr>
+    <tr><td>Web UI</td><td>Phase 4 新增"情报中心"侧边栏页面</td><td>中（新路由 + 新组件）</td></tr>
+  </tbody>
+</table>
+
+<h3>10.2 降级策略</h3>
+<div class="callout callout-tip">
+  <div class="callout-title">零停机降级</div>
+  Sentinel 未部署或不可用时，所有调用路径自动回落到原有 SearchService 在线 API 调用。主服务中 <code>SENTINEL_ENABLED=false</code>（默认）即可完全禁用，无任何副作用。
+</div>
+
+<h3>10.3 文件目录结构</h3>
+<pre>
+src/services/sentinel/
+├── __init__.py
+├── service.py            # SentinelService: 顶层协调器
+├── scheduler.py          # SentinelScheduler: 调度任务注册
+├── store.py              # NewsStore: SQLite CRUD + FTS5
+├── classifier.py         # LLMClassifier: 批量分类
+├── analyzer.py           # ComprehensiveAnalyzer: 综合分析 + 通知
+├── notifier.py           # SentinelNotifier: 事件分发
+├── client.py             # SentinelCacheClient: 供 SearchService 调用
+├── models.py             # RawArticle, NewsItem, CycleAnalysis dataclasses
+├── config.py             # SentinelConfig
+└── spiders/
+    ├── __init__.py
+    ├── base.py           # SpiderBase ABC
+    ├── rss.py            # RSSSpider 通用实现
+    ├── html_list.py      # HTMLListSpider 通用实现（翻页支持）
+    ├── eastmoney.py
+    ├── cls.py
+    ├── csrc.py           # 证监会
+    ├── pbc.py            # 央行
+    ├── ndrc.py           # 发改委
+    ├── sse.py            # 上交所
+    ├── szse.py           # 深交所
+    ├── google_news.py    # 复用现有逻辑
+    ├── yahoo_finance.py
+    ├── reuters.py
+    └── sec_edgar.py
+</pre>
+
+<!-- ═══════════════════════════════════════════════ 11. Config ══ -->
+<h2 id="config">11. 配置参考</h2>
+
+<p>所有配置项通过环境变量（对应 <code>.env</code> / <code>.env.example</code>）注入，默认值保证"不配置也能跑"。</p>
+
+<table>
+  <thead>
+    <tr><th>环境变量</th><th>类型</th><th>默认</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>SENTINEL_ENABLED</code></td><td>bool</td><td><code>false</code></td><td>主开关，false 时完全不运行</td></tr>
+    <tr><td><code>SENTINEL_DB_PATH</code></td><td>str</td><td><code>data/sentinel.db</code></td><td>Sentinel 独立 SQLite 数据库路径</td></tr>
+    <tr><td><code>SENTINEL_CYCLE_INTERVAL_MINUTES</code></td><td>int</td><td><code>30</code></td><td>抓取轮次间隔（分钟）</td></tr>
+    <tr><td><code>SENTINEL_ANALYSIS_INTERVAL_HOURS</code></td><td>int</td><td><code>4</code></td><td>综合分析定时触发间隔（小时）</td></tr>
+    <tr><td><code>SENTINEL_LLM_BATCH_SIZE</code></td><td>int</td><td><code>20</code></td><td>每次 LLM 分类批次大小</td></tr>
+    <tr><td><code>SENTINEL_LLM_MAX_PER_CYCLE</code></td><td>int</td><td><code>200</code></td><td>每轮最多分类条数</td></tr>
+    <tr><td><code>SENTINEL_TRIGGER_CONFIDENCE</code></td><td>float</td><td><code>0.70</code></td><td>触发股票分析的置信度阈值</td></tr>
+    <tr><td><code>SENTINEL_CYCLE_TIMEOUT_MINUTES</code></td><td>int</td><td><code>10</code></td><td>单轮抓取最大超时</td></tr>
+    <tr><td><code>SENTINEL_MAX_SPIDER_CONCURRENCY</code></td><td>int</td><td><code>5</code></td><td>并发 Spider 数量</td></tr>
+    <tr><td><code>SENTINEL_REQUEST_DELAY_SECONDS</code></td><td>float</td><td><code>2.0</code></td><td>同一站点请求间隔</td></tr>
+    <tr><td><code>SENTINEL_WEBHOOK_SECRET</code></td><td>str</td><td>（空）</td><td>微服务模式下 webhook 鉴权密钥</td></tr>
+    <tr><td><code>SENTINEL_REDIS_URL</code></td><td>str</td><td>（空）</td><td>可选 Redis 热缓存（空则不用）</td></tr>
+    <tr><td><code>SENTINEL_ENABLED_SPIDERS</code></td><td>str</td><td><code>all</code></td><td>逗号分隔的 Spider 名称，或 all</td></tr>
+    <tr><td><code>SENTINEL_TRADING_HOURS_BOOST</code></td><td>bool</td><td><code>true</code></td><td>交易时段内提高抓取频率</td></tr>
+  </tbody>
+</table>
+
+<!-- ═══════════════════════════════════════════════ 12. Plan ══ -->
+<h2 id="plan">12. 开发计划</h2>
+
+<div class="phase-box">
+  <h4>Phase 1 — 基础抓取框架（预计 1 周）</h4>
+  <ul>
+    <li>搭建 <code>src/services/sentinel/</code> 目录与基础模块</li>
+    <li>实现 <code>SpiderBase</code>、<code>RSSSpider</code>、<code>HTMLListSpider</code></li>
+    <li>实现 <code>Deduplicator</code>（URL hash + SimHash）</li>
+    <li>实现 <code>NewsStore</code>（SQLite 建表、CRUD、FTS5 虚拟表）</li>
+    <li>接入 5 个核心 RSS 来源（东财、财联社、Google News×2、Yahoo）</li>
+    <li>单元测试：Spider 解析、去重、存储</li>
+    <li>验收：<code>python -m src.services.sentinel.service --dry-run</code> 输出抓取统计</li>
+  </ul>
+</div>
+
+<div class="phase-box">
+  <h4>Phase 2 — LLM 分类流水线（预计 1 周）</h4>
+  <ul>
+    <li>实现 <code>LLMClassifier</code>（批量 prompt、JSON 解析、重试）</li>
+    <li>实现 TTL 过期计算与 <code>TTLPurger</code></li>
+    <li>完整调度循环（<code>SentinelScheduler</code>）</li>
+    <li>接入 <code>cycle_analyses</code> 表记录分析结果</li>
+    <li>单元测试：批量分类 prompt、优先级计算</li>
+    <li>验收：跑 2 轮完整抓取+分类，DB 中有正确 category/priority 数据</li>
+  </ul>
+</div>
+
+<div class="phase-box">
+  <h4>Phase 3 — 综合分析与通知（预计 1 周）</h4>
+  <ul>
+    <li>实现 <code>ComprehensiveAnalyzer</code>（宏观汇总 prompt、机会检测）</li>
+    <li>实现 <code>SentinelNotifier</code>（内部回调 + webhook 两种模式）</li>
+    <li>集成 <code>StockAnalysisPipeline.enqueue_analysis</code> 接受外部触发</li>
+    <li>接入现有 <code>NotificationService</code> 发送 policy/breaking 通知</li>
+    <li>单元测试：综合分析结果 schema 校验、通知分发逻辑</li>
+    <li>验收：P5 新闻出现 → 飞书/Telegram 收到通知 → 股票分析任务入队</li>
+  </ul>
+</div>
+
+<div class="phase-box">
+  <h4>Phase 4 — SearchService 集成与 Web UI（预计 1 周）</h4>
+  <ul>
+    <li>实现 <code>SentinelCacheClient</code></li>
+    <li>修改 <code>SearchService.search_comprehensive_intel()</code> 支持 <code>use_sentinel_cache</code></li>
+    <li>实现 REST API 端点 <code>/api/v1/sentinel/*</code></li>
+    <li>Web UI：新增"情报中心"页面，展示最新高优先级新闻、最近综合分析结果</li>
+    <li>集成测试：端对端 —— 新闻入库 → 分析触发 → Web 界面可查</li>
+    <li>验收：单只股票分析响应时间缩短（缓存命中时 &lt;2s vs 原来 &gt;5s）</li>
+  </ul>
+</div>
+
+<div class="phase-box">
+  <h4>Phase 5 — 扩展抓取源与生产加固（预计 1 周）</h4>
+  <ul>
+    <li>接入剩余抓取源（证监会、央行、发改委、港交所、SEC EDGAR 等）</li>
+    <li>实现 <code>SentinelService</code> 独立微服务模式（<code>server_sentinel.py</code>）</li>
+    <li>完善监控指标（抓取成功率、LLM 分类延迟、DB 大小、TTL 清理效率）</li>
+    <li>Docker Compose 新增 <code>sentinel</code> 服务定义</li>
+    <li>负载测试：200 条/轮 分类耗时 &lt; 60s</li>
+    <li>文档：部署指南、Spider 扩展指南、环境变量说明</li>
+  </ul>
+</div>
+
+<h3>12.1 里程碑时间线</h3>
+<pre>
+Week 1:  Phase 1 ── 基础抓取框架 ✦ RSS + HTML Spider + NewsStore
+Week 2:  Phase 2 ── LLM 分类 + TTL 清理 + 完整调度循环
+Week 3:  Phase 3 ── 综合分析 + 通知 + 股票分析触发
+Week 4:  Phase 4 ── SearchService 集成 + REST API + Web UI
+Week 5:  Phase 5 ── 扩展源 + 独立微服务 + 生产加固
+</pre>
+
+<!-- ═══════════════════════════════════════════════ 13. Risks ══ -->
+<h2 id="risks">13. 风险与缓解</h2>
+
+<table>
+  <thead>
+    <tr><th>风险</th><th>概率</th><th>影响</th><th>缓解措施</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>目标网站反爬，抓取被封锁</td>
+      <td>中</td>
+      <td>中</td>
+      <td>设置合理 User-Agent 和 delay；优先 RSS（无反爬）；失败后标记 Spider 为 disabled，人工介入</td>
+    </tr>
+    <tr>
+      <td>LLM 分类质量不稳定（本地模型）</td>
+      <td>高</td>
+      <td>中</td>
+      <td>保留原始 LLM 输出；规则后处理（e.g. 政府来源自动 +1 priority）；人工标注 ground truth 用于回归</td>
+    </tr>
+    <tr>
+      <td>综合分析误报（虚假机会信号）</td>
+      <td>中</td>
+      <td>高</td>
+      <td>置信度阈值 ≥ 0.70；要求 ≥ 2 条独立来源支持；用户可配置 <code>SENTINEL_TRIGGER_CONFIDENCE</code>；触发通知前记录推理链</td>
+    </tr>
+    <tr>
+      <td>DB 膨胀（新闻量大）</td>
+      <td>中</td>
+      <td>低</td>
+      <td>TTL Purger 每日清理；低优先级内容 7 天硬删；content 截断 2000 字；可配置 <code>SENTINEL_DB_MAX_SIZE_MB</code> 强制清理</td>
+    </tr>
+    <tr>
+      <td>LLM API 费用超出预期</td>
+      <td>中</td>
+      <td>中</td>
+      <td><code>SENTINEL_LLM_MAX_PER_CYCLE</code> 限制批次；优先使用本地模型（Ollama）；低频时段降级为规则分类</td>
+    </tr>
+    <tr>
+      <td>与主服务进程竞争 CPU/内存</td>
+      <td>低</td>
+      <td>中</td>
+      <td>独立进程部署（Phase 5）；并发 Spider 数量可配置；LLM 调用与主服务异步解耦</td>
+    </tr>
+    <tr>
+      <td>法律合规（版权/robots.txt）</td>
+      <td>低</td>
+      <td>高</td>
+      <td>遵守 robots.txt；内容仅内部使用；不爬取付费墙内容；保留来源 URL 用于归因</td>
+    </tr>
+  </tbody>
+</table>
+
+<hr>
+
+<div class="callout callout-tip">
+  <div class="callout-title">下一步行动</div>
+  <ol>
+    <li>确认技术选型：<strong>httpx + BeautifulSoup4</strong>（vs Scrapy）—— 如需 JS 渲染场景支持，后续可引入 playwright</li>
+    <li>确认部署模式：<strong>Phase 1 内嵌进程</strong>，Phase 5 拆分微服务</li>
+    <li>确认优先接入的抓取源（至少 5 个 RSS 源作为 Phase 1 基线）</li>
+    <li>评估是否需要 Redis 热缓存（单机 SQLite FTS5 通常足够）</li>
+    <li>明确 Web UI Phase 4 的 UI 设计（情报中心侧边栏 vs 独立页面）</li>
+  </ol>
+</div>
+
+<p style="color:var(--muted); font-size:0.85em; margin-top:2rem; border-top:1px solid var(--border); padding-top:1rem;">
+  文档路径：<code>docs/design-news-sentinel.html</code> &nbsp;·&nbsp;
+  最后更新：2026-05-12 &nbsp;·&nbsp;
+  作者：系统设计（AI 辅助）
+</p>
+
+</body>
+</html>
