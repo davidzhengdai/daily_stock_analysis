@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Design: Per-Task Model Routing — Intelligent LLM Model Assignment by Task Type</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a2e; --muted: #555; --border: #e0e0e0;
+    --code-bg: #f5f5f5; --accent: #2563eb; --accent-dim: #dbeafe;
+    --warn-bg: #fffbeb; --warn-border: #f59e0b;
+    --info-bg: #eff6ff; --info-border: #3b82f6;
+    --tip-bg: #f0fdf4; --tip-border: #22c55e;
+    --danger-bg: #fef2f2; --danger-border: #ef4444; --radius: 6px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); color: var(--fg); background: var(--bg); line-height: 1.7; max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; border-bottom: 2px solid var(--accent); padding-bottom: 0.5rem; }
+  h2 { font-size: 1.5rem; margin-top: 2.5rem; margin-bottom: 0.75rem; color: var(--accent); }
+  h3 { font-size: 1.15rem; margin-top: 1.75rem; margin-bottom: 0.5rem; }
+  p { margin: 0.75rem 0; }
+  pre, code { font-family: var(--mono); font-size: 0.875rem; }
+  pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; overflow-x: auto; margin: 1rem 0; line-height: 1.45; }
+  code { background: var(--code-bg); padding: 0.1em 0.3em; border-radius: 3px; }
+  pre code { background: none; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: 0.6rem 0.8rem; text-align: left; }
+  th { background: var(--accent-dim); font-weight: 600; }
+  .callout { padding: 0.75rem 1rem; border-radius: var(--radius); margin: 1rem 0; border-left: 4px solid; }
+  .callout.info { background: var(--info-bg); border-color: var(--info-border); }
+  .callout.warn { background: var(--warn-bg); border-color: var(--warn-border); }
+  .callout.tip  { background: var(--tip-bg);  border-color: var(--tip-border); }
+  ul, ol { margin-left: 1.5rem; margin-bottom: 0.75rem; }
+  li { margin: 0.25rem 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+</style>
+</head>
+<body>
+
+<h1>Design: Per-Task Model Routing</h1>
+<p><strong>Status</strong>: Implemented &middot; <strong>Version</strong>: 1.0 &middot; <strong>Date</strong>: 2026-05-13</p>
+
+<div class="callout info">
+<strong>Abstract</strong>: Assign each LLM-consuming task in the stock analysis pipeline its own model, selected by task characteristics — reasoning depth, throughput, cost sensitivity, and output format requirements. Replaces the previous single-model-for-all approach (<code>LITELLM_MODEL</code> only) with a layered override system.
+</div>
+
+<h2>1. Motivation</h2>
+
+<h3>1.1 Problem Statement</h3>
+<p>Prior to this design, all LLM calls in the system shared <strong>one global model</strong> (<code>LITELLM_MODEL</code>). The Agent had an optional independent model (<code>AGENT_LITELLM_MODEL</code>), but all other tasks — deep stock analysis, batch garbage-stock screening, theme detection, market review — used the same model.</p>
+
+<p>This created a tension:</p>
+<ul>
+  <li><strong>Using a powerful (expensive) model for everything</strong> wastes money on simple tasks (text classification, markdown generation) that a local or cheaper model handles fine.</li>
+  <li><strong>Using a cheap (local) model for everything</strong> degrades the core stock analysis quality where reasoning depth directly impacts prediction accuracy and JSON parsing reliability.</li>
+</ul>
+
+<h3>1.2 Design Goals</h3>
+<ol>
+  <li><strong>Per-task model assignment</strong>: Each task type independently configurable via environment variable.</li>
+  <li><strong>Backward compatible</strong>: All new config fields default to empty; when empty, the task inherits <code>LITELLM_MODEL</code>.</li>
+  <li><strong>Minimal code intrusion</strong>: Model override flows through existing method signatures.</li>
+  <li><strong>Observable degradation</strong>: When a weaker model produces invalid output, the parser logs the model identity alongside the failure.</li>
+</ol>
+
+<h2>2. Architecture</h2>
+
+<h3>2.1 Task → Model Mapping</h3>
+
+<table>
+<thead><tr><th>Task</th><th>LLM Call Site</th><th>Config Key</th><th>Recommended Model</th><th>Rationale</th></tr></thead>
+<tbody>
+<tr><td>Stock Analysis</td><td><code>analyzer.analyze()</code></td><td><code>LITELLM_MODEL</code></td><td><code>deepseek/deepseek-v4-pro</code></td><td>Highest reasoning depth; structured JSON; financial domain expertise</td></tr>
+<tr><td>Agent Research</td><td><code>agent/executor.py</code></td><td><code>AGENT_LITELLM_MODEL</code></td><td><code>deepseek/deepseek-v4-pro</code></td><td>Multi-step reasoning + tool calling</td></tr>
+<tr><td>Gold Digger</td><td><code>analyzer.generate_text()</code></td><td><code>GOLD_DIGGER_MODEL</code></td><td><code>ollama/qwen3.5:9b</code></td><td>Batch ~20–40 stocks; ~1000 tokens each; local = $0</td></tr>
+<tr><td>Market Scanner Tier‑5</td><td><code>pipeline.process_single_stock()</code></td><td><code>SCANNER_MODEL</code></td><td><code>deepseek/deepseek-v4-flash</code></td><td>Batch throughput; best tokens-per-dollar</td></tr>
+<tr><td>Theme Detection</td><td><code>analyzer.generate_text()</code></td><td><code>THEME_DETECTOR_MODEL</code></td><td><code>ollama/qwen3.5:9b</code></td><td>Simple text classification; once daily; local sufficient</td></tr>
+<tr><td>Market Review</td><td><code>analyzer.generate_text()</code></td><td><code>MARKET_REVIEW_MODEL</code></td><td><code>deepseek/deepseek-v4-flash</code></td><td>Once-daily macro summary; balances cost/quality</td></tr>
+</tbody>
+</table>
+
+<h3>2.2 Data Flow</h3>
+
+<pre><code>.env / environment
+  LITELLM_MODEL=deepseek/deepseek-v4-pro
+  GOLD_DIGGER_MODEL=ollama/qwen3.5:9b
+  SCANNER_MODEL=deepseek/deepseek-v4-flash
+  THEME_DETECTOR_MODEL=ollama/qwen3.5:9b
+  MARKET_REVIEW_MODEL=deepseek/deepseek-v4-flash
+  AGENT_LITELLM_MODEL=deepseek/deepseek-v4-pro
+       │ get_config()
+       ▼
+Config dataclass
+  config.litellm_model          = "deepseek/deepseek-v4-pro"
+  config.gold_digger_model      = "ollama/qwen3.5:9b"
+  config.scanner_model          = "deepseek/deepseek-v4-flash"
+  config.theme_detector_model   = "ollama/qwen3.5:9b"
+  config.market_review_model    = "deepseek/deepseek-v4-flash"
+       │
+       ├──→ analyzer.analyze(model=config.litellm_model)           [Stock Analysis]
+       ├──→ gold_digger: generate_text(model=gold_digger_model)    [Gold Digger]
+       ├──→ market_scanner: process_single_stock(model_override=)  [Scanner]
+       ├──→ theme_detector: generate_text(model=theme_model)       [Theme]
+       └──→ market_review: generate_text(model=review_model)       [Review]
+       │
+       └──→ GeminiAnalyzer._call_litellm(model=override)
+              └──→ _dispatch_litellm_completion(model, ...)
+                     └──→ LiteLLM Router (from litellm_config.yaml)
+                            ├──→ DeepSeek V4 Pro
+                            ├──→ DeepSeek V4 Flash
+                            └──→ Ollama qwen3.5:9b
+</code></pre>
+
+<div class="callout tip">
+<strong>Key invariant</strong>: All five models exist in <code>litellm_config.yaml</code>'s <code>model_list</code>. Therefore <code>_dispatch_litellm_completion</code> always routes through the LiteLLM Router, which handles API key resolution, base URL, and retries per the YAML config.
+</div>
+
+<h3>2.3 Override Resolution</h3>
+
+<p>In <code>GeminiAnalyzer._call_litellm()</code>:</p>
+<pre><code>primary_model = model or config.litellm_model
+models_to_try = [primary_model] + (config.litellm_fallback_models or [])</code></pre>
+
+<p>When <code>model</code> is <code>None</code>, behavior is identical to previous code. When a per-task model is provided, it replaces the primary slot while preserving the global fallback chain.</p>
+
+<h2>3. Implementation</h2>
+
+<h3>3.1 Files Changed</h3>
+
+<table>
+<thead><tr><th>File</th><th>Change</th></tr></thead>
+<tbody>
+<tr><td><code>src/config.py</code></td><td>4 dataclass fields + env var parsing + Config() constructor args (+12 lines)</td></tr>
+<tr><td><code>src/analyzer.py</code></td><td><code>model</code> parameter added to <code>generate_text()</code>, <code>analyze()</code>, <code>_call_litellm()</code> (+8 lines)</td></tr>
+<tr><td><code>src/core/pipeline.py</code></td><td><code>model_override</code> parameter added to <code>process_single_stock()</code> and <code>analyze_stock()</code> (+8 lines)</td></tr>
+<tr><td><code>src/services/gold_digger.py</code></td><td>Resolve <code>gold_digger_model</code>; pass to <code>generate_text(model=)</code>; model-tagged parse failure logging (+5 lines)</td></tr>
+<tr><td><code>src/services/theme_detector.py</code></td><td>Resolve <code>theme_detector_model</code>; pass to <code>generate_text(model=)</code>; model-tagged logging (+4 lines)</td></tr>
+<tr><td><code>src/services/market_scanner.py</code></td><td>Resolve <code>scanner_model</code>; pass to <code>process_single_stock(model_override=)</code> (+1 line)</td></tr>
+<tr><td><code>src/market_analyzer.py</code></td><td>Resolve <code>market_review_model</code>; pass to <code>generate_text(model=)</code> (+2 lines)</td></tr>
+<tr><td><code>.env</code></td><td>Upgraded <code>LITELLM_MODEL</code> to V4 Pro; added 4 per-task model vars</td></tr>
+<tr><td><code>.env.example</code></td><td>Documented all per-task model vars with usage examples (+12 lines)</td></tr>
+</tbody>
+</table>
+
+<h3>3.2 Parser Resilience</h3>
+
+<div class="callout warn">
+<strong>Risk</strong>: Weaker models (Ollama) may produce malformed JSON more frequently. The system must not crash.
+</div>
+
+<p>Both JSON-dependent parsers include model-tagged fallback:</p>
+<ul>
+  <li><strong><code>_parse_llm_gold_response()</code></strong>: On <code>JSONDecodeError</code>, returns neutral defaults (<code>confidence=40</code>) + model-tagged WARNING log.</li>
+  <li><strong><code>_parse_themes()</code></strong>: On <code>JSONDecodeError</code>, returns hardcoded fallback themes + model-tagged WARNING log.</li>
+</ul>
+
+<h2>4. Configuration Reference</h2>
+
+<table>
+<thead><tr><th>Variable</th><th>Default</th><th>Applies To</th></tr></thead>
+<tbody>
+<tr><td><code>LITELLM_MODEL</code></td><td><em>required</em></td><td>All tasks (global fallback)</td></tr>
+<tr><td><code>AGENT_LITELLM_MODEL</code></td><td><code>""</code> (inherit)</td><td>Agent research</td></tr>
+<tr><td><code>GOLD_DIGGER_MODEL</code></td><td><code>""</code> (inherit)</td><td>Gold Digger garbage-stock analysis</td></tr>
+<tr><td><code>SCANNER_MODEL</code></td><td><code>""</code> (inherit)</td><td>Market Scanner Tier‑5 LLM analysis</td></tr>
+<tr><td><code>THEME_DETECTOR_MODEL</code></td><td><code>""</code> (inherit)</td><td>Investment theme detection</td></tr>
+<tr><td><code>MARKET_REVIEW_MODEL</code></td><td><code>""</code> (inherit)</td><td>Daily market review</td></tr>
+</tbody>
+</table>
+
+<div class="callout info">
+<strong>Inheritance rule</strong>: Empty/unset per-task variable means "use <code>LITELLM_MODEL</code>". Ensures zero-config backward compatibility.
+</div>
+
+<h2>5. Cost Estimation</h2>
+
+<table>
+<thead><tr><th>Task</th><th>Model</th><th>Est. Calls/Day</th><th>Est. Cost/Month</th></tr></thead>
+<tbody>
+<tr><td>Stock Analysis</td><td>V4 Pro</td><td>~30</td><td>~$12.00</td></tr>
+<tr><td>Agent Research</td><td>V4 Pro</td><td>~5</td><td>~$3.75</td></tr>
+<tr><td>Gold Digger</td><td>Ollama (free)</td><td>~30</td><td>$0.00</td></tr>
+<tr><td>Market Scanner</td><td>V4 Flash</td><td>~20</td><td>~$0.48</td></tr>
+<tr><td>Theme Detection</td><td>Ollama (free)</td><td>~1</td><td>$0.00</td></tr>
+<tr><td>Market Review</td><td>V4 Flash</td><td>~1</td><td>~$0.03</td></tr>
+<tr><td colspan="3"><strong>Estimated Monthly Total</strong></td><td><strong>~$16.26</strong></td></tr>
+</tbody>
+</table>
+
+<div class="callout tip">
+<strong>Savings</strong>: ~54% vs. using V4 Pro for all tasks (~$35/month).
+</div>
+
+<h2>6. Edge Cases & Rollback</h2>
+
+<h3>Model Not in YAML Config</h3>
+<p>If a per-task model is not registered in <code>litellm_config.yaml</code>, the Router bypass fails and the call falls through to direct <code>litellm.completion()</code>. Always register per-task models in the YAML config.</p>
+
+<h3>Ollama JSON Reliability</h3>
+<p>Monitor logs for <code>JSON parse failed</code> warnings. If failure rate exceeds 20%, switch the affected task to a cloud model.</p>
+
+<h3>Fallback Chain</h3>
+<p>Per-task override uses the <em>global</em> <code>LITELLM_FALLBACK_MODELS</code> chain. No per-task fallback list.</p>
+
+<h3>Rollback</h3>
+<p>Set all per-task variables to empty in <code>.env</code>. All tasks automatically inherit <code>LITELLM_MODEL</code>. No code changes required.</p>
+
+<hr>
+<p><em>End of document.</em></p>
+
+</body>
+</html>

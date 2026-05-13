@@ -81,6 +81,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修正分析报告 API 构建策略点位时数值字段未归一为字符串的问题，避免策略价格触发响应 DTO 类型校验失败。
 - [修复] Docker 启动入口自动修复 `data` / `logs` / `reports` 挂载目录权限并降权运行，文档化的 Compose `exec` 手动命令显式使用 `dsa` 用户，避免普通部署需要手动 `chown` / `chmod`。
 - [修复] Web 首页大盘复盘结果改由主内容滚动区承载，避免 loading 切换到长结果后下方报告区域被截断或无法继续滚动。
+- [新功能] Per-task model routing: 按任务类型分配独立 LLM 模型，个股分析用 DeepSeek V4 Pro、Agent 深度研究用 V4 Pro、掘金扫垃圾用本地 Ollama（免费）、市场扫描用 V4 Flash、主题检测用本地 Ollama、大盘复盘用 V4 Flash；新增 GOLD_DIGGER_MODEL / SCANNER_MODEL / THEME_DETECTOR_MODEL / MARKET_REVIEW_MODEL 环境变量，解析器降级日志新增模型名标注。
+- [新功能] Claude Code 智能路由：集成 claude-code-router 实现多模型团队协作（老板+打工人+苦力），default→DeepSeek V4 Flash（日常编码）、think→DeepSeek V4 Pro（架构推理）、background→Ollama qwen3:8b（本地后台），支持会话内 /model 动态切换。
+- [改进] LLM 模型名规范化：DeepSeek 官方模型名 deepseek-chat / deepseek-reasoner 迁移为 deepseek-v4-flash / deepseek-v4-pro，同步更新 ccr config、orchestrator skill、启动脚本和 litellm_config.yaml。
+- [文档] 新增设计文档 docs/design-per-task-model-routing.html，说明按任务分配模型的架构、数据流、配置项语义、成本估算和回滚方案。
+- [文档] AGENTS.md 新增 AI 对话风格规范：维护者中文交流可幽默（沈腾式），但所有正式产出必须使用标准技术用语。
 
 ## [3.16.0] - 2026-05-10
 

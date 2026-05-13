@@ -718,6 +718,13 @@ class Config:
     # === Agent 模式配置 ===
     agent_litellm_model: str = ""  # Optional Agent-only primary model; empty inherits LITELLM_MODEL
     agent_mode: bool = False
+
+    # === Per-task model overrides（按任务类型分配模型）===
+    # 空字符串 = 继承 LITELLM_MODEL；设置后该任务使用独立模型
+    gold_digger_model: str = ""        # 掘金扫垃圾股模型
+    scanner_model: str = ""            # 市场扫描 Tier-5 LLM 分析模型
+    theme_detector_model: str = ""     # 投资主题检测模型
+    market_review_model: str = ""      # 大盘复盘模型
     _agent_mode_explicit: bool = False  # True when AGENT_MODE was explicitly set in env
     agent_max_steps: int = AGENT_MAX_STEPS_DEFAULT
     agent_skills: List[str] = field(default_factory=list)
@@ -1308,6 +1315,12 @@ class Config:
             configured_models=set(get_configured_llm_models(llm_model_list)),
         )
 
+        # Per-task model overrides: 按任务类型分配独立模型，空字符串继承 LITELLM_MODEL
+        gold_digger_model = os.getenv('GOLD_DIGGER_MODEL', '').strip()
+        scanner_model = os.getenv('SCANNER_MODEL', '').strip()
+        theme_detector_model = os.getenv('THEME_DETECTOR_MODEL', '').strip()
+        market_review_model = os.getenv('MARKET_REVIEW_MODEL', '').strip()
+
         # 解析搜索引擎 API Keys（支持多个 key，逗号分隔）
         bocha_keys_str = os.getenv('BOCHA_API_KEYS', '')
         bocha_api_keys = [k.strip() for k in bocha_keys_str.split(',') if k.strip()]
@@ -1475,6 +1488,10 @@ class Config:
             ),
             bias_threshold=parse_env_float(os.getenv('BIAS_THRESHOLD'), 5.0, field_name='BIAS_THRESHOLD', minimum=1.0),
             agent_litellm_model=agent_litellm_model,
+            gold_digger_model=gold_digger_model,
+            scanner_model=scanner_model,
+            theme_detector_model=theme_detector_model,
+            market_review_model=market_review_model,
             agent_mode=os.getenv('AGENT_MODE', 'false').lower() == 'true',
             _agent_mode_explicit=os.getenv('AGENT_MODE') is not None,
             agent_max_steps=parse_env_int(

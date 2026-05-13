@@ -2019,6 +2019,7 @@ class GeminiAnalyzer:
         stream: bool = False,
         stream_progress_callback: Optional[Callable[[int], None]] = None,
         response_validator: Optional[Callable[[str], None]] = None,
+        model: Optional[str] = None,
     ) -> Tuple[str, str, Dict[str, Any]]:
         """Call LLM via litellm with fallback across configured models.
 
@@ -2035,6 +2036,8 @@ class GeminiAnalyzer:
                 raises, the current model is treated as failed and the next fallback model is
                 tried.  If all models fail validation, :class:`_AllModelsFailedError` is raised
                 with ``last_response_text`` set to the last raw response received.
+            model: Optional per-task model override. When set, replaces config.litellm_model
+                as the primary model (fallback models still apply from config).
 
         Returns:
             Tuple of (response text, model_used, usage). On success model_used is the full model
@@ -2048,7 +2051,8 @@ class GeminiAnalyzer:
         )
         requested_temperature = generation_config.get('temperature', 0.7)
 
-        models_to_try = [config.litellm_model] + (config.litellm_fallback_models or [])
+        primary_model = model or config.litellm_model
+        models_to_try = [primary_model] + (config.litellm_fallback_models or [])
         models_to_try = [m for m in models_to_try if m]
 
         use_channel_router = self._has_channel_config(config)
@@ -2162,6 +2166,7 @@ class GeminiAnalyzer:
         prompt: str,
         max_tokens: int = 2048,
         temperature: float = 0.7,
+        model: Optional[str] = None,
     ) -> Optional[str]:
         """Public entry point for free-form text generation.
 
@@ -2173,6 +2178,8 @@ class GeminiAnalyzer:
             prompt:      Text prompt to send to the LLM.
             max_tokens:  Maximum tokens in the response (default 2048).
             temperature: Sampling temperature (default 0.7).
+            model:       Optional per-task model override. When set, uses this model
+                         instead of the global LITELLM_MODEL (e.g. for gold_digger).
 
         Returns:
             Response text, or None if the LLM call fails (error is logged).
@@ -2181,6 +2188,7 @@ class GeminiAnalyzer:
             result = self._call_litellm(
                 prompt,
                 generation_config={"max_tokens": max_tokens, "temperature": temperature},
+                model=model,
             )
             if isinstance(result, tuple):
                 text, model_used, usage = result
@@ -2192,20 +2200,25 @@ class GeminiAnalyzer:
             return None
 
     def analyze(
-        self, 
+        self,
         context: Dict[str, Any],
         news_context: Optional[str] = None,
         progress_callback: Optional[Callable[[int, str], None]] = None,
         stream_progress_callback: Optional[Callable[[int], None]] = None,
+        model: Optional[str] = None,
     ) -> AnalysisResult:
         """
         分析单只股票
-        
+
         流程：
         1. 格式化输入数据（技术面 + 新闻）
         2. 调用 Gemini API（带重试和模型切换）
         3. 解析 JSON 响应
         4. 返回结构化结果
+
+        Args:
+            model: Optional per-task model override (e.g. scanner_model).
+                   When set, replaces LITELLM_MODEL for this analysis call.
         
         Args:
             context: 从 storage.get_analysis_context() 获取的上下文数据
@@ -2306,6 +2319,7 @@ class GeminiAnalyzer:
                         stream=True,
                         stream_progress_callback=stream_progress_callback,
                         response_validator=self._validate_json_response,
+                        model=model,
                     )
                 except _AllModelsFailedError as exc:
                     if best_result is not None and best_result.success:

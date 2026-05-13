@@ -483,7 +483,7 @@ Return ONLY valid JSON (no markdown):
 }}"""
 
 
-def _parse_llm_gold_response(raw: str, default_name: str) -> Dict[str, Any]:
+def _parse_llm_gold_response(raw: str, default_name: str, model: str = "") -> Dict[str, Any]:
     text = raw.strip()
     if text.startswith("```"):
         lines = text.split("\n")
@@ -491,6 +491,11 @@ def _parse_llm_gold_response(raw: str, default_name: str) -> Dict[str, Any]:
     try:
         return json.loads(text)
     except json.JSONDecodeError:
+        model_tag = f" [model={model}]" if model else ""
+        logger.warning(
+            "Gold Digger JSON parse failed%s — raw (first 200 chars): %.200s",
+            model_tag, raw.strip()
+        )
         return {
             "llm_confidence": 40,
             "why_garbage": "Market uncertainty and limited coverage.",
@@ -499,6 +504,7 @@ def _parse_llm_gold_response(raw: str, default_name: str) -> Dict[str, Any]:
             "key_catalysts": "Sector recovery, earnings improvement.",
             "key_risks": "Continued price decline, liquidity risk.",
             "entry_strategy": "Small position, trailing stop 15%.",
+            "_parse_fallback": True,
         }
 
 
@@ -758,6 +764,9 @@ class GoldDigger:
         results = []
         done = 0
 
+        # Resolve per-task model override once (captured by closure)
+        _gold_model = getattr(self.config, 'gold_digger_model', '') or None
+
         def _analyze_one(candidate: GoldCandidate) -> tuple:
             gs = candidate.stock
             pe_str = f"{gs.pe_ratio:.1f}" if gs.pe_ratio else "N/A"
@@ -793,12 +802,12 @@ class GoldDigger:
                 themes=themes_str,
             )
             try:
-                raw = analyzer.generate_text(prompt, max_tokens=1000, temperature=0.5)
+                raw = analyzer.generate_text(prompt, max_tokens=1000, temperature=0.5, model=_gold_model)
                 if raw:
-                    return candidate, _parse_llm_gold_response(raw, gs.name)
+                    return candidate, _parse_llm_gold_response(raw, gs.name, model=_gold_model or "default")
             except Exception as exc:
-                logger.warning("LLM analysis failed for %s: %s", gs.ticker, exc)
-            return candidate, _parse_llm_gold_response("", gs.name)
+                logger.warning("LLM analysis failed for %s [model=%s]: %s", gs.ticker, _gold_model or "default", exc)
+            return candidate, _parse_llm_gold_response("", gs.name, model=_gold_model or "default")
 
         with ThreadPoolExecutor(max_workers=_TIER5_WORKERS) as pool:
             futures = {pool.submit(_analyze_one, c): c for c in candidates}
