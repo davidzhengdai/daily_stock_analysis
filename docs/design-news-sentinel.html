@@ -214,7 +214,7 @@
 <h3>1.3 设计原则</h3>
 <ul>
   <li><strong>渐进增强</strong>：服务不可用时，现有股票分析流程自动降级至原有 SearchService，不阻断主流程</li>
-  <li><strong>成本优先</strong>：优先免费渠道（RSS / 直接抓取），LLM 调用批量化、有限速</li>
+  <li><strong>成本优先</strong>：优先免费渠道（原生 RSS → RSSHub → JSON API → HTML 直接抓取），LLM 调用批量化、有限速</li>
   <li><strong>最小侵入</strong>：以独立进程运行，通过 REST 接口与主服务通信，不共享进程内存</li>
   <li><strong>可审计</strong>：每条新闻保留来源、抓取时间、LLM 分析理由，便于回溯</li>
 </ul>
@@ -230,8 +230,8 @@
 <span class="dim">│                                                                                 │</span>
 <span class="dim">│  ┌──────────────┐   ┌────────────────────────────────────────────────────────┐ │</span>
 <span class="dim">│  │</span> <span class="ylw">  Scheduler   </span><span class="dim">│──▶│</span>              <span class="hi">Spider Engine</span>                              <span class="dim">│ │</span>
-<span class="dim">│  │</span> <span class="ylw">  (APScheduler</span><span class="dim">│   │</span>  <span class="grn">RSSSpider</span>  <span class="grn">HTMLSpider</span>  <span class="grn">SitemapSpider</span>  <span class="grn">APISpider</span>  <span class="dim">│ │</span>
-<span class="dim">│  │</span> <span class="ylw">   / cron)    </span><span class="dim">│   │</span>  Finance    Gov/Reg    Industry       Breaking    <span class="dim">│ │</span>
+<span class="dim">│  │</span> <span class="ylw">  (APScheduler</span><span class="dim">│   │</span>  <span class="grn">NativeRSS</span>  <span class="grn">RSSHub</span>  <span class="grn">JSONAPISpider</span>  <span class="grn">HTMLList</span>   <span class="dim">│ │</span>
+<span class="dim">│  │</span> <span class="ylw">   / cron)    </span><span class="dim">│   │</span>  Intl only  CN财经  EastMoney/雪球  Gov/交易所  <span class="dim">│ │</span>
 <span class="dim">│  └──────────────┘   └─────────────────────┬──────────────────────────────────┘ │</span>
 <span class="dim">│                                           │ raw articles                        │</span>
 <span class="dim">│                      ┌────────────────────▼──────────────────────────────────┐ │</span>
@@ -265,7 +265,45 @@
 <span class="dim">└─────────────────────────────────────────────────────────────────────────────────┘</span>
 </div>
 
-<h3>2.2 部署模式</h3>
+<h3>2.2 抓取策略分层</h3>
+<p>并非所有新闻网站都提供 RSS。实际上中国财经站点绝大多数已停止或从未提供公开 RSS，直接按 RSS 标注会在实现阶段发现大量死链。正确策略是按优先级逐层降级：</p>
+<table>
+  <thead>
+    <tr><th>层级</th><th>技术</th><th>优点</th><th>缺点 / 适用范围</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>① 原生 RSS/Atom</strong></td>
+      <td>feedparser / httpx 直接拉取</td>
+      <td>结构化、无反爬、稳定</td>
+      <td>仅少数国际来源：Google News、Yahoo Finance、SEC EDGAR 等</td>
+    </tr>
+    <tr>
+      <td><strong>② RSSHub（自托管）</strong></td>
+      <td>调用本地 RSSHub 实例生成 RSS</td>
+      <td>覆盖 800+ 中文站点；统一 RSS 格式；无需维护 HTML 解析器</td>
+      <td>需自行部署 <code>rsshub</code> Docker 容器；偶尔随上游站点改版失效</td>
+    </tr>
+    <tr>
+      <td><strong>③ 非官方 JSON API</strong></td>
+      <td>逆向 App/H5 接口，httpx GET/POST</td>
+      <td>稳定、结构化、无 HTML 解析</td>
+      <td>需持续维护接口参数；可能需要 UA / Cookie</td>
+    </tr>
+    <tr>
+      <td><strong>④ HTML 直接抓取</strong></td>
+      <td>BeautifulSoup4 / CSS 选择器</td>
+      <td>无需第三方依赖</td>
+      <td>最脆弱，站点改版即失效；多用于政府/交易所列表页</td>
+    </tr>
+  </tbody>
+</table>
+<div class="callout callout-info">
+  <div class="callout-title">RSSHub 是什么</div>
+  <a href="https://rsshub.app" target="_blank">RSSHub</a> 是开源自托管服务，为不提供 RSS 的网站生成标准 RSS 源。支持东方财富、财联社、新浪财经、证券时报、36Kr、虎嗅、工信部等 800+ 路由。Phase 1 推荐以 Docker 启动本地实例：<code>docker run -d -p 1200:1200 diygod/rsshub</code>，之后所有中文财经源统一走 <code>http://localhost:1200/...</code> 拉取，免去维护 HTML 解析器。
+</div>
+
+<h3>2.3 部署模式</h3>
 <div class="two-col">
   <div class="card">
     <h4>模式 A：内嵌进程（初期推荐）</h4>
@@ -290,11 +328,26 @@
 
 <h3>3.1 Spider Engine（抓取引擎）</h3>
 <p>
-  基于 <strong>httpx + BeautifulSoup4</strong>（轻量，无需 Scrapy 进程模型）实现可插拔的 Spider 注册表。每个 Spider 对应一个数据源，实现统一的 <code>SpiderBase</code> 接口。
+  基于 <strong>httpx + BeautifulSoup4</strong>（轻量，无需 Scrapy 进程模型）实现可插拔的 Spider 注册表。每个 Spider 对应一个数据源，实现统一的 <code>SpiderBase</code> 接口。Spider 类型按抓取层级对应四个基类：
 </p>
+<table>
+  <thead>
+    <tr><th>基类</th><th>对应层级</th><th>核心逻辑</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>NativeRSSSpider</code></td><td>① 原生 RSS</td><td>feedparser 解析；适用 Google News、Yahoo Finance、SEC EDGAR</td></tr>
+    <tr><td><code>RSSHubSpider</code></td><td>② RSSHub</td><td>拼接 <code>RSSHUB_BASE_URL/{route}</code>，同 feedparser 解析；绝大多数中文财经源走此类</td></tr>
+    <tr><td><code>JSONAPISpider</code></td><td>③ JSON API</td><td>httpx GET/POST，解析结构化 JSON；用于有已知接口的东财/雪球等</td></tr>
+    <tr><td><code>HTMLListSpider</code></td><td>④ HTML 直接抓取</td><td>BeautifulSoup4 CSS 选择器；用于政府/交易所公告列表页</td></tr>
+  </tbody>
+</table>
 <div class="callout callout-info">
   <div class="callout-title">为何不用 Scrapy 框架</div>
   Scrapy 是进程级框架，与 asyncio 集成复杂，且现有代码库基于 threading。初期使用 <code>httpx.AsyncClient</code> + <code>asyncio</code> 更容易集成进现有调度器，成熟后再迁移。
+</div>
+<div class="callout callout-warn">
+  <div class="callout-title">RSSHub 路由失效风险</div>
+  RSSHub 路由依赖对目标站点的逆向解析，上游站点改版后对应路由可能失效（通常 1-2 天内有社区 PR 修复）。每个 RSSHubSpider 应有独立健康检查：若连续 3 次抓取返回 0 条，自动标记 <code>status=degraded</code> 并告警，降级到 HTMLListSpider 备用路径（如有）。
 </div>
 
 <pre>
@@ -516,8 +569,9 @@ CREATE TABLE spider_runs (
 <h2 id="sources">5. 抓取源清单</h2>
 
 <div class="callout callout-info">
-  <div class="callout-title">选源原则</div>
-  优先免费、RSS 可用、无强 JS 渲染的来源。需要复杂 JS 渲染的来源使用 playwright-stealth 或暂时跳过。所有抓取遵守各站 robots.txt，设置合理 User-Agent 和请求间隔（≥2s/site）。
+  <div class="callout-title">选源原则与方法说明</div>
+  <strong>方法标注说明：</strong>① 原生 RSS = 站点官方提供；② RSSHub = 经本地 RSSHub 实例转换；③ JSON API = 逆向 App/H5 接口；④ HTML = BeautifulSoup4 列表页抓取。
+  需要复杂 JS 渲染的来源暂时跳过或标注"需 Playwright"。所有抓取遵守各站 robots.txt，设置合理 User-Agent 和请求间隔（≥2s/site）。
 </div>
 
 <h3>5.1 A 股财经资讯</h3>
@@ -526,13 +580,13 @@ CREATE TABLE spider_runs (
     <tr><th>来源</th><th>实现方式</th><th>频率</th><th>已有 Provider</th></tr>
   </thead>
   <tbody>
-    <tr><td>东方财富财经</td><td>RSS / API</td><td>15 min</td><td>✅ EastMoneyNewsProvider</td></tr>
-    <tr><td>财联社</td><td>RSS</td><td>15 min</td><td>✅ CLSNewsProvider</td></tr>
-    <tr><td>证券时报</td><td>RSS 抓取</td><td>30 min</td><td>需新建</td></tr>
-    <tr><td>上海证券报</td><td>RSS 抓取</td><td>30 min</td><td>需新建</td></tr>
-    <tr><td>第一财经</td><td>RSS</td><td>30 min</td><td>需新建</td></tr>
-    <tr><td>新浪财经</td><td>RSS</td><td>30 min</td><td>需新建</td></tr>
-    <tr><td>同花顺财经</td><td>HTML 抓取</td><td>60 min</td><td>需新建</td></tr>
+    <tr><td>东方财富财经</td><td>③ JSON API（非官方）<br><small>无公开 RSS；EastMoney 有稳定的 H5 JSON 接口</small></td><td>15 min</td><td>✅ EastMoneyNewsProvider（已用 API）</td></tr>
+    <tr><td>财联社</td><td>② RSSHub<br><small>无公开 RSS；RSSHub 路由：<code>/cls/telegraph</code></small></td><td>15 min</td><td>✅ CLSNewsProvider（需改为 RSSHub）</td></tr>
+    <tr><td>证券时报</td><td>② RSSHub<br><small>RSS 已停；RSSHub 路由：<code>/stcn/news</code></small></td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>上海证券报</td><td>② RSSHub<br><small>无公开 RSS；RSSHub 路由：<code>/cnstock/news</code></small></td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>第一财经</td><td>② RSSHub<br><small>RSS 已弃用；RSSHub 路由：<code>/yicai/brief</code></small></td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>新浪财经</td><td>② RSSHub<br><small>RSS 约 2020 年停止；RSSHub 路由：<code>/sina/finance/roll</code></small></td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>同花顺财经</td><td>④ HTML 抓取</td><td>60 min</td><td>需新建</td></tr>
   </tbody>
 </table>
 
@@ -545,7 +599,7 @@ CREATE TABLE spider_runs (
     <tr><td>中国证监会</td><td>csrc.gov.cn/csrc/c101924/</td><td>HTML 列表页</td><td>60 min</td></tr>
     <tr><td>中国央行（PBoC）</td><td>pbc.gov.cn/rmyh/</td><td>HTML 列表页</td><td>60 min</td></tr>
     <tr><td>国家发改委</td><td>ndrc.gov.cn/xwdt/</td><td>HTML 列表页</td><td>60 min</td></tr>
-    <tr><td>国务院新闻</td><td>gov.cn/xinwen/</td><td>RSS</td><td>60 min</td></tr>
+    <tr><td>国务院新闻</td><td>gov.cn/xinwen/</td><td>④ HTML 列表页<br><small>gov.cn 无 RSS；抓列表页 + 翻页</small></td><td>60 min</td></tr>
     <tr><td>上交所公告</td><td>sse.com.cn</td><td>HTML 列表页</td><td>30 min</td></tr>
     <tr><td>深交所公告</td><td>szse.cn</td><td>HTML 列表页</td><td>30 min</td></tr>
     <tr><td>香港证监会（SFC）</td><td>sfc.hk/en/news-and-announcements</td><td>HTML 列表页</td><td>60 min</td></tr>
@@ -559,9 +613,9 @@ CREATE TABLE spider_runs (
   </thead>
   <tbody>
     <tr><td>工信部</td><td>工业/科技政策</td><td>HTML</td><td>120 min</td></tr>
-    <tr><td>财新</td><td>深度财经报道</td><td>RSS（免费部分）</td><td>60 min</td></tr>
-    <tr><td>36Kr</td><td>科技/创投</td><td>RSS</td><td>60 min</td></tr>
-    <tr><td>虎嗅</td><td>科技/商业</td><td>RSS</td><td>60 min</td></tr>
+    <tr><td>财新</td><td>深度财经报道</td><td>① 原生 RSS（免费频道有限）<br>② RSSHub 路由：<code>/caixin/blog</code> 等</td><td>60 min</td></tr>
+    <tr><td>36Kr</td><td>科技/创投</td><td>① 原生 RSS（部分栏目）<br>② RSSHub 路由：<code>/36kr/news/latest</code></td><td>60 min</td></tr>
+    <tr><td>虎嗅</td><td>科技/商业</td><td>① 原生 RSS（huxiu.com/rss/）<br>② RSSHub 路由：<code>/huxiu/article</code>（更全）</td><td>60 min</td></tr>
     <tr><td>新能源行业协会</td><td>新能源政策</td><td>HTML</td><td>120 min</td></tr>
     <tr><td>中国半导体行业协会</td><td>芯片政策</td><td>HTML</td><td>120 min</td></tr>
   </tbody>
@@ -573,13 +627,13 @@ CREATE TABLE spider_runs (
     <tr><th>来源</th><th>实现方式</th><th>频率</th><th>已有 Provider</th></tr>
   </thead>
   <tbody>
-    <tr><td>Google News（中文）</td><td>RSS</td><td>15 min</td><td>✅ GoogleNewsCNRSSProvider</td></tr>
-    <tr><td>Google News（英文）</td><td>RSS</td><td>15 min</td><td>✅ GoogleNewsRSSProvider</td></tr>
-    <tr><td>Bing News</td><td>RSS</td><td>15 min</td><td>✅ BingNewsRSSProvider</td></tr>
-    <tr><td>Yahoo Finance</td><td>RSS</td><td>30 min</td><td>✅ YahooFinanceNewsProvider</td></tr>
-    <tr><td>Reuters（免费版）</td><td>RSS</td><td>30 min</td><td>需新建</td></tr>
-    <tr><td>港交所公告</td><td>HTML</td><td>30 min</td><td>需新建</td></tr>
-    <tr><td>SEC EDGAR (8-K/6-K)</td><td>RSS</td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>Google News（中文）</td><td>① 原生 RSS<br><small>news.google.com/rss/search?hl=zh-CN</small></td><td>15 min</td><td>✅ GoogleNewsCNRSSProvider</td></tr>
+    <tr><td>Google News（英文）</td><td>① 原生 RSS<br><small>news.google.com/rss/search?hl=en</small></td><td>15 min</td><td>✅ GoogleNewsRSSProvider</td></tr>
+    <tr><td>Bing News</td><td>① 原生 RSS<br><small>bing.com/news/search?format=RSS&amp;q=...</small></td><td>15 min</td><td>✅ BingNewsRSSProvider</td></tr>
+    <tr><td>Yahoo Finance</td><td>① 原生 RSS<br><small>finance.yahoo.com/rss/</small></td><td>30 min</td><td>✅ YahooFinanceNewsProvider</td></tr>
+    <tr><td>Reuters</td><td>❌ <strong>无公开 RSS</strong>（2020 年停止）<br><small>替代：经 Google News RSS 过滤 site:reuters.com</small></td><td>30 min</td><td>暂缓；经 Google News 间接覆盖</td></tr>
+    <tr><td>港交所公告（HKEX）</td><td>④ HTML 列表页<br><small>hkexnews.hk/listedco/listconews/</small></td><td>30 min</td><td>需新建</td></tr>
+    <tr><td>SEC EDGAR (8-K/6-K)</td><td>① 原生 Atom<br><small>efts.sec.gov/LATEST/search-index/...?forms=8-K</small></td><td>30 min</td><td>需新建</td></tr>
   </tbody>
 </table>
 
@@ -869,20 +923,27 @@ src/services/sentinel/
 ├── config.py             # SentinelConfig
 └── spiders/
     ├── __init__.py
-    ├── base.py           # SpiderBase ABC
-    ├── rss.py            # RSSSpider 通用实现
-    ├── html_list.py      # HTMLListSpider 通用实现（翻页支持）
-    ├── eastmoney.py
-    ├── cls.py
-    ├── csrc.py           # 证监会
-    ├── pbc.py            # 央行
-    ├── ndrc.py           # 发改委
-    ├── sse.py            # 上交所
-    ├── szse.py           # 深交所
-    ├── google_news.py    # 复用现有逻辑
-    ├── yahoo_finance.py
-    ├── reuters.py
-    └── sec_edgar.py
+    ├── base.py            # SpiderBase ABC
+    ├── native_rss.py      # NativeRSSSpider — 原生 RSS/Atom 通用实现
+    ├── rsshub.py          # RSSHubSpider — 调用本地 RSSHub 实例（中文财经主力）
+    ├── json_api.py        # JSONAPISpider — 非官方 JSON 接口基类
+    ├── html_list.py       # HTMLListSpider — BS4 列表页抓取（翻页支持）
+    ├── eastmoney.py       # ③ JSON API（东财非官方接口）
+    ├── cls.py             # ② RSSHub /cls/telegraph
+    ├── stcn.py            # ② RSSHub /stcn/news （证券时报）
+    ├── cnstock.py         # ② RSSHub /cnstock/news（上海证券报）
+    ├── yicai.py           # ② RSSHub /yicai/brief （第一财经）
+    ├── sina_finance.py    # ② RSSHub /sina/finance/roll
+    ├── csrc.py            # ④ HTML 列表页（证监会）
+    ├── pbc.py             # ④ HTML 列表页（央行）
+    ├── ndrc.py            # ④ HTML 列表页（发改委）
+    ├── gov_cn.py          # ④ HTML 列表页（国务院新闻）
+    ├── sse.py             # ④ HTML 列表页（上交所）
+    ├── szse.py            # ④ HTML 列表页（深交所）
+    ├── hkex.py            # ④ HTML 列表页（港交所公告）
+    ├── google_news.py     # ① 原生 RSS（中/英文，复用现有逻辑）
+    ├── yahoo_finance.py   # ① 原生 RSS
+    └── sec_edgar.py       # ① 原生 Atom（SEC EDGAR）
 </pre>
 
 <!-- ═══════════════════════════════════════════════ 11. Config ══ -->
@@ -909,6 +970,8 @@ src/services/sentinel/
     <tr><td><code>SENTINEL_REDIS_URL</code></td><td>str</td><td>（空）</td><td>可选 Redis 热缓存（空则不用）</td></tr>
     <tr><td><code>SENTINEL_ENABLED_SPIDERS</code></td><td>str</td><td><code>all</code></td><td>逗号分隔的 Spider 名称，或 all</td></tr>
     <tr><td><code>SENTINEL_TRADING_HOURS_BOOST</code></td><td>bool</td><td><code>true</code></td><td>交易时段内提高抓取频率</td></tr>
+    <tr><td><code>SENTINEL_RSSHUB_BASE_URL</code></td><td>str</td><td><code>http://localhost:1200</code></td><td>本地 RSSHub 实例地址；空则禁用 RSSHub 层，降级到 HTML 抓取</td></tr>
+    <tr><td><code>SENTINEL_RSSHUB_TIMEOUT</code></td><td>int</td><td><code>15</code></td><td>RSSHub 请求超时秒数（RSSHub 需要时间向上游抓取）</td></tr>
   </tbody>
 </table>
 
@@ -919,11 +982,12 @@ src/services/sentinel/
   <h4>Phase 1 — 基础抓取框架（预计 1 周）</h4>
   <ul>
     <li>搭建 <code>src/services/sentinel/</code> 目录与基础模块</li>
-    <li>实现 <code>SpiderBase</code>、<code>RSSSpider</code>、<code>HTMLListSpider</code></li>
+    <li>部署本地 RSSHub：<code>docker run -d -p 1200:1200 diygod/rsshub</code></li>
+    <li>实现 <code>SpiderBase</code>、<code>NativeRSSSpider</code>、<code>RSSHubSpider</code>、<code>HTMLListSpider</code></li>
     <li>实现 <code>Deduplicator</code>（URL hash + SimHash）</li>
     <li>实现 <code>NewsStore</code>（SQLite 建表、CRUD、FTS5 虚拟表）</li>
-    <li>接入 5 个核心 RSS 来源（东财、财联社、Google News×2、Yahoo）</li>
-    <li>单元测试：Spider 解析、去重、存储</li>
+    <li>接入 5 个基线来源：Google News（原生 RSS）× 2、Yahoo Finance（原生 RSS）、财联社（RSSHub）、东方财富（JSON API）</li>
+    <li>单元测试：Spider 解析、去重、存储；RSSHubSpider 健康检查逻辑</li>
     <li>验收：<code>python -m src.services.sentinel.service --dry-run</code> 输出抓取统计</li>
   </ul>
 </div>
@@ -978,7 +1042,7 @@ src/services/sentinel/
 
 <h3>12.1 里程碑时间线</h3>
 <pre>
-Week 1:  Phase 1 ── 基础抓取框架 ✦ RSS + HTML Spider + NewsStore
+Week 1:  Phase 1 ── 基础抓取框架 ✦ NativeRSS + RSSHub + HTMLList Spider + NewsStore
 Week 2:  Phase 2 ── LLM 分类 + TTL 清理 + 完整调度循环
 Week 3:  Phase 3 ── 综合分析 + 通知 + 股票分析触发
 Week 4:  Phase 4 ── SearchService 集成 + REST API + Web UI
@@ -1030,6 +1094,12 @@ Week 5:  Phase 5 ── 扩展源 + 独立微服务 + 生产加固
       <td>独立进程部署（Phase 5）；并发 Spider 数量可配置；LLM 调用与主服务异步解耦</td>
     </tr>
     <tr>
+      <td>RSSHub 路由失效（上游站点改版）</td>
+      <td>中</td>
+      <td>低</td>
+      <td>每个 RSSHubSpider 独立健康检查；连续 3 次 0 条则标记 degraded 并告警；部分源有 HTML 备用路径；RSSHub 社区通常 1-2 天内发布修复 PR</td>
+    </tr>
+    <tr>
       <td>法律合规（版权/robots.txt）</td>
       <td>低</td>
       <td>高</td>
@@ -1043,9 +1113,10 @@ Week 5:  Phase 5 ── 扩展源 + 独立微服务 + 生产加固
 <div class="callout callout-tip">
   <div class="callout-title">下一步行动</div>
   <ol>
-    <li>确认技术选型：<strong>httpx + BeautifulSoup4</strong>（vs Scrapy）—— 如需 JS 渲染场景支持，后续可引入 playwright</li>
+    <li>确认技术选型：<strong>httpx + BeautifulSoup4 + RSSHub（自托管）</strong> —— 如需 JS 渲染场景支持，后续可引入 playwright</li>
+    <li>确认 RSSHub 部署方式：本地 Docker 单容器（推荐）vs 外部实例</li>
     <li>确认部署模式：<strong>Phase 1 内嵌进程</strong>，Phase 5 拆分微服务</li>
-    <li>确认优先接入的抓取源（至少 5 个 RSS 源作为 Phase 1 基线）</li>
+    <li>确认 Phase 1 基线来源：Google News×2（原生 RSS）、Yahoo Finance（原生 RSS）、财联社（RSSHub）、东方财富（JSON API）</li>
     <li>评估是否需要 Redis 热缓存（单机 SQLite FTS5 通常足够）</li>
     <li>明确 Web UI Phase 4 的 UI 设计（情报中心侧边栏 vs 独立页面）</li>
   </ol>
@@ -1053,7 +1124,7 @@ Week 5:  Phase 5 ── 扩展源 + 独立微服务 + 生产加固
 
 <p style="color:var(--muted); font-size:0.85em; margin-top:2rem; border-top:1px solid var(--border); padding-top:1rem;">
   文档路径：<code>docs/design-news-sentinel.html</code> &nbsp;·&nbsp;
-  最后更新：2026-05-12 &nbsp;·&nbsp;
+  最后更新：2026-05-12（修订：抓取方法分层，修正 RSS 标注）&nbsp;·&nbsp;
   作者：系统设计（AI 辅助）
 </p>
 
