@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional
 
+from src.config import get_config
 from src.schemas.gold_digger import InvestmentTheme
 
 logger = logging.getLogger(__name__)
@@ -128,13 +129,14 @@ class ThemeDetector:
             )
 
         try:
-            raw = self._analyzer.generate_text(prompt, max_tokens=3000, temperature=0.5)
+            _theme_model = getattr(get_config(), 'theme_detector_model', '') or None
+            raw = self._analyzer.generate_text(prompt, max_tokens=3000, temperature=0.5, model=_theme_model)
             if not raw:
-                logger.warning("LLM returned empty response for theme detection")
+                logger.warning("LLM returned empty response for theme detection [model=%s]", _theme_model or "default")
                 return self._fallback_themes()
-            return self._parse_themes(raw)
+            return self._parse_themes(raw, model=_theme_model or "default")
         except Exception as exc:
-            logger.warning("Theme detection LLM call failed: %s", exc)
+            logger.warning("Theme detection LLM call failed [model=%s]: %s", _theme_model or "default", exc)
             return self._fallback_themes()
 
     def _build_news_digest(self) -> str:
@@ -176,7 +178,7 @@ class ThemeDetector:
     # Theme parsing
     # ------------------------------------------------------------------
 
-    def _parse_themes(self, raw: str) -> List[InvestmentTheme]:
+    def _parse_themes(self, raw: str, model: str = "") -> List[InvestmentTheme]:
         text = raw.strip()
         if text.startswith("```"):
             lines = text.split("\n")
@@ -185,7 +187,8 @@ class ThemeDetector:
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
-            logger.warning("Failed to parse theme JSON: %s — raw: %.200s", exc, text)
+            model_tag = f" [model={model}]" if model else ""
+            logger.warning("Failed to parse theme JSON%s: %s — raw: %.200s", model_tag, exc, text)
             return self._fallback_themes()
 
         themes: List[InvestmentTheme] = []

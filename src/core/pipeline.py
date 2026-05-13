@@ -262,10 +262,11 @@ class StockAnalysisPipeline:
         report_type: ReportType,
         query_id: str,
         current_time: Optional[datetime] = None,
+        model_override: Optional[str] = None,
     ) -> Optional[AnalysisResult]:
         """
         分析单只股票（增强版：含量比、换手率、筹码分析、多维度情报）
-        
+
         流程：
         1. 获取实时行情（量比、换手率）- 通过 DataFetcherManager 自动故障切换
         2. 获取筹码分布 - 通过 DataFetcherManager 带熔断保护
@@ -273,13 +274,14 @@ class StockAnalysisPipeline:
         4. 多维度情报搜索（最新消息+风险排查+业绩预期）
         5. 从数据库获取分析上下文
         6. 调用 AI 进行综合分析
-        
+
         Args:
             query_id: 查询链路关联 id
             code: 股票代码
             report_type: 报告类型
             current_time: 本轮运行冻结的参考时间，用于统一市场阶段上下文
-            
+            model_override: Optional per-task model override (e.g. scanner_model).
+
         Returns:
             AnalysisResult 或 None（如果分析失败）
         """
@@ -541,6 +543,7 @@ class StockAnalysisPipeline:
                     news_context=news_context,
                     progress_callback=self._emit_progress,
                     stream_progress_callback=_on_llm_stream,
+                    model=model_override,
                 )
                 llm_duration_ms = int((time.monotonic() - llm_started_at) * 1000)
                 record_llm_run(
@@ -2026,6 +2029,7 @@ class StockAnalysisPipeline:
         report_type: ReportType = ReportType.SIMPLE,
         analysis_query_id: Optional[str] = None,
         current_time: Optional[datetime] = None,
+        model_override: Optional[str] = None,
     ) -> Optional[AnalysisResult]:
         """
         处理单只股票的完整流程
@@ -2045,6 +2049,7 @@ class StockAnalysisPipeline:
             single_stock_notify: 是否启用单股推送模式（每分析完一只立即推送）
             report_type: 报告类型枚举（从配置读取，Issue #119）
             current_time: 本轮运行冻结的参考时间，用于统一断点续传目标交易日判断
+            model_override: Optional per-task model override (e.g. scanner_model).
 
         Returns:
             AnalysisResult 或 None
@@ -2085,6 +2090,8 @@ class StockAnalysisPipeline:
             analyze_kwargs = {"query_id": effective_query_id}
             if current_time is not None:
                 analyze_kwargs["current_time"] = current_time
+            if model_override is not None:
+                analyze_kwargs["model_override"] = model_override
             result = self.analyze_stock(code, report_type, **analyze_kwargs)
             
             if result and result.success:

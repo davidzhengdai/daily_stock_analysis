@@ -96,6 +96,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - fix: Cool down unavailable optional fetchers, reduce noisy Longbridge/Pytdx retries, and downgrade buy advice when capital flow data is missing.
 - fix: Handle OpenAI-compatible `content_blocks`, normalize strategy price fields, and recover market review scrolling/history behavior.
 - docs/tests: Update notification, alert, desktop packaging, README/guide, and governance docs; add focused regression coverage for the new release paths.
+- [新功能] 美股全市场扫描器：5层漏斗筛选 NYSE+NASDAQ 全量股票，推荐中线投资 Top10，含财务历史/行业资讯/全球行业状态分析；新增 `/api/v1/scanner/` REST API 及后台扫描任务；结果同步推送通知渠道与本地 Markdown 报告。
+- [新功能] 沙里淘金：扫描美股小盘股（$50M–$1B 市值）与 A 股，四维筛选（超跌+低估+低覆盖+低 PE），LLM 匹配宏观主题并深度分析，输出带完整投资论点的金股推荐；新增 `/api/v1/gold-digger/` REST API 及侧边栏入口。
+- [修复] 修复 Scanner / 沙里淘金使用 NASDAQ 股票池时因接口参数返回空 rows 导致扫描无结果的问题，并为沙里淘金美股价格下载增加分批处理。
+- [改进] Scanner / 沙里淘金 Web 页面补齐中文展示，包含页面标题、配置、进度、历史记录、筛选漏斗与结果指标文案。
+- [改进] Scanner / 沙里淘金支持按美股和 A 股市场配置扫描范围，并为 A 股候选增加中国政策与国家热点主题权重。
+- [改进] Scanner / 沙里淘金新增 CLI 一次性运行入口，并补充中英文使用文档、API 示例和市场配置说明。
+- [改进] Scanner Top Picks 新增入选理由与关键筛选因子展示，帮助用户理解股票为何被选中。
+- [修复] Scanner 情报搜索为空时不再向 LLM 注入“未找到信息”占位新闻，并为美股候选增加 Yahoo Finance 新闻兜底。
+- [改进] 单股分析与 Scanner 推荐结果展示新闻证据来源，保留标题、来源、日期与链接，便于用户核对消息面依据。
+- [改进] Docker 镜像支持非 root 用户 (`dsa`, UID 1000) 执行，并增强 `Dockerfile` 安全性与构建稳健性。
+- [改进] 放宽 LiteLLM 依赖约束，保留 `>=1.80.10` 最低版本并显式排除 PyPI 事故版本 `1.82.7` / `1.82.8`，允许安装后续 1.x 修复版本。
+- [改进] 补齐通知渠道 P0 基线、Actions 映射与 `--check-notify` 只读诊断，完善 AstrBot 配置入口和通知回归快照。
+- [修复] 修正 LLM 渠道测试中 `Model disabled` 被误报为网络异常的问题，并在失败提示中展示本次实际测试模型。
+- [修复] 修正 LLM 渠道测试中 `Your request was blocked` 等服务商或网关拦截错误被误报为网络异常的问题。
+- [chore] 清理仓库根目录：移除误入库的 `.codex`、`review.md` 跟踪记录，将 smoke 测试入口迁移到 `scripts/`、环境检查脚本迁移为 `scripts/check_env.py`，并将 LiteLLM YAML 示例迁移到 `docs/examples/`。
+- [新功能] Web 设置页新增通知渠道一键测试，支持临时配置、耗时与脱敏 attempts 展示。
+- [新功能] 系统设置页新增配置项帮助入口与多语言帮助文案基础设施，首批覆盖自选股、LLM 主模型、LLM 渠道、飞书 Webhook 与 WebUI 监听地址。
+- [改进] 设置项帮助窗口支持键盘焦点限制、Esc 关闭和关闭后焦点恢复，并移除短描述重复 hover tooltip。
+- [文档] 新增设置页配置帮助维护说明，明确帮助元数据字段、首批覆盖范围、事实源和多语言文案同步规则。
+- [测试] 补充设置项帮助元数据、API schema、前端弹窗交互测试，并修复 Bot 名称路由与调度时间 provider 测试的离线 CI 稳定性问题。
+- [新功能] 新增 Moomoo OpenAPI 实时行情数据源，可通过本地 OpenD 网关接入美股、港股和 A 股实时行情。
+- [新功能] 新增东方财富、财联社、Google News CN/HK RSS 三个 A 股 / 港股专属新闻 Provider，无需 API Key；A 股/港股多维度搜索同步新增宏观政策、社交热度两个维度，与美股分析维度对齐。
+- [修复] 修复 LLM（qwen3:8b）输出中文 key JSON 时评分恒为 50 的问题：新增 _scan_strings_for_score 对叙述字段进行兜底评分提取（识别"系统评分77/100"等嵌入式格式）。
+- [修复] 修复 LLM 未输出 dashboard 块时 ideal_buy / take_profit 始终显示 N/A：新增 _synthesize_dashboard_from_cn 从中文 key 合成 sniper_points；pipeline 新增 ideal_buy（MA5 附近）与 take_profit（最近阻力位）技术数据兜底。
+- [改进] 新增 Docker 构建并启动脚本 `scripts/docker-build-launch.sh`，支持先 build 再启动 server、analyzer 或全部服务。
+- [改进] Moomoo 数据源优先使用市场快照补充美股估值/股本/盘前盘后字段，并支持通过 Moomoo 拉取美股日 K。
+- [修复] Moomoo OpenD 不可达时先执行短超时连接预检查，避免 SDK 重试阻塞股票分析流程。
+- [文档] 新增 Moomoo OpenD 安装、配置、Docker 连通性与 Web UI 验证指南。
+- [修复] 兼容本地模型返回中文评分字段、嵌套中文仪表盘、对象型 `系统评分` 和 `system_score`（如 `系统评分: 48/100` / `系统评分.系统评分: 52` / `system_score: 48`），避免分析结果总分误回退为 50。
+- [修复] Docker Compose 默认启用根目录 `litellm_config.yaml`，优先使用 `deepseek-smart-model` 并在失败时回退到 `ollama/qwen3:8b`，并避免空环境变量覆盖 `.env` 中的 LLM Provider API Key。
+- [修复] `openai/gpt-5.5` 通过 LiteLLM 调用时自动使用服务端要求的默认 temperature，避免因 `temperature=0.7` 被 OpenAI 拒绝后回退到本地模型。
+- [修复] Docker Compose 不再硬编码 `LITELLM_MODEL` / `LITELLM_FALLBACK_MODELS`，避免覆盖 `.env` 中的 YAML 路由选择。
+- [修复] LLM fallback 成功时日志显示实际响应模型，避免主模型失败后仍打印为主模型响应成功。
+- [改进] Ollama 本地模型示例与 Web 预设新增 `kwangsuklee/Qwen3.5-9B-Claude-4.6-Opus-Reasoning-Distilled-GGUF:latest`。
+- [修复] 兼容本地模型在狙击点位中输出 `buy_price` / `stop_loss_price` / `target_price`，避免报告操作点位显示为 N/A 或待补充。
+- [改进] A 股多维情报搜索会把所属板块注入行业查询，并在行业维度无结果时使用产业链/景气度扩展查询兜底。
+- [修复] 兼容本地模型在操作点位中输出 `entry` / `target`，并修复报告中字符串型利好催化被拆成逐字项目的问题。
+- [修复] 避免服务启动初期并发请求拿到未初始化的数据库单例，导致历史详情偶发 404。
+- [修复] 报告补全重试返回非 JSON 时保留首轮已解析结果，避免任务因补全响应异常而失败。
+- [修复] 非 Agent 路径（标准 LLM 路径）分析完成后补充调用 `_backfill_agent_dashboard_fields`，确保 LLM 未输出狙击点位时能从技术数据（MA5/MA10/支撑位/阻力位）自动填充，解决策略点位全部显示"—"和报告作战计划段内容空白的问题。
+- [修复] 新增二次买入（secondary_buy）技术数据兜底，使用 MA10/MA20 作为保守买入参考价；统一三处 sniper `_is_missing` 判断，识别 LLM 逐字复制 Prompt 示例的 "XX元" 模板占位字符串并触发技术数据回退。
+- [新功能] 通知网关新增 ntfy 一等渠道，支持通过 `NTFY_URL` / `NTFY_TOKEN` 推送并接入 Web 测试、路由、Actions 与诊断。
+- [新功能] 通知网关新增 Gotify 一等渠道，支持通过 `GOTIFY_URL` / `GOTIFY_TOKEN` 推送 Markdown 文本并接入 Web 测试、路由、Actions 与诊断。
+- [修复] 收紧 ntfy 结构化校验，避免 URL 编码空白 topic 被误判为有效通知端点。
+- [文档] 补充 Bark custom webhook 示例和 WebPush / Apprise 通知渠道评估，明确本轮不新增运行时依赖或配置入口。
+- [文档] 收口通知专题场景文档，并为 GitHub Actions 通知 env 对照表加入自动化校验。
+- [修复] 聚合报告通知按静态渠道隔离发送失败，并补充自定义 Webhook 部分成功诊断与脱敏测试。
+- [修复] 未配置 Tushare / Longbridge 凭据时不再实例化对应可选 fetcher，避免缺失凭据的数据源进入候选集。
+- [修复] Longbridge 遇到连接关闭类异常后会进入冷却期，并在美股/港股实时与日线请求中临时跳过该数据源，避免请求级频繁重连。
+- [修复] Pytdx 股票名称查询在全部服务器不可达时会短暂冷却，并在冷却期内跳过重复探测，减少无效拨号与告警噪音。
+- [修复] 调度模式未显式设置 `SCHEDULE_RUN_IMMEDIATELY` 时，会继续继承 `RUN_IMMEDIATELY` 的运行时覆盖语义，避免被持久化 `.env` 别名反向覆盖。
+- [文档] 补充 Longbridge 冷却开关与调度启动兼容语义说明。
+- [新功能] Windows 桌面安装版接入 electron-updater，发现新版本后可后台下载并在用户确认后重启安装；Release 工作流同步上传自动更新所需元数据。
+- [测试] 完善桌面端更新链路验收说明：补充 `apps/dsa-desktop` 与打包产物元数据的本地验证步骤（Web 构建、桌面测试/构建、`latest.yml` 与 `*.blockmap` 检查），并明确 Windows/NSIS 部分需在 Windows 发布链路复核。
+- [测试] 补充 `docs/desktop-package.md` 对 Windows NSIS 与 `desktop-release` 链路的发布级复核要求：注明 Linux 环境不能直接产出 Windows 安装器，要求在 Windows 环境补齐 `latest.yml`/`*.blockmap` 与 installer 的版本一致性与附件核对。
+- [文档] 强化桌面打包文档：补充 `latest.yml` / `*.blockmap` 与 `desktop-release` tag/version 一致性核验清单，明确非 Windows 环境下需在平台限制里补充说明。
+- [修复] 为 Windows NSIS 安装版自动更新加入安装目录运行时文件（`.env`、`data/stock_analysis.db`、`data/stock_analysis.db-wal`、`data/stock_analysis.db-shm`、`logs/desktop.log`）备份与首次启动恢复链路，并在 `quitAndInstall` 前等待后端退出，降低升级时配置与数据库丢失风险。
+- [修复] Windows NSIS 自动更新在运行时文件部分恢复失败时只保留失败项待重试，避免已恢复成功的配置或数据库文件在后续启动时被旧备份重复覆盖。
+- [修复] Windows NSIS 自动更新在安装尝试未切换桌面端版本时跳过自动恢复，避免失败或取消安装后误回滚用户运行时数据。
+- [修复] 同版本启动时清理未生效的自动更新备份目录，避免后续升级误将旧 `.dsa-desktop-update-backup/runtime-state.json` 的运行时文件再次恢复到新版本。
+- [修复] 清理提交中的临时探测文件（`node_modules_exists.txt` 与 `node_modules_ls_check.txt`），避免污染桌面/前端改动范围。
+- [新功能] Web 系统设置页开放 `.env` 配置备份导入/导出，复用键级覆盖、配置版本冲突保护和重载链路；Web 端在 `ADMIN_AUTH_ENABLED=false` 时该入口为禁用状态。
+- [chore] 精简仓库根目录：将文档图片资源迁入 `docs/assets/`，将东方财富请求补丁迁入 `src/patches/`，并下移 CI 专用依赖文件与技能适配服务。
+- [文档] 更新多语言 README 首页浅色工作台 GIF，并精简功能特性表，保留原有赞助商、快速开始和推送效果结构。
+- [新功能] 通知网关新增默认关闭的进程内降噪配置，支持去重、冷却、静默时段和最低严重级别，并将每日摘要开关标记为预留能力。
+- [文档] 恢复多语言 README 新闻源配置表中推荐项的加粗样式，统一相关项目章节层级，并精简顶部导航、联系文案和尾部展示。
+- [修复] Docker 挂载的 `logs` 目录不可写时启动日志自动降级到控制台输出，并补充非 root 容器目录权限说明。
+- [修复] 修正分析报告 API 构建策略点位时数值字段未归一为字符串的问题，避免策略价格触发响应 DTO 类型校验失败。
+- [修复] Docker 启动入口自动修复 `data` / `logs` / `reports` 挂载目录权限并降权运行，文档化的 Compose `exec` 手动命令显式使用 `dsa` 用户，避免普通部署需要手动 `chown` / `chmod`。
+- [修复] Web 首页大盘复盘结果改由主内容滚动区承载，避免 loading 切换到长结果后下方报告区域被截断或无法继续滚动。
+- [新功能] Per-task model routing: 按任务类型分配独立 LLM 模型，个股分析用 DeepSeek V4 Pro、Agent 深度研究用 V4 Pro、掘金扫垃圾用本地 Ollama（免费）、市场扫描用 V4 Flash、主题检测用本地 Ollama、大盘复盘用 V4 Flash；新增 GOLD_DIGGER_MODEL / SCANNER_MODEL / THEME_DETECTOR_MODEL / MARKET_REVIEW_MODEL 环境变量，解析器降级日志新增模型名标注。
+- [新功能] Claude Code 智能路由：集成 claude-code-router 实现多模型团队协作（老板+打工人+苦力），default→DeepSeek V4 Flash（日常编码）、think→DeepSeek V4 Pro（架构推理）、background→Ollama qwen3:8b（本地后台），支持会话内 /model 动态切换。
+- [改进] LLM 模型名规范化：DeepSeek 官方模型名 deepseek-chat / deepseek-reasoner 迁移为 deepseek-v4-flash / deepseek-v4-pro，同步更新 ccr config、orchestrator skill、启动脚本和 litellm_config.yaml。
+- [文档] 新增设计文档 docs/design-per-task-model-routing.html，说明按任务分配模型的架构、数据流、配置项语义、成本估算和回滚方案。
+- [文档] AGENTS.md 新增 AI 对话风格规范：维护者中文交流可幽默（沈腾式），但所有正式产出必须使用标准技术用语。
 
 ## [3.16.0] - 2026-05-10
 

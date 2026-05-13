@@ -231,6 +231,44 @@ OPENAI_MODEL=gpt-4o-mini</code></pre>
 </div>
 
 <div class="step">
+<h2 id="per-task-model">按任务分配模型（可选，推荐）</h2>
+
+<p>从 v3.17 起，系统支持按任务类型为不同类型的 LLM 调用分配独立模型，在推理质量与成本之间取得平衡。每个 per-task 变量为空时，自动继承全局 <code>LITELLM_MODEL</code>。</p>
+
+<table>
+<thead><tr><th>环境变量</th><th>默认值</th><th>适用任务</th><th>推荐值</th><th>说明</th></tr></thead>
+<tbody>
+<tr><td><code>LITELLM_MODEL</code></td><td><em>（必须设置）</em></td><td>所有任务（全局回退）</td><td><code>deepseek/deepseek-v4-pro</code></td><td>个股深度分析主模型</td></tr>
+<tr><td><code>AGENT_LITELLM_MODEL</code></td><td>空（继承）</td><td>Agent 深度研究</td><td><code>deepseek/deepseek-v4-pro</code></td><td>多步推理 + 工具调用</td></tr>
+<tr><td><code>GOLD_DIGGER_MODEL</code></td><td>空（继承）</td><td>沙里淘金（掘金扫垃圾股）</td><td><code>ollama/qwen3.5:9b</code></td><td>批量处理 ~20–40 只，本地免费</td></tr>
+<tr><td><code>SCANNER_MODEL</code></td><td>空（继承）</td><td>市场扫描 Tier-5 LLM</td><td><code>deepseek/deepseek-v4-flash</code></td><td>批量吞吐量优先，省钱</td></tr>
+<tr><td><code>THEME_DETECTOR_MODEL</code></td><td>空（继承）</td><td>投资主题检测</td><td><code>ollama/qwen3.5:9b</code></td><td>简单文本分类，本地免费</td></tr>
+<tr><td><code>MARKET_REVIEW_MODEL</code></td><td>空（继承）</td><td>每日大盘复盘</td><td><code>deepseek/deepseek-v4-flash</code></td><td>每天一次，Flash 成本最低</td></tr>
+</tbody>
+</table>
+
+<div class="callout callout-info">
+<strong>前置条件</strong>：per-task 模型必须在 <code>litellm_config.yaml</code> 的 <code>model_list</code> 中注册，才能通过 LiteLLM Router 正确解析 API Key 和 endpoint。
+</div>
+
+<div class="callout callout-tip">
+<strong>成本估算</strong>：使用推荐配置后，预计月度 API 支出约 $16（对比全用 V4 Pro 的 $35，节省 ~54%）。
+</div>
+
+<pre><code># === Per-Task Model 推荐配置 ===
+LITELLM_MODEL=deepseek/deepseek-v4-pro
+AGENT_LITELLM_MODEL=deepseek/deepseek-v4-pro
+GOLD_DIGGER_MODEL=ollama/qwen3.5:9b
+SCANNER_MODEL=deepseek/deepseek-v4-flash
+THEME_DETECTOR_MODEL=ollama/qwen3.5:9b
+MARKET_REVIEW_MODEL=deepseek/deepseek-v4-flash</code></pre>
+
+<div class="callout callout-warning">
+<strong>注意事项</strong>：使用本地模型（Ollama）时，若 JSON 格式输出不稳定，系统会自动回退到默认值并记录 WARNING 日志。可通过 <code>grep "JSON parse failed" logs/*.log</code> 监控。若失败率超过 20%，建议切换回云模型。
+</div>
+</div>
+
+<div class="step">
 <h2 id="stock-list">配置股票列表（必须）</h2>
 
 <pre><code># 股票代码列表（逗号分隔）

@@ -500,6 +500,7 @@ class MarketScanner:
                     single_stock_notify=False,
                     report_type=ReportType.FULL,
                     analysis_query_id=uuid.uuid4().hex,
+                    model_override=getattr(self.config, 'scanner_model', '') or None,
                 )
                 return candidate, result
             except Exception as exc:
