@@ -194,6 +194,16 @@ class NewsStore:
 
     # ── read ──────────────────────────────────────────────────────────────────
 
+    def get_item_by_url_hash(self, uh: str) -> Optional[sqlite3.Row]:
+        with self._lock:
+            con = self._connect()
+            try:
+                return con.execute(
+                    "SELECT * FROM news_items WHERE url_hash=? LIMIT 1", (uh,)
+                ).fetchone()
+            finally:
+                con.close()
+
     def exists_by_url_hash(self, uh: str) -> bool:
         with self._lock:
             con = self._connect()
@@ -420,5 +430,56 @@ class NewsStore:
                 return con.execute(
                     "SELECT COUNT(*) FROM news_items WHERE priority IS NULL AND is_expired = 0"
                 ).fetchone()[0]
+            finally:
+                con.close()
+
+    def get_recent_classified(
+        self,
+        hours: int = 12,
+        priority_min: int = 3,
+        limit: int = 100,
+    ) -> List[sqlite3.Row]:
+        """Return P{priority_min}+ classified items fetched within the last N hours."""
+        with self._lock:
+            con = self._connect()
+            try:
+                return con.execute(
+                    """
+                    SELECT * FROM news_items
+                    WHERE fetched_at >= datetime('now', ?)
+                      AND priority IS NOT NULL
+                      AND priority >= ?
+                      AND is_expired = 0
+                    ORDER BY priority DESC, fetched_at DESC
+                    LIMIT ?
+                    """,
+                    (f"-{hours} hours", priority_min, limit),
+                ).fetchall()
+            finally:
+                con.close()
+
+    def get_last_cycle_analysis_at(self) -> Optional[str]:
+        """Return the most recent cycle_at timestamp from cycle_analyses, or None."""
+        with self._lock:
+            con = self._connect()
+            try:
+                row = con.execute(
+                    "SELECT cycle_at FROM cycle_analyses ORDER BY cycle_at DESC LIMIT 1"
+                ).fetchone()
+                return row[0] if row else None
+            finally:
+                con.close()
+
+    def update_cycle_triggered_stocks(self, cycle_id: int, triggered_json: str) -> None:
+        with self._lock:
+            con = self._connect()
+            try:
+                con.execute(
+                    "UPDATE cycle_analyses SET triggered_stocks=? WHERE id=?",
+                    (triggered_json, cycle_id),
+                )
+                con.commit()
+            except sqlite3.Error as exc:
+                logger.error("update_cycle_triggered_stocks failed: %s", exc)
             finally:
                 con.close()
