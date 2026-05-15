@@ -73,3 +73,52 @@ services:
     # 若使用 network_mode: host，则以下 ports 映射无效，端口由 command 中的 --port 指定
     ports:
       - "${API_PORT:-8000}:${API_PORT:-8000}"
+
+  # RSSHub — 为没有原生 RSS 的中国财经网站合成 RSS 源
+  # 财联社、证券时报、新浪财经、东方财富等均走此服务
+  # 参考: https://docs.rsshub.app/deploy/
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: rsshub
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - CACHE_TYPE=memory
+      # 可选：设置访问密钥防止公网滥用
+      # - ACCESS_KEY=${RSSHUB_ACCESS_KEY:-}
+    ports:
+      - "${RSSHUB_PORT:-1200}:1200"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+
+  # News Sentinel — 主动新闻抓取服务（周期抓取 + SQLite 存储）
+  # 依赖 rsshub 提供中国财经 RSS 源；与主服务共享 /app/data 卷
+  sentinel:
+    <<: *common
+    container_name: stock-sentinel
+    command: ["python", "-m", "src.services.sentinel.service", "--loop"]
+    environment:
+      - TZ=Asia/Shanghai
+      - LITELLM_CONFIG=/app/litellm_config.yaml
+      - WEBUI_HOST=0.0.0.0
+      # Sentinel 专用配置（覆盖 .env 中的默认值）
+      - SENTINEL_ENABLED=true
+      - SENTINEL_RSSHUB_BASE_URL=http://rsshub:1200
+      - SENTINEL_DB_PATH=/app/data/sentinel.db
+    depends_on:
+      - rsshub
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M

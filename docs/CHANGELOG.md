@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] Scanner / 沙里淘金支持按美股和 A 股市场配置扫描范围，并为 A 股候选增加中国政策与国家热点主题权重。
 - [改进] Scanner / 沙里淘金新增 CLI 一次性运行入口，并补充中英文使用文档、API 示例和市场配置说明。
 - [改进] Scanner Top Picks 新增入选理由与关键筛选因子展示，帮助用户理解股票为何被选中。
+- [新功能] News Sentinel Phase 1：新增 `src/services/sentinel/` 主动新闻抓取服务骨架，包含 NativeRSSSpider / RSSHubSpider / JSONAPISpider 三类抓取基类，5 个开箱即用 Spider（Google News EN/CN、东方财富快讯、财联社 via RSSHub、Yahoo Finance RSS），SQLite+FTS5 新闻存储（URL hash 精确去重 + SimHash 近似去重），以及 `python -m src.services.sentinel.service --dry-run` 抓取统计入口；默认关闭（SENTINEL_ENABLED=false），不影响主流程。
 - [修复] Scanner 情报搜索为空时不再向 LLM 注入“未找到信息”占位新闻，并为美股候选增加 Yahoo Finance 新闻兜底。
 - [改进] 单股分析与 Scanner 推荐结果展示新闻证据来源，保留标题、来源、日期与链接，便于用户核对消息面依据。
 - [改进] Docker 镜像支持非 root 用户 (`dsa`, UID 1000) 执行，并增强 `Dockerfile` 安全性与构建稳健性。
