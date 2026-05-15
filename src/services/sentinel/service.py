@@ -18,27 +18,48 @@ from .classifier import LLMClassifier
 from .comprehensive import ComprehensiveAnalyzer
 from .config import SentinelConfig
 from .dedup import Deduplicator, url_hash
+from .metrics import SentinelMetrics
 from .models import CycleSummary, RawArticle
 from .notifier import SentinelNotifier
 from .store import NewsStore
 from .ttl import TTLPurger
 from .spiders.base import SpiderBase
-from .spiders.google_news import GoogleNewsENSpider, GoogleNewsCNSpider
-from .spiders.eastmoney import EastMoneySpider
 from .spiders.cls import CLSRSSHubSpider
-from .spiders.yahoo_finance import YahooFinanceRSSSpider
+from .spiders.cnstock import CNStockRSSHubSpider
+from .spiders.csrc import CSRCSpider
+from .spiders.eastmoney import EastMoneySpider
+from .spiders.google_news import GoogleNewsENSpider, GoogleNewsCNSpider
+from .spiders.ndrc import NDRCSpider
+from .spiders.pbc import PBCSpider
 from .spiders.rsshub import RSSHubSpider
+from .spiders.sec_edgar import SECEdgarSpider
+from .spiders.sina_finance import SinaFinanceRSSHubSpider
+from .spiders.stcn import STCNRSSHubSpider
+from .spiders.yahoo_finance import YahooFinanceRSSSpider
+from .spiders.yicai import YicaiRSSHubSpider
 
 logger = logging.getLogger(__name__)
 
 
 def _build_default_spiders(config: SentinelConfig) -> List[SpiderBase]:
     all_spiders: List[SpiderBase] = [
+        # Phase 1 baseline — always-on
         GoogleNewsENSpider(),
         GoogleNewsCNSpider(),
         EastMoneySpider(),
         CLSRSSHubSpider(),
         YahooFinanceRSSSpider(),
+        # Phase 5: additional Chinese financial media via RSSHub
+        STCNRSSHubSpider(),
+        CNStockRSSHubSpider(),
+        YicaiRSSHubSpider(),
+        SinaFinanceRSSHubSpider(),
+        # Phase 5: government / regulatory sources (HTML list pages)
+        CSRCSpider(),
+        PBCSpider(),
+        NDRCSpider(),
+        # Phase 5: international regulatory
+        SECEdgarSpider(),
     ]
     # Inject RSSHub base URL into all RSSHubSpider instances
     for spider in all_spiders:
@@ -57,6 +78,7 @@ class SentinelService:
         classifier: Optional[LLMClassifier] = None,
         comprehensive: Optional[ComprehensiveAnalyzer] = None,
         notifier: Optional[SentinelNotifier] = None,
+        metrics: Optional[SentinelMetrics] = None,
     ) -> None:
         self._config = config or SentinelConfig.from_env()
         self._store = store or NewsStore(self._config.db_path)
@@ -65,6 +87,7 @@ class SentinelService:
         self._purger = TTLPurger(self._store)
         self._comprehensive = comprehensive if comprehensive is not None else ComprehensiveAnalyzer(self._config)
         self._notifier = notifier if notifier is not None else SentinelNotifier(self._config)
+        self._metrics = metrics if metrics is not None else SentinelMetrics()
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -132,6 +155,7 @@ class SentinelService:
             summary.total_deduped += deduped
             if error_msg:
                 summary.errors.append(f"{spider.name}: {error_msg}")
+            self._metrics.record_spider_fetch(spider.name, fetched, error=(status == "error"))
 
             # Polite delay between spiders
             if not dry_run and self._config.request_delay_seconds > 0:
@@ -142,8 +166,11 @@ class SentinelService:
         # Phase 2: classify newly stored articles with LLM
         if not dry_run and summary.total_new > 0:
             try:
+                import time as _time
+                _t0 = _time.monotonic()
                 classified = self._classifier.classify_pending(self._store)
                 summary.classified_count = classified
+                self._metrics.record_classification(classified, _time.monotonic() - _t0)
                 logger.info("Classified %d news items this cycle", classified)
             except Exception:
                 logger.exception("LLM classification step failed — continuing")
@@ -171,7 +198,10 @@ class SentinelService:
         # Periodic TTL purge (every cycle to keep DB lean)
         if not dry_run:
             try:
-                self._purger.run()
+                purge_result = self._purger.run()
+                self._metrics.record_purge(
+                    purge_result.get("deleted", 0), purge_result.get("archived", 0)
+                )
             except Exception:
                 logger.exception("TTL purge failed — continuing")
 
@@ -182,6 +212,7 @@ class SentinelService:
             "enabled_spiders": [s.name for s in self._spiders],
             "total_items": self._store.count(),
             "items_by_spider": self._store.count_by_spider(),
+            "metrics": self._metrics.summary(db_path=self._config.db_path),
         }
 
 
