@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>News Sentinel — 部署与运维指南</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2d3148;
+      --accent: #6c8aff;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --code-bg: #12151f;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      padding: 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.8rem; color: var(--accent); margin-bottom: 0.25rem; }
+    h2 { font-size: 1.25rem; color: var(--accent); margin: 2rem 0 0.75rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+    h3 { font-size: 1rem; color: var(--text); margin: 1.25rem 0 0.5rem; }
+    p { margin-bottom: 0.75rem; color: var(--muted); }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.1em 0.4em;
+      font-family: "JetBrains Mono", "Fira Code", monospace;
+      font-size: 0.88em;
+      color: #a5f3fc;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+      overflow-x: auto;
+      margin: 0.75rem 0 1rem;
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      color: #e2e8f0;
+      font-size: 0.85rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0.75rem 0 1.25rem;
+      font-size: 0.88rem;
+    }
+    th {
+      background: var(--surface);
+      color: var(--accent);
+      padding: 0.5rem 0.75rem;
+      text-align: left;
+      border: 1px solid var(--border);
+    }
+    td {
+      padding: 0.45rem 0.75rem;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      vertical-align: top;
+    }
+    td code { font-size: 0.83rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.15em 0.55em;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .badge-green { background: #14532d; color: var(--green); }
+    .badge-yellow { background: #713f12; color: var(--yellow); }
+    .badge-red { background: #7f1d1d; color: var(--red); }
+    .tip {
+      background: #1e2a3a;
+      border-left: 3px solid var(--accent);
+      border-radius: 0 6px 6px 0;
+      padding: 0.75rem 1rem;
+      margin: 0.75rem 0;
+    }
+    .warn {
+      background: #2a2010;
+      border-left: 3px solid var(--yellow);
+      border-radius: 0 6px 6px 0;
+      padding: 0.75rem 1rem;
+      margin: 0.75rem 0;
+    }
+    details { margin: 0.5rem 0; }
+    summary { cursor: pointer; color: var(--accent); font-weight: 600; padding: 0.35rem 0; }
+    ul, ol { padding-left: 1.4rem; color: var(--muted); }
+    li { margin-bottom: 0.3rem; }
+    .meta { color: var(--muted); font-size: 0.82rem; margin-bottom: 2rem; }
+  </style>
+</head>
+<body>
+
+<h1>News Sentinel — 部署与运维指南</h1>
+<p class="meta">版本：Phase 5 &nbsp;|&nbsp; 更新：2026-05-15 &nbsp;|&nbsp; 文件：<code>docs/design-news-sentinel-deployment.html</code></p>
+
+<p>本文档说明 News Sentinel 的各种部署模式、环境变量配置、Spider 扩展方法、运维监控接入和常见故障排查。架构设计请参阅 <code>docs/design-news-sentinel.html</code>。</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>1. 部署模式总览</h2>
+
+<table>
+  <tr><th>模式</th><th>启动方式</th><th>适用场景</th></tr>
+  <tr>
+    <td><span class="badge badge-green">嵌入模式</span></td>
+    <td><code>SentinelScheduler</code> 在主进程中启动后台线程</td>
+    <td>本地开发、资源受限环境；与主分析进程共享同一 Python 进程</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-green">独立进程</span></td>
+    <td><code>python server_sentinel.py</code></td>
+    <td>生产环境首选；内置 HTTP 健康端点，可被 Docker/k8s 探活</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-yellow">Docker Compose</span></td>
+    <td><code>sentinel</code> service in <code>docker-compose.yml</code></td>
+    <td>与主服务共同编排；挂载同一 SQLite 数据库目录</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-yellow">单次运行</span></td>
+    <td><code>python -m src.services.sentinel.service</code></td>
+    <td>定时任务（cron）、调试、CI 冒烟测试</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-yellow">Dry-run</span></td>
+    <td><code>python server_sentinel.py --dry-run</code></td>
+    <td>验证 Spider 连通性，不写入数据库</td>
+  </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>2. 快速启动</h2>
+
+<h3>2.1 本地开发（嵌入模式）</h3>
+<pre><code># 1. 在 .env 中启用 Sentinel
+SENTINEL_ENABLED=true
+SENTINEL_DB_PATH=data/sentinel.db
+
+# 2. 正常启动主服务，Sentinel 在后台随 main.py 运行
+python main.py --serve</code></pre>
+
+<h3>2.2 独立进程</h3>
+<pre><code># 前台运行，默认监听 :9100
+python server_sentinel.py
+
+# 自定义端口
+python server_sentinel.py --port=9200
+
+# 只跑一次然后退出（不启动 HTTP 服务器）
+python -m src.services.sentinel.service
+
+# 仅抓取，不写库
+python -m src.services.sentinel.service --dry-run
+
+# 持续循环模式（无 HTTP 服务器）
+python -m src.services.sentinel.service --loop</code></pre>
+
+<h3>2.3 Docker Compose 示例</h3>
+<pre><code>services:
+  sentinel:
+    build: .
+    command: python server_sentinel.py
+    environment:
+      SENTINEL_ENABLED: "true"
+      SENTINEL_DB_PATH: /data/sentinel.db
+      SENTINEL_RSSHUB_BASE_URL: http://rsshub:1200
+      SENTINEL_SERVER_PORT: "9100"
+    volumes:
+      - sentinel_data:/data
+    ports:
+      - "9100:9100"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9100/healthz"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  rsshub:
+    image: diygod/rsshub
+    ports:
+      - "1200:1200"
+    restart: unless-stopped
+
+volumes:
+  sentinel_data:</code></pre>
+
+<div class="tip">
+  <strong>提示：</strong>若主服务（<code>server.py</code>）和 <code>server_sentinel.py</code> 需共享 SQLite 数据库，请确保两者挂载同一目录，并将 <code>SENTINEL_DB_PATH</code> 设置为一致路径。SQLite WAL 模式下两个进程可以并发读写。
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>3. 环境变量参考</h2>
+
+<table>
+  <tr><th>变量</th><th>默认值</th><th>说明</th></tr>
+  <tr><td><code>SENTINEL_ENABLED</code></td><td><code>false</code></td><td>主开关；false 时所有 Sentinel 组件静默，不影响主流程</td></tr>
+  <tr><td><code>SENTINEL_DB_PATH</code></td><td><code>data/sentinel.db</code></td><td>SQLite 数据库路径，支持绝对路径</td></tr>
+  <tr><td><code>SENTINEL_SERVER_PORT</code></td><td><code>9100</code></td><td><code>server_sentinel.py</code> 内置 HTTP 服务监听端口</td></tr>
+  <tr><td><code>SENTINEL_RSSHUB_BASE_URL</code></td><td><code>http://localhost:1200</code></td><td>本地 RSSHub 实例地址；空则所有 RSSHubSpider 跳过</td></tr>
+  <tr><td><code>SENTINEL_RSSHUB_TIMEOUT</code></td><td><code>15</code></td><td>RSSHub 请求超时（秒）</td></tr>
+  <tr><td><code>SENTINEL_CYCLE_INTERVAL_MINUTES</code></td><td><code>30</code></td><td>完整抓取轮次间隔（分钟）</td></tr>
+  <tr><td><code>SENTINEL_ANALYSIS_INTERVAL_HOURS</code></td><td><code>4</code></td><td>综合宏观分析触发间隔（小时）</td></tr>
+  <tr><td><code>SENTINEL_LLM_BATCH_SIZE</code></td><td><code>20</code></td><td>每批 LLM 分类新闻数量</td></tr>
+  <tr><td><code>SENTINEL_LLM_MAX_PER_CYCLE</code></td><td><code>200</code></td><td>每轮最多分类条数，防止 LLM 费用失控</td></tr>
+  <tr><td><code>SENTINEL_TRIGGER_CONFIDENCE</code></td><td><code>0.70</code></td><td>自动触发股票深度分析的置信度阈值（0.0–1.0）</td></tr>
+  <tr><td><code>SENTINEL_CYCLE_TIMEOUT_MINUTES</code></td><td><code>10</code></td><td>单轮抓取最大超时（分钟）</td></tr>
+  <tr><td><code>SENTINEL_MAX_SPIDER_CONCURRENCY</code></td><td><code>5</code></td><td>并发 Spider 数量（当前为顺序执行，预留参数）</td></tr>
+  <tr><td><code>SENTINEL_REQUEST_DELAY_SECONDS</code></td><td><code>2.0</code></td><td>同一站点请求间隔（秒），礼貌爬取</td></tr>
+  <tr><td><code>SENTINEL_WEBHOOK_SECRET</code></td><td>（空）</td><td>微服务模式下 webhook 鉴权密钥（预留）</td></tr>
+  <tr><td><code>SENTINEL_REDIS_URL</code></td><td>（空）</td><td>可选 Redis 热缓存 URL（预留，空则不使用）</td></tr>
+  <tr><td><code>SENTINEL_ENABLED_SPIDERS</code></td><td><code>all</code></td><td>逗号分隔的 Spider name 白名单，或 <code>all</code></td></tr>
+  <tr><td><code>SENTINEL_TRADING_HOURS_BOOST</code></td><td><code>true</code></td><td>交易时段内提升抓取频率（预留）</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>4. HTTP 健康与指标端点（server_sentinel.py）</h2>
+
+<table>
+  <tr><th>路径</th><th>响应</th><th>用途</th></tr>
+  <tr>
+    <td><code>GET /healthz</code></td>
+    <td><code>{"status": "ok", "uptime_seconds": N}</code></td>
+    <td>Docker/k8s liveness/readiness 探针</td>
+  </tr>
+  <tr>
+    <td><code>GET /metrics</code></td>
+    <td>完整 <code>SentinelMetrics.summary()</code> JSON</td>
+    <td>监控系统抓取（Prometheus textfile export、Grafana JSON）</td>
+  </tr>
+  <tr>
+    <td><code>GET /status</code></td>
+    <td>配置摘要 + DB 统计 + Spider 列表</td>
+    <td>运维快速诊断</td>
+  </tr>
+</table>
+
+<h3>Prometheus textfile 示例</h3>
+<pre><code>#!/bin/sh
+# 每分钟运行，将 /metrics 写成 Prometheus textfile
+curl -s http://localhost:9100/metrics \
+  | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(f'sentinel_uptime_seconds {d[\"uptime_seconds\"]}')
+print(f'sentinel_cycles_total {d[\"cycles_total\"]}')
+print(f'sentinel_cycles_errors {d[\"cycles_errors\"]}')
+for name, s in d.get('spiders', {}).items():
+    n = name.replace('-', '_')
+    print(f'sentinel_spider_fetched_total{{spider=\"{n}\"}} {s[\"total_fetched\"]}')
+    print(f'sentinel_spider_errors_total{{spider=\"{n}\"}} {s[\"errors\"]}')
+    print(f'sentinel_spider_success_rate{{spider=\"{n}\"}} {s[\"success_rate\"]}')
+" > /var/lib/prometheus/node-exporter/sentinel.prom</code></pre>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>5. 内置 Spider 清单</h2>
+
+<table>
+  <tr><th>Spider 名称</th><th>类型</th><th>来源</th><th>前置条件</th></tr>
+  <tr><td><code>google_news_en</code></td><td>RSS (native)</td><td>Google News EN RSS</td><td>无（网络可达即可）</td></tr>
+  <tr><td><code>google_news_cn</code></td><td>RSS (native)</td><td>Google News CN RSS</td><td>无</td></tr>
+  <tr><td><code>eastmoney</code></td><td>JSON API</td><td>东方财富快讯</td><td>无</td></tr>
+  <tr><td><code>cls_rsshub</code></td><td>RSSHub</td><td>财联社电报</td><td>RSSHub 实例</td></tr>
+  <tr><td><code>yahoo_finance_rss</code></td><td>RSS (native)</td><td>Yahoo Finance RSS</td><td>无</td></tr>
+  <tr><td><code>stcn_rsshub</code></td><td>RSSHub</td><td>证券时报</td><td>RSSHub 实例</td></tr>
+  <tr><td><code>cnstock_rsshub</code></td><td>RSSHub</td><td>上海证券报</td><td>RSSHub 实例</td></tr>
+  <tr><td><code>yicai_rsshub</code></td><td>RSSHub</td><td>第一财经</td><td>RSSHub 实例</td></tr>
+  <tr><td><code>sina_finance_rsshub</code></td><td>RSSHub</td><td>新浪财经</td><td>RSSHub 实例</td></tr>
+  <tr><td><code>csrc</code></td><td>HTML 列表页</td><td>证监会（csrc.gov.cn）</td><td>网络可达</td></tr>
+  <tr><td><code>pbc</code></td><td>HTML 列表页</td><td>中国人民银行（pbc.gov.cn）</td><td>网络可达</td></tr>
+  <tr><td><code>ndrc</code></td><td>HTML 列表页</td><td>国家发展改革委（ndrc.gov.cn）</td><td>网络可达</td></tr>
+  <tr><td><code>sec_edgar</code></td><td>Atom RSS</td><td>SEC EDGAR 最新文件</td><td>无</td></tr>
+</table>
+
+<div class="tip">
+  <strong>禁用特定 Spider：</strong>设置 <code>SENTINEL_ENABLED_SPIDERS=google_news_en,eastmoney,cls_rsshub</code> 只启用列出的 Spider，其余自动跳过。若 <code>SENTINEL_RSSHUB_BASE_URL</code> 为空，所有 RSSHub 类型 Spider 自动跳过，无需单独配置。
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>6. 添加自定义 Spider</h2>
+
+<h3>6.1 RSS / Atom 源</h3>
+<pre><code>from src.services.sentinel.spiders.native_rss import NativeRSSSpider
+
+class MyNewsSpider(NativeRSSSpider):
+    name = "my_news"
+    source_name = "我的新闻源"
+    source_url = "https://example.com"
+    feed_urls = ["https://example.com/rss.xml"]
+    language = "zh"
+
+    def is_enabled(self, config=None) -> bool:
+        return True  # 或根据 config 判断</code></pre>
+
+<h3>6.2 RSSHub 源</h3>
+<pre><code>from src.services.sentinel.spiders.rsshub import RSSHubSpider
+
+class MyRSSHubSpider(RSSHubSpider):
+    name = "my_rsshub"
+    source_name = "某财经媒体"
+    source_url = "https://example.com"
+    # rsshub_path 会拼接到 SENTINEL_RSSHUB_BASE_URL 后
+    rsshub_path = "/somesite/feed"
+    language = "zh"</code></pre>
+
+<h3>6.3 HTML 列表页</h3>
+<pre><code>from src.services.sentinel.spiders.html_list import HTMLListSpider
+
+class MyGovSpider(HTMLListSpider):
+    name = "my_gov"
+    source_name = "某监管机构"
+    source_url = "https://gov.example.com"
+    list_url = "https://gov.example.com/news/list.html"
+    language = "zh"
+
+    def _parse_items(self, html: str) -> list:
+        # 实现站点专属解析，或直接用通用方法：
+        return self._grep_list_items(html, base_url=self.list_url)</code></pre>
+
+<h3>6.4 注册到 Service</h3>
+<p>在 <code>src/services/sentinel/service.py</code> 的 <code>_build_default_spiders()</code> 函数中追加你的 Spider 实例即可：</p>
+<pre><code>from .spiders.my_spider import MyNewsSpider
+
+def _build_default_spiders(config):
+    all_spiders = [
+        ...
+        MyNewsSpider(),   # ← 追加这里
+    ]
+    ...</code></pre>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>7. 数据库维护</h2>
+
+<h3>7.1 表结构概览</h3>
+<table>
+  <tr><th>表名</th><th>用途</th></tr>
+  <tr><td><code>news_items</code></td><td>主新闻表（含 FTS5 虚拟表 <code>news_fts</code>）</td></tr>
+  <tr><td><code>news_items_archive</code></td><td>软归档表（P4 过期后移入）</td></tr>
+  <tr><td><code>cycle_analyses</code></td><td>综合宏观分析记录</td></tr>
+  <tr><td><code>spider_runs</code></td><td>每次 Spider 抓取日志</td></tr>
+</table>
+
+<h3>7.2 手动清理</h3>
+<pre><code># 查看 DB 大小
+ls -lh data/sentinel.db
+
+# 触发一次 TTL 清理（Python）
+from src.services.sentinel.store import NewsStore
+from src.services.sentinel.ttl import TTLPurger
+store = NewsStore("data/sentinel.db")
+result = TTLPurger(store).run()
+print(result)  # {"deleted": N, "archived": M}
+
+# SQLite VACUUM（清理后碎片整理）
+sqlite3 data/sentinel.db "VACUUM;"</code></pre>
+
+<h3>7.3 备份</h3>
+<pre><code># 在线备份（SQLite 内建，安全）
+sqlite3 data/sentinel.db ".backup data/sentinel_backup.db"
+
+# 或直接 cp（建议在 Sentinel 停止后执行）
+cp data/sentinel.db data/sentinel_$(date +%Y%m%d).db</code></pre>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>8. Web API（主服务集成）</h2>
+
+<p>当主服务（<code>server.py</code>）与 Sentinel 共用同一数据库时，以下端点自动可用：</p>
+
+<table>
+  <tr><th>路径</th><th>参数</th><th>说明</th></tr>
+  <tr>
+    <td><code>GET /api/v1/sentinel/status</code></td>
+    <td>—</td>
+    <td>是否启用、DB 路径、总条数、未分类数、最近分析时间</td>
+  </tr>
+  <tr>
+    <td><code>GET /api/v1/sentinel/news</code></td>
+    <td><code>hours</code>, <code>priority_min</code>, <code>limit</code></td>
+    <td>最近 N 小时内 P≥min 的已分类新闻</td>
+  </tr>
+  <tr>
+    <td><code>GET /api/v1/sentinel/news/search</code></td>
+    <td><code>q</code>, <code>limit</code></td>
+    <td>FTS5 全文检索</td>
+  </tr>
+  <tr>
+    <td><code>GET /api/v1/sentinel/analyses</code></td>
+    <td><code>limit</code></td>
+    <td>历史综合分析记录列表</td>
+  </tr>
+</table>
+
+<p>Web 前端情报中心页面路由：<code>/sentinel</code>（侧边栏 → 情报中心）</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>9. 常见故障排查</h2>
+
+<details>
+  <summary>Spider 持续返回空结果（健康度降级）</summary>
+  <p>每个 Spider 连续 3 次空抓取后标记为 DEGRADED，在 <code>--dry-run</code> 摘要或 <code>/status</code> 端点可见。常见原因：</p>
+  <ul>
+    <li>RSS 源网络不可达 — 检查防火墙/代理</li>
+    <li>RSSHub 实例未启动 — <code>curl http://localhost:1200/healthz</code></li>
+    <li>政府网站 HTML 结构变化 — 需更新对应 Spider 的 <code>_parse_items()</code></li>
+  </ul>
+</details>
+
+<details>
+  <summary>LLM 分类停止工作</summary>
+  <ul>
+    <li>检查主 LLM 配置（<code>GEMINI_API_KEY</code> 或 LiteLLM 路由）是否有效</li>
+    <li>查看日志中 <code>LLM classification step failed</code> 的详细 traceback</li>
+    <li><code>SENTINEL_LLM_MAX_PER_CYCLE=0</code> 可临时禁用分类，不影响抓取</li>
+  </ul>
+</details>
+
+<details>
+  <summary>DB 文件持续增长</summary>
+  <ul>
+    <li>TTL 清理每轮自动运行，检查 <code>/metrics</code> 的 <code>ttl_purge.total_deleted</code> 是否在增加</li>
+    <li>大量 P5 新闻永久保留 — 可调低 LLM 分配 P5 的频率（通过 Prompt 调整）</li>
+    <li>运行 <code>sqlite3 data/sentinel.db "VACUUM;"</code> 回收碎片</li>
+  </ul>
+</details>
+
+<details>
+  <summary>综合分析不触发</summary>
+  <ul>
+    <li>确认 <code>SENTINEL_ANALYSIS_INTERVAL_HOURS</code> 设置合理（默认 4 小时）</li>
+    <li>检查数据库中是否有足够的 P3+ 已分类新闻（<code>SELECT COUNT(*) FROM news_items WHERE priority >= 3 AND sentiment IS NOT NULL;</code>）</li>
+    <li>查看日志中 <code>Comprehensive analysis step failed</code></li>
+  </ul>
+</details>
+
+<details>
+  <summary>server_sentinel.py 端口冲突</summary>
+  <p>设置 <code>SENTINEL_SERVER_PORT=9200</code>（或其他空闲端口），或用 <code>--port=9200</code> 命令行参数覆盖。</p>
+</details>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>10. 回滚方式</h2>
+
+<div class="warn">
+  <strong>注意：</strong>Sentinel 默认关闭（<code>SENTINEL_ENABLED=false</code>）。若出现问题，最简单的回滚是将 <code>SENTINEL_ENABLED</code> 改回 <code>false</code> 并重启主服务，Sentinel 相关代码路径完全静默。
+</div>
+
+<ul>
+  <li><strong>主服务回滚</strong>：将 <code>SENTINEL_ENABLED=false</code> 写入 <code>.env</code>，重启 <code>server.py</code>。SearchService 会跳过 Sentinel 缓存，直接走在线搜索。</li>
+  <li><strong>独立进程回滚</strong>：停止 <code>server_sentinel.py</code> 进程，主服务不受影响。</li>
+  <li><strong>数据库回滚</strong>：用备份文件替换 <code>data/sentinel.db</code>，重启 Sentinel 服务。</li>
+  <li><strong>代码回滚</strong>：<code>git revert</code> 对应 Sentinel commits，Sentinel 模块对主流程无硬依赖，回滚不影响分析主链路。</li>
+</ul>
+
+</body>
+</html>
