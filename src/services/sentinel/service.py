@@ -15,9 +15,11 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from .classifier import LLMClassifier
+from .comprehensive import ComprehensiveAnalyzer
 from .config import SentinelConfig
 from .dedup import Deduplicator, url_hash
 from .models import CycleSummary, RawArticle
+from .notifier import SentinelNotifier
 from .store import NewsStore
 from .ttl import TTLPurger
 from .spiders.base import SpiderBase
@@ -53,12 +55,16 @@ class SentinelService:
         store: Optional[NewsStore] = None,
         spiders: Optional[List[SpiderBase]] = None,
         classifier: Optional[LLMClassifier] = None,
+        comprehensive: Optional[ComprehensiveAnalyzer] = None,
+        notifier: Optional[SentinelNotifier] = None,
     ) -> None:
         self._config = config or SentinelConfig.from_env()
         self._store = store or NewsStore(self._config.db_path)
         self._spiders = spiders if spiders is not None else _build_default_spiders(self._config)
         self._classifier = classifier if classifier is not None else LLMClassifier(self._config)
         self._purger = TTLPurger(self._store)
+        self._comprehensive = comprehensive if comprehensive is not None else ComprehensiveAnalyzer(self._config)
+        self._notifier = notifier if notifier is not None else SentinelNotifier(self._config)
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -66,6 +72,8 @@ class SentinelService:
         """Run one full fetch cycle across all enabled spiders."""
         summary = CycleSummary(started_at=datetime.now(timezone.utc))
         deduper = Deduplicator(self._store)
+
+        new_url_hashes: List[str] = []  # for Phase 3 breaking alerts
 
         for spider in self._spiders:
             spider_start = datetime.now(timezone.utc).isoformat()
@@ -85,6 +93,8 @@ class SentinelService:
                         if deduper.is_new(article):
                             if self._store.upsert(article):
                                 new_count += 1
+                                from .dedup import url_hash as _url_hash
+                                new_url_hashes.append(_url_hash(article.url))
                         else:
                             deduped += 1
                 else:
@@ -137,6 +147,26 @@ class SentinelService:
                 logger.info("Classified %d news items this cycle", classified)
             except Exception:
                 logger.exception("LLM classification step failed — continuing")
+
+        # Phase 3a: breaking alerts for newly classified P4+ actionable items
+        if not dry_run and new_url_hashes:
+            try:
+                sent = self._notifier.dispatch_breaking_alerts(new_url_hashes, self._store)
+                if sent:
+                    logger.info("Sent %d breaking alert(s)", sent)
+            except Exception:
+                logger.exception("Breaking alert dispatch failed — continuing")
+
+        # Phase 3b: periodic comprehensive analysis + digest notification
+        if not dry_run:
+            try:
+                result = self._comprehensive.analyze(self._store)
+                if result is not None:
+                    triggered = self._notifier.dispatch_cycle_analysis(result, self._store)
+                    if triggered:
+                        logger.info("Triggered stock analysis for: %s", ", ".join(triggered))
+            except Exception:
+                logger.exception("Comprehensive analysis step failed — continuing")
 
         # Periodic TTL purge (every cycle to keep DB lean)
         if not dry_run:
