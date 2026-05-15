@@ -20,8 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] Scanner Top Picks 新增入选理由与关键筛选因子展示，帮助用户理解股票为何被选中。
 - [新功能] News Sentinel Phase 1：新增 `src/services/sentinel/` 主动新闻抓取服务骨架，包含 NativeRSSSpider / RSSHubSpider / JSONAPISpider 三类抓取基类，5 个开箱即用 Spider（Google News EN/CN、东方财富快讯、财联社 via RSSHub、Yahoo Finance RSS），SQLite+FTS5 新闻存储（URL hash 精确去重 + SimHash 近似去重），以及 `python -m src.services.sentinel.service --dry-run` 抓取统计入口；默认关闭（SENTINEL_ENABLED=false），不影响主流程。
 - [新功能] News Sentinel Phase 2：新增 `LLMClassifier` 批量 LLM 新闻分类（优先级 P1-P5、情绪、市场范围、受影响板块/个股、行动信号），`TTLPurger` TTL 过期清理（P1=24h/P2=7d/P3=30d/P4=90d 软归档/P5 永久保留），`SentinelScheduler` 后台调度；每个采集周期自动触发分类与 TTL 清理，政府权威信源自动加权。
-- [新功能] News Sentinel Phase 5：新增 8 个抓取源（证券时报/上海证券报/第一财经/新浪财经 via RSSHub，证监会/央行/发改委 HTML 列表页，SEC EDGAR Atom），新增 `HTMLListSpider` 通用 HTML 列表页基类（stdlib html.parser，无新依赖），新增 `SentinelMetrics` 运行指标采集（每 Spider 成功率、LLM 分类延迟、TTL 清理量、DB 大小），新增 `server_sentinel.py` 独立进程模式（内置 HTTP 健康/指标端点 `/healthz` `/metrics` `/status`）；默认 Spider 数量从 5 扩展到 13。
 - [新功能] News Sentinel Phase 3：新增 `ComprehensiveAnalyzer` 周期性宏观综合分析（P3+ 新闻聚合，LLM 输出宏观主题/板块机会/股票线索/风险提示/市场情绪），`SentinelNotifier` 双路分发（即时 P4+/P5 重要新闻 breaking 告警 + 综合分析摘要推送至所有已配置通知渠道），高置信度股票线索自动触发 TaskService 深度分析任务。
+- [新功能] News Sentinel Phase 4：新增 `SentinelCacheClient` 只读缓存门面，将 Sentinel DB 接入 `SearchService` 综合情报流（`sentinel_cache` provider），新增 `/api/v1/sentinel/` REST API（status/news/news/search/analyses），新增 Web 情报中心页面（`/sentinel`）含状态卡片/宏观分析/优先级过滤新闻流/5 分钟自动刷新。
+- [新功能] News Sentinel Phase 5：新增 8 个抓取源（证券时报/上海证券报/第一财经/新浪财经 via RSSHub，证监会/央行/发改委 HTML 列表页，SEC EDGAR Atom），新增 `HTMLListSpider` 通用 HTML 列表页基类（stdlib html.parser，无新依赖），新增 `SentinelMetrics` 运行指标采集（每 Spider 成功率、LLM 分类延迟、TTL 清理量、DB 大小），新增 `server_sentinel.py` 独立进程模式（内置 HTTP 健康/指标端点 `/healthz` `/metrics` `/status`）；默认 Spider 数量从 5 扩展到 13。
 - [修复] Scanner 情报搜索为空时不再向 LLM 注入“未找到信息”占位新闻，并为美股候选增加 Yahoo Finance 新闻兜底。
 - [改进] 单股分析与 Scanner 推荐结果展示新闻证据来源，保留标题、来源、日期与链接，便于用户核对消息面依据。
 - [改进] Docker 镜像支持非 root 用户 (`dsa`, UID 1000) 执行，并增强 `Dockerfile` 安全性与构建稳健性。
