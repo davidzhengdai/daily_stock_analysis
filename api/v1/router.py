@@ -21,6 +21,7 @@ from api.v1.endpoints import (
     history,
     portfolio,
     scanner,
+    sentinel,
     stocks,
     system_config,
     usage,
@@ -99,4 +100,10 @@ router.include_router(
     gold_digger.router,
     prefix="/gold-digger",
     tags=["GoldDigger"]
+)
+
+router.include_router(
+    sentinel.router,
+    prefix="/sentinel",
+    tags=["Sentinel"]
 )

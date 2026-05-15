@@ -470,6 +470,29 @@ class NewsStore:
             finally:
                 con.close()
 
+    def get_latest_cycle_analysis(self) -> Optional[sqlite3.Row]:
+        """Return the most recent row from cycle_analyses, or None."""
+        with self._lock:
+            con = self._connect()
+            try:
+                return con.execute(
+                    "SELECT * FROM cycle_analyses ORDER BY cycle_at DESC LIMIT 1"
+                ).fetchone()
+            finally:
+                con.close()
+
+    def get_cycle_analyses(self, limit: int = 10) -> List[sqlite3.Row]:
+        """Return the most recent cycle analysis records, newest first."""
+        with self._lock:
+            con = self._connect()
+            try:
+                return con.execute(
+                    "SELECT * FROM cycle_analyses ORDER BY cycle_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            finally:
+                con.close()
+
     def update_cycle_triggered_stocks(self, cycle_id: int, triggered_json: str) -> None:
         with self._lock:
             con = self._connect()
