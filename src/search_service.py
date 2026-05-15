@@ -2910,7 +2910,39 @@ class SearchService:
             self.news_max_age_days,
             self.news_window_days,
         )
+        # Lazy sentinel cache client (initialised on first use)
+        self._sentinel_client = None
     
+    def _try_sentinel_for_stock(
+        self,
+        code: str,
+        name: str,
+        max_results: int = 10,
+    ) -> Optional['SearchResponse']:
+        """Try to fetch news from the Sentinel cache.
+
+        Returns a ``SearchResponse`` if the cache is available and has enough
+        data, otherwise returns ``None``.
+        """
+        try:
+            from src.services.sentinel.client import SentinelCacheClient
+            if self._sentinel_client is None:
+                self._sentinel_client = SentinelCacheClient()
+            client: SentinelCacheClient = self._sentinel_client
+            if not client.is_available():
+                return None
+            response = client.search_for_stock(code, name, max_results=max_results)
+            if response.success and response.results:
+                logger.info(
+                    "[Sentinel] 从缓存获取 %s(%s) 相关新闻 %d 条",
+                    name, code, len(response.results),
+                )
+                return response
+            return None
+        except Exception as exc:
+            logger.debug("_try_sentinel_for_stock failed for %s: %s", code, exc)
+            return None
+
     @staticmethod
     def _is_foreign_stock(stock_code: str) -> bool:
         """判断是否为港股或美股"""
@@ -3679,6 +3711,7 @@ class SearchService:
         stock_name: str,
         max_searches: int = 3,
         related_boards: Optional[List[Any]] = None,
+        use_sentinel_cache: bool = True,
     ) -> Dict[str, SearchResponse]:
         """
         多维度情报搜索（同时使用多个引擎、多个维度）
@@ -3698,6 +3731,14 @@ class SearchService:
         """
         results = {}
         search_count = 0
+
+        # Inject Sentinel cache as the "latest_news" dimension when available
+        if use_sentinel_cache:
+            sentinel_response = self._try_sentinel_for_stock(
+                stock_code, stock_name, max_results=10
+            )
+            if sentinel_response is not None:
+                results["latest_news"] = sentinel_response
 
         is_foreign = self._is_foreign_stock(stock_code)
         is_index_etf = self.is_index_or_etf(stock_code, stock_name)
