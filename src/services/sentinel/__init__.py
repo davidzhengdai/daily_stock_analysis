@@ -2,6 +2,7 @@
 from .classifier import LLMClassifier
 from .comprehensive import ComprehensiveAnalyzer
 from .config import SentinelConfig
+from .metrics import SentinelMetrics
 from .models import RawArticle, NewsItem
 from .notifier import SentinelNotifier
 from .scheduler import SentinelScheduler
@@ -17,6 +18,7 @@ __all__ = [
     "SentinelService",
     "LLMClassifier",
     "ComprehensiveAnalyzer",
+    "SentinelMetrics",
     "SentinelNotifier",
     "SentinelScheduler",
     "TTLPurger",
