@@ -282,3 +282,143 @@ class NewsStore:
                 return {row[0]: row[1] for row in rows}
             finally:
                 con.close()
+
+    # ── Phase 2: classification & lifecycle ──────────────────────────────────
+
+    def get_pending_classification(self, limit: int = 20) -> List[sqlite3.Row]:
+        """Return unclassified items (priority IS NULL) oldest-first.
+
+        Note: `analyzed_at` column is not present in the Phase 1 schema;
+        `priority IS NULL` is used as the proxy for "not yet classified."
+        """
+        with self._lock:
+            con = self._connect()
+            try:
+                return con.execute(
+                    """
+                    SELECT * FROM news_items
+                    WHERE priority IS NULL AND is_expired = 0
+                    ORDER BY fetched_at ASC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+            finally:
+                con.close()
+
+    def update_classification(self, url_hash: str, fields: dict) -> None:
+        """Update LLM classification fields for a news item.
+
+        Accepted keys: category, priority, sentiment, market_scope,
+        affected_sectors, affected_stocks, impact_horizon, llm_reasoning,
+        is_actionable, expires_at.  Unknown keys are silently dropped.
+        """
+        _ALLOWED = frozenset({
+            "category", "priority", "sentiment", "market_scope",
+            "affected_sectors", "affected_stocks", "impact_horizon",
+            "llm_reasoning", "is_actionable", "expires_at",
+        })
+        safe = {k: v for k, v in fields.items() if k in _ALLOWED}
+        if not safe:
+            return
+        cols = ", ".join(f"{k}=?" for k in safe)
+        vals = list(safe.values()) + [url_hash]
+        with self._lock:
+            con = self._connect()
+            try:
+                con.execute(
+                    f"UPDATE news_items SET {cols} WHERE url_hash=?", vals
+                )
+                con.commit()
+            except sqlite3.Error as exc:
+                logger.error("update_classification failed for %s: %s", url_hash[:12], exc)
+            finally:
+                con.close()
+
+    def record_cycle_analysis(self, data: dict) -> int:
+        """Insert a cycle analysis record; return the new row id."""
+        fields = (
+            "cycle_at", "news_count", "themes", "sector_opps",
+            "stock_leads", "risk_alerts", "market_mood",
+            "triggered_stocks", "model_used",
+        )
+        vals = tuple(data.get(f) for f in fields)
+        with self._lock:
+            con = self._connect()
+            try:
+                cur = con.execute(
+                    f"INSERT INTO cycle_analyses ({', '.join(fields)}) VALUES ({', '.join('?' * len(fields))})",
+                    vals,
+                )
+                con.commit()
+                return cur.lastrowid or 0
+            except sqlite3.Error as exc:
+                logger.error("record_cycle_analysis failed: %s", exc)
+                return 0
+            finally:
+                con.close()
+
+    def purge_expired(self) -> dict:
+        """Archive P4 and hard-delete P1/P2/P3 rows past their expires_at.
+
+        P5 rows are never touched (permanent).
+        Returns {"deleted": N, "archived": N}.
+        """
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            con = self._connect()
+            try:
+                # Hard-delete P1, P2, P3 past TTL
+                cur_del = con.execute(
+                    """
+                    DELETE FROM news_items
+                    WHERE priority IN (1, 2, 3)
+                      AND expires_at IS NOT NULL
+                      AND expires_at < ?
+                    """,
+                    (now_iso,),
+                )
+                deleted = cur_del.rowcount
+
+                # Soft-archive P4 past TTL
+                cur_arc = con.execute(
+                    """
+                    UPDATE news_items
+                    SET is_archived = 1, is_expired = 1
+                    WHERE priority = 4
+                      AND expires_at IS NOT NULL
+                      AND expires_at < ?
+                      AND is_archived = 0
+                    """,
+                    (now_iso,),
+                )
+                archived = cur_arc.rowcount
+
+                # Purge unclassified items older than 7 days (no priority assigned)
+                cur_unc = con.execute(
+                    """
+                    DELETE FROM news_items
+                    WHERE priority IS NULL
+                      AND fetched_at < datetime('now', '-7 days')
+                    """,
+                )
+                deleted += cur_unc.rowcount
+
+                con.commit()
+                logger.info("TTL purge: deleted=%d archived=%d", deleted, archived)
+                return {"deleted": deleted, "archived": archived}
+            except sqlite3.Error as exc:
+                logger.error("purge_expired failed: %s", exc)
+                return {"deleted": 0, "archived": 0}
+            finally:
+                con.close()
+
+    def count_unclassified(self) -> int:
+        with self._lock:
+            con = self._connect()
+            try:
+                return con.execute(
+                    "SELECT COUNT(*) FROM news_items WHERE priority IS NULL AND is_expired = 0"
+                ).fetchone()[0]
+            finally:
+                con.close()

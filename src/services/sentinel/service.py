@@ -14,10 +14,12 @@ import time
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from .classifier import LLMClassifier
 from .config import SentinelConfig
 from .dedup import Deduplicator, url_hash
 from .models import CycleSummary, RawArticle
 from .store import NewsStore
+from .ttl import TTLPurger
 from .spiders.base import SpiderBase
 from .spiders.google_news import GoogleNewsENSpider, GoogleNewsCNSpider
 from .spiders.eastmoney import EastMoneySpider
@@ -50,10 +52,13 @@ class SentinelService:
         config: Optional[SentinelConfig] = None,
         store: Optional[NewsStore] = None,
         spiders: Optional[List[SpiderBase]] = None,
+        classifier: Optional[LLMClassifier] = None,
     ) -> None:
         self._config = config or SentinelConfig.from_env()
         self._store = store or NewsStore(self._config.db_path)
         self._spiders = spiders if spiders is not None else _build_default_spiders(self._config)
+        self._classifier = classifier if classifier is not None else LLMClassifier(self._config)
+        self._purger = TTLPurger(self._store)
 
     # ── public API ────────────────────────────────────────────────────────────
 
@@ -123,6 +128,23 @@ class SentinelService:
                 time.sleep(self._config.request_delay_seconds)
 
         summary.finished_at = datetime.now(timezone.utc)
+
+        # Phase 2: classify newly stored articles with LLM
+        if not dry_run and summary.total_new > 0:
+            try:
+                classified = self._classifier.classify_pending(self._store)
+                summary.classified_count = classified
+                logger.info("Classified %d news items this cycle", classified)
+            except Exception:
+                logger.exception("LLM classification step failed — continuing")
+
+        # Periodic TTL purge (every cycle to keep DB lean)
+        if not dry_run:
+            try:
+                self._purger.run()
+            except Exception:
+                logger.exception("TTL purge failed — continuing")
+
         return summary
 
     def status(self) -> dict:
@@ -143,6 +165,7 @@ def _print_summary(summary: CycleSummary, dry_run: bool) -> None:
     print(f"Fetched  : {summary.total_fetched}")
     print(f"New      : {summary.total_new}")
     print(f"Deduped  : {summary.total_deduped}")
+    print(f"Classified: {summary.classified_count}")
     print()
     print(f"{'Spider':<30} {'Fetched':>8} {'New':>6} {'Dedup':>6} {'Status':<10} {'Healthy'}")
     print("-" * 75)

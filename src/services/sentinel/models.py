@@ -54,4 +54,5 @@ class CycleSummary:
     total_fetched: int = 0
     total_new: int = 0
     total_deduped: int = 0
+    classified_count: int = 0
     errors: List[str] = field(default_factory=list)
