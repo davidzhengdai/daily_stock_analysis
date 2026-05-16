@@ -866,7 +866,7 @@ Guidelines:
 
 <details open>
   <summary>调度循环伪代码（每个 tick）</summary>
-  <pre><code>interval = SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES * 60  # 默认 30 min
+  <pre><code>interval = SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES * 60  # 默认 5 min
 
 while True:
     sleep(interval)
@@ -1240,7 +1240,7 @@ while True:
 # USD/CNY conversion rate for cross-currency equity calculation
 SIMTRADE_USD_CNY_RATE=7.25
 # Auto-trade scheduler interval in minutes (requires restart to change)
-SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES=30
+SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES=5
 # LLM model for signal generation; falls back to LITELLM_MODEL if unset
 # SIMTRADE_LLM_MODEL=</code></pre>
 

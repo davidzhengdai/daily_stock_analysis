@@ -179,7 +179,7 @@ class SignalService:
         parsed: Dict[str, Any] = {}
         try:
             analyzer = self._get_analyzer()
-            raw = analyzer.generate_text(prompt, call_type='sim_signal', stock_code=code)
+            raw = analyzer.generate_text(prompt, max_tokens=1024, temperature=0.2)
             parsed = self._parse_llm_response(raw)
         except Exception as exc:
             logger.warning("[SignalService] LLM 调用失败 %s: %s", code, exc)

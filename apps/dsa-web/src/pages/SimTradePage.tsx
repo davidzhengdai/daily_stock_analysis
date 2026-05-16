@@ -738,18 +738,24 @@ const FundingTab: React.FC<{
   history: FundItem[];
   onRefresh: () => void;
 }> = ({ account, history, onRefresh }) => {
-  const [form, setForm] = useState<FundRequest>({ direction: 'deposit', amount: 10000, currency: 'CNY', note: '' });
+  const [form, setForm] = useState<Omit<FundRequest, 'amount'> & { amount: string }>({
+    direction: 'deposit',
+    amount: '10000',
+    currency: 'CNY',
+    note: '',
+  });
   const [submitting, setSubmitting] = useState(false);
   const [msg, setMsg] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setMsg('');
-    if (form.amount <= 0) { setMsg('金额必须大于 0'); return; }
+    const amount = Number(form.amount);
+    if (!Number.isInteger(amount) || amount <= 0) { setMsg('金额必须为大于 0 的整数'); return; }
     setSubmitting(true);
     try {
-      await api.fund(form);
-      setMsg(`操作成功：${form.direction === 'deposit' ? '入金' : '出金'} ${form.amount} ${form.currency}`);
+      await api.fund({ ...form, amount });
+      setMsg(`操作成功：${form.direction === 'deposit' ? '入金' : '出金'} ${amount} ${form.currency}`);
       onRefresh();
     } catch (err: unknown) {
       setMsg(err instanceof Error ? err.message : '操作失败');
@@ -806,11 +812,13 @@ const FundingTab: React.FC<{
               <label className="block text-xs text-secondary-text mb-1">金额</label>
               <input
                 type="number"
-                min="0.01"
-                step="100"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 className="w-full rounded-lg border border-border bg-base px-3 py-2 text-sm tabular-nums"
                 value={form.amount}
-                onChange={(e) => setForm((f) => ({ ...f, amount: Number(e.target.value) }))}
+                onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value.replace(/\D/g, '') }))}
               />
             </div>
           </div>
