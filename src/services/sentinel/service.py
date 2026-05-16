@@ -216,6 +216,42 @@ class SentinelService:
         """Replace the watched stocks list. Returns count stored."""
         return self._store.upsert_watched_stocks(stocks)
 
+    def fetch_for_stock(self, code: str, name: str) -> dict:
+        """Immediately fetch, store, and classify news for a single stock.
+
+        Also registers the stock for ongoing targeted fetching in future cycles.
+        Returns {"fetched": N, "new": M, "classified": K}.
+        """
+        from .spiders.watched_stocks import WatchedStocksNewsSpider
+        from .dedup import Deduplicator
+
+        ws_spider = next(
+            (s for s in self._spiders if isinstance(s, WatchedStocksNewsSpider)),
+            WatchedStocksNewsSpider(self._store),
+        )
+        articles = ws_spider.fetch_single(code, name)
+
+        deduper = Deduplicator(self._store)
+        new_count = 0
+        for article in articles:
+            if not article.url:
+                continue
+            if deduper.is_new(article):
+                if self._store.upsert(article):
+                    new_count += 1
+
+        classified = 0
+        if new_count > 0:
+            try:
+                classified = self._classifier.classify_pending(self._store)
+            except Exception:
+                logger.exception("classify_pending failed in fetch_for_stock(%s)", code)
+
+        # Register for ongoing targeted fetching in future cycles
+        self._store.append_watched_stock(code.strip(), name.strip())
+
+        return {"fetched": len(articles), "new": new_count, "classified": classified}
+
     def status(self) -> dict:
         return {
             "enabled_spiders": [s.name for s in self._spiders],

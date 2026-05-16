@@ -72,6 +72,14 @@ class WatchedStocksNewsSpider(SpiderBase):
         self._record_result(len(articles))
         return articles
 
+    def fetch_single(self, code: str, name: str) -> List[RawArticle]:
+        """Fetch news for one stock immediately, bypassing the watched_stocks table."""
+        try:
+            return self._fetch_for_stock(code, name)
+        except Exception:
+            logger.exception("[%s] error in fetch_single for %s", self.name, code)
+            return []
+
     def _fetch_for_stock(self, code: str, name: str) -> List[RawArticle]:
         url = _google_news_url(code, name)
         try:

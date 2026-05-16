@@ -229,12 +229,64 @@ def get_watched_stocks() -> List[dict]:
 
 
 @router.put("/watched-stocks", summary="Set watched stock list for targeted scraping")
-def set_watched_stocks(stocks: List[WatchedStockItem]) -> dict:
+def set_watched_stocks(
+    stocks: List[WatchedStockItem],
+    merge: bool = Query(default=False, description="If true, append to existing list instead of replacing"),
+) -> dict:
     try:
         _, store = _get_store_and_config()
         data = [{"code": s.code.strip(), "name": s.name.strip()} for s in stocks if s.code.strip()]
-        count = store.upsert_watched_stocks(data)
-        return {"updated": count}
+        if merge:
+            count = sum(1 for s in data if store.append_watched_stock(s["code"], s["name"]))
+        else:
+            count = store.upsert_watched_stocks(data)
+        return {"updated": count, "merge": merge}
     except Exception as exc:
         logger.warning("sentinel /watched-stocks PUT error: %s", exc)
         return {"updated": 0, "error": str(exc)}
+
+
+class FetchNowItem(BaseModel):
+    code: str
+    name: str = ""
+
+
+@router.post("/fetch-now", summary="Immediately fetch and classify news for a single stock")
+def fetch_now(item: FetchNowItem) -> dict:
+    """Fetch, store, and LLM-classify news for one stock right now.
+
+    Also registers the stock for ongoing targeted fetching in future cycles.
+    Useful when a user triggers analysis of a stock not yet in the watchlist.
+    """
+    code = item.code.strip()
+    name = item.name.strip()
+    if not code:
+        return {"code": "", "fetched": 0, "new": 0, "classified": 0, "error": "code is required"}
+    try:
+        cfg, store = _get_store_and_config()
+        from src.services.sentinel.spiders.watched_stocks import WatchedStocksNewsSpider
+        from src.services.sentinel.dedup import Deduplicator
+        from src.services.sentinel.classifier import LLMClassifier
+
+        spider = WatchedStocksNewsSpider(store)
+        articles = spider.fetch_single(code, name)
+
+        deduper = Deduplicator(store)
+        new_count = 0
+        for article in articles:
+            if article.url and deduper.is_new(article):
+                if store.upsert(article):
+                    new_count += 1
+
+        classified = 0
+        if new_count > 0:
+            classifier = LLMClassifier(cfg)
+            classified = classifier.classify_pending(store)
+
+        # Register for ongoing targeted fetching in future cycles
+        store.append_watched_stock(code, name)
+
+        return {"code": code, "fetched": len(articles), "new": new_count, "classified": classified}
+    except Exception as exc:
+        logger.warning("sentinel /fetch-now error for %s: %s", code, exc)
+        return {"code": code, "fetched": 0, "new": 0, "classified": 0, "error": str(exc)}
