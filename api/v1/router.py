@@ -22,6 +22,7 @@ from api.v1.endpoints import (
     portfolio,
     scanner,
     sentinel,
+    simtrade,
     stocks,
     system_config,
     usage,
@@ -113,4 +114,10 @@ router.include_router(
     gold_digger.router,
     prefix="/gold-digger",
     tags=["GoldDigger"]
+)
+
+router.include_router(
+    simtrade.router,
+    prefix="/sim-trade",
+    tags=["SimTrade"]
 )

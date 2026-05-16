@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Design: 模拟交易（Simulated Stock Trade）功能设计文档</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a2e;
+    --muted: #555570;
+    --border: #e0e0ec;
+    --surface: #f6f7fb;
+    --code-bg: #f4f4f8;
+    --accent: #2563eb;
+    --accent-dim: #dbeafe;
+    --accent-muted: #93c5fd;
+    --success: #16a34a;
+    --success-bg: #f0fdf4;
+    --success-border: #22c55e;
+    --warn-bg: #fffbeb;
+    --warn-border: #f59e0b;
+    --warn: #b45309;
+    --info-bg: #eff6ff;
+    --info-border: #3b82f6;
+    --danger-bg: #fef2f2;
+    --danger-border: #ef4444;
+    --danger: #b91c1c;
+    --radius: 6px;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1117;
+      --fg: #e2e4f0;
+      --muted: #8b8fa8;
+      --border: #2a2d3a;
+      --surface: #1a1d27;
+      --code-bg: #13151f;
+      --accent: #6c8ef5;
+      --accent-dim: #1e2d5a;
+      --accent-muted: #4a6cc7;
+      --success: #4ade80;
+      --success-bg: #052e16;
+      --success-border: #166534;
+      --warn-bg: #1c1200;
+      --warn-border: #a16207;
+      --warn: #facc15;
+      --info-bg: #0c1a3a;
+      --info-border: #1d4ed8;
+      --danger-bg: #1a0607;
+      --danger-border: #991b1b;
+      --danger: #f87171;
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font);
+    color: var(--fg);
+    background: var(--bg);
+    line-height: 1.75;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 4rem;
+  }
+
+  h1 {
+    font-size: 1.9rem;
+    margin-bottom: 0.4rem;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 0.5rem;
+  }
+  h2 {
+    font-size: 1.4rem;
+    margin-top: 2.8rem;
+    margin-bottom: 0.75rem;
+    color: var(--accent);
+    border-left: 4px solid var(--accent);
+    padding-left: 0.75rem;
+  }
+  h3 {
+    font-size: 1.1rem;
+    margin-top: 1.75rem;
+    margin-bottom: 0.5rem;
+    font-weight: 700;
+  }
+  h4 {
+    font-size: 0.95rem;
+    margin-top: 1.2rem;
+    margin-bottom: 0.4rem;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  p { margin-bottom: 0.9rem; }
+  ul, ol { margin: 0 0 1rem 1.5rem; }
+  li { margin-bottom: 0.3rem; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.1em 0.4em;
+  }
+  pre {
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.2rem;
+    overflow-x: auto;
+    margin: 0.75rem 0 1.25rem;
+    line-height: 1.55;
+  }
+  pre code { background: none; border: none; padding: 0; font-size: inherit; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    margin: 0.75rem 0 1.5rem;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.8rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: var(--surface);
+    font-weight: 600;
+    color: var(--accent);
+  }
+  tr:nth-child(even) td { background: var(--surface); }
+
+  details {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin: 1rem 0 1.5rem;
+  }
+  summary {
+    cursor: pointer;
+    padding: 0.8rem 1.1rem;
+    font-weight: 600;
+    list-style: none;
+    user-select: none;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before { content: "▶ "; font-size: 0.7rem; color: var(--accent); }
+  details[open] summary::before { content: "▼ "; }
+  details > *:not(summary) { padding: 0 1.1rem 1.1rem; }
+
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--info-bg);
+    border-color: var(--info-border);
+    padding: 0.8rem 1.1rem;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    margin: 1rem 0;
+  }
+  .callout.warn {
+    background: var(--warn-bg);
+    border-color: var(--warn-border);
+  }
+  .callout.success {
+    background: var(--success-bg);
+    border-color: var(--success-border);
+  }
+  .callout.danger {
+    background: var(--danger-bg);
+    border-color: var(--danger-border);
+  }
+  .callout strong { display: block; margin-bottom: 0.3rem; }
+
+  .tag {
+    display: inline-block;
+    padding: 0.1em 0.55em;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-left: 0.3em;
+    vertical-align: middle;
+  }
+  .tag-new { background: var(--success-bg); color: var(--success); border: 1px solid var(--success-border); }
+  .tag-cfg { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-muted); }
+  .tag-ai  { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-border); }
+
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem 1.5rem;
+    margin: 1.5rem 0 2.5rem;
+  }
+  .toc h2 { margin-top: 0; font-size: 1.05rem; border: none; padding: 0; }
+  .toc ol { margin-bottom: 0; }
+  .toc li { margin-bottom: 0.2rem; }
+  .toc a { color: var(--fg); }
+  .toc a:hover { color: var(--accent); }
+
+  .arch-layer {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 0.5rem 1rem;
+    margin: 1rem 0 1.5rem;
+    align-items: start;
+  }
+  .arch-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    padding-top: 0.2rem;
+  }
+  .arch-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+  .arch-item {
+    background: var(--accent-dim);
+    color: var(--accent);
+    border: 1px solid var(--accent-muted);
+    border-radius: 5px;
+    padding: 0.2em 0.7em;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+  }
+
+  .signal-flow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin: 0.75rem 0 1.25rem;
+  }
+  .signal-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 0.25em 0.85em;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+  .signal-arrow {
+    color: var(--accent);
+    font-size: 1.1rem;
+  }
+
+  .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2rem 0; }
+</style>
+</head>
+<body>
+
+<h1>模拟交易（Simulated Stock Trade）功能设计文档</h1>
+<p class="meta">版本 1.0 &nbsp;·&nbsp; 2026-05-16 &nbsp;·&nbsp; 适用范围：DSA stock-server · dsa-web · src/services/simtrade/</p>
+
+<!-- ============================================================ -->
+<!-- TABLE OF CONTENTS                                            -->
+<!-- ============================================================ -->
+<nav class="toc">
+  <h2>目录</h2>
+  <ol>
+    <li><a href="#s1">功能概述（Feature Summary）</a></li>
+    <li><a href="#s2">架构总览（Architecture Overview）</a></li>
+    <li><a href="#s3">数据模型（Data Model — 6 张表）</a></li>
+    <li><a href="#s4">REST API 接口（/api/v1/sim-trade/）</a></li>
+    <li><a href="#s5">AI 信号生成算法（Signal Generation）</a></li>
+    <li><a href="#s6">自动交易调度器（Auto-Trade Scheduler）</a></li>
+    <li><a href="#s7">佣金与撮合规则（Commission &amp; Fill Rules）</a></li>
+    <li><a href="#s8">汇率处理（FX Rate）</a></li>
+    <li><a href="#s9">前端设计（Frontend — SimTradePage）</a></li>
+    <li><a href="#s10">AI 增强能力清单（AI-Enhanced Features）</a></li>
+    <li><a href="#s11">环境变量与配置（Configuration）</a></li>
+    <li><a href="#s12">非目标 / 范围边界（Non-Goals）</a></li>
+    <li><a href="#s13">交付检查清单（Delivery Checklist）</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================ -->
+<!-- 1. FEATURE SUMMARY                                           -->
+<!-- ============================================================ -->
+<h2 id="s1">1. 功能概述（Feature Summary）</h2>
+
+<p>
+  模拟交易（Simulated Stock Trade）是 DSA 系统的纸上交易练习模块，允许用户在不动用真实资金的前提下，
+  使用真实市场数据练习交易策略。系统在一个模拟账户下管理虚拟资金、持仓、订单与 AI 信号，全程与真实
+  行情数据打通，同时不与任何真实券商对接。
+</p>
+
+<div class="arch-layer">
+  <div class="arch-label">核心能力</div>
+  <div>
+    <ul style="margin-left:0;list-style:none;">
+      <li>① <strong>资金管理</strong>：支持 CNY / USD 双币种入金与出金，有资金台账记录</li>
+      <li>② <strong>多市场</strong>：A 股（CN，CNY）和美股（US，USD）</li>
+      <li>③ <strong>手动交易</strong>：支持限价单（Limit）和市价单（Market）的买入 / 卖出</li>
+      <li>④ <strong>自动交易</strong>：AI 驱动，基于自选股列表（Watchlist）定期触发信号与下单</li>
+      <li>⑤ <strong>互斥保护</strong>：自动交易开启后，手动交易入口禁用</li>
+      <li>⑥ <strong>空自选股守卫</strong>：自选股为空时不得开启自动交易，前端给出引导提示</li>
+      <li>⑦ <strong>AI 增强</strong>：信号生成、仓位建议、止损/止盈、策略顾问、绩效归因</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout warn">
+  <strong>设计约束</strong>
+  本模块为单账户单实例设计（每个 DSA 部署一个模拟账户），无多用户隔离，无真实资金对接，无卖空（Short Selling）支持。
+</div>
+
+<!-- ============================================================ -->
+<!-- 2. ARCHITECTURE OVERVIEW                                     -->
+<!-- ============================================================ -->
+<h2 id="s2">2. 架构总览（Architecture Overview）</h2>
+
+<p>整体遵循项目现有分层约定，从下到上共五层：</p>
+
+<pre><code>┌─────────────────────────────────────────────────────────────────────────┐
+│  Browser / dsa-web                                                       │
+│  apps/dsa-web/src/pages/SimTradePage.tsx   (4 个 Tab)                   │
+│  apps/dsa-web/src/api/simtrade.ts          (API 客户端)                  │
+│  apps/dsa-web/src/types/simtrade.ts        (TypeScript 类型)             │
+└───────────────────────────┬─────────────────────────────────────────────┘
+                            │ HTTP / JSON
+┌───────────────────────────▼─────────────────────────────────────────────┐
+│  FastAPI   /api/v1/sim-trade/*                                           │
+│  api/v1/endpoints/simtrade.py                                            │
+│  api/v1/schemas/simtrade.py    (Pydantic request / response models)      │
+└───────────────────────────┬─────────────────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────────────────┐
+│  Service Layer   src/services/simtrade/                                  │
+│  ├── account_service.py    账户 & 资金管理                                │
+│  ├── order_service.py      订单撮合、持仓更新                              │
+│  ├── signal_service.py     AI 信号生成 (LLM + 技术预评分)                 │
+│  └── auto_trade_service.py 调度线程、止损/止盈巡检、快照                  │
+└───────────────────────────┬─────────────────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────────────────┐
+│  Repository   src/repositories/simtrade_repo.py                          │
+│  统一封装所有 DB 读写，Services 不直接调用 ORM Session                    │
+└───────────────────────────┬─────────────────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────────────────┐
+│  Storage / ORM   src/storage.py  (新增 6 张表)                           │
+│  SQLite (开发) / PostgreSQL (生产，视部署配置)                            │
+│  依赖现有 src/storage.py 中的 Base、engine、SessionLocal                 │
+└─────────────────────────────────────────────────────────────────────────┘</code></pre>
+
+<h3>2.1 与现有模块的依赖关系</h3>
+
+<table>
+  <thead>
+    <tr><th>现有模块</th><th>依赖方式</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>src/repositories/watchlist_repo.py</code></td>
+      <td>读取</td>
+      <td>自动交易调度器从 Watchlist 加载待分析股票列表</td>
+    </tr>
+    <tr>
+      <td><code>data_provider/</code></td>
+      <td>读取行情</td>
+      <td>获取当前价格、StockDaily（MA、成交量等），用于撮合与信号生成</td>
+    </tr>
+    <tr>
+      <td><code>src/services/sentinel/service.py</code></td>
+      <td>可选读取</td>
+      <td>拉取 Sentinel 新闻情绪缓存（graceful skip，不可用时降级）</td>
+    </tr>
+    <tr>
+      <td><code>src/config.py</code></td>
+      <td>读取配置</td>
+      <td>读取 <code>SIMTRADE_*</code> 环境变量</td>
+    </tr>
+    <tr>
+      <td><code>api/v1/router.py</code></td>
+      <td>注册路由</td>
+      <td>新增 <code>include_router(simtrade_router, prefix="/sim-trade")</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- 3. DATA MODEL                                                 -->
+<!-- ============================================================ -->
+<h2 id="s3">3. 数据模型（Data Model）</h2>
+
+<p>共新增 <strong>6 张 ORM 表</strong>，全部在 <code>src/storage.py</code> 中以 SQLAlchemy Declarative 方式定义，并挂载到现有 <code>Base</code>。</p>
+
+<details open>
+  <summary>表 1：SimulatedAccount（simulated_accounts）— 模拟账户</summary>
+  <table>
+    <thead><tr><th>字段</th><th>类型</th><th>默认值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>INTEGER PK</td><td>autoincrement</td><td>主键</td></tr>
+      <tr><td><code>name</code></td><td>TEXT</td><td>"模拟账户"</td><td>账户显示名</td></tr>
+      <tr><td><code>base_currency</code></td><td>TEXT</td><td>"CNY"</td><td>基准货币：CNY / USD，影响总资产展示</td></tr>
+      <tr><td><code>cash_cny</code></td><td>FLOAT</td><td>0.0</td><td>可用 CNY 现金</td></tr>
+      <tr><td><code>cash_usd</code></td><td>FLOAT</td><td>0.0</td><td>可用 USD 现金</td></tr>
+      <tr><td><code>total_deposited_cny</code></td><td>FLOAT</td><td>0.0</td><td>累计入金 CNY（用于计算总收益率）</td></tr>
+      <tr><td><code>total_deposited_usd</code></td><td>FLOAT</td><td>0.0</td><td>累计入金 USD</td></tr>
+      <tr><td><code>total_withdrawn_cny</code></td><td>FLOAT</td><td>0.0</td><td>累计出金 CNY</td></tr>
+      <tr><td><code>total_withdrawn_usd</code></td><td>FLOAT</td><td>0.0</td><td>累计出金 USD</td></tr>
+      <tr><td><code>auto_trade_enabled</code></td><td>BOOLEAN</td><td>false</td><td>自动交易开关</td></tr>
+      <tr><td><code>auto_trade_mode</code></td><td>TEXT</td><td>"balanced"</td><td>conservative / balanced / aggressive</td></tr>
+      <tr><td><code>max_position_pct</code></td><td>FLOAT</td><td>20.0</td><td>单只股票最大占比 %（按总权益）</td></tr>
+      <tr><td><code>max_drawdown_pct</code></td><td>FLOAT</td><td>20.0</td><td>最大回撤阈值 %，超过则暂停自动买入</td></tr>
+      <tr><td><code>stop_loss_pct</code></td><td>FLOAT</td><td>5.0</td><td>默认止损 %（LLM 可覆盖）</td></tr>
+      <tr><td><code>take_profit_pct</code></td><td>FLOAT</td><td>15.0</td><td>默认止盈 %（LLM 可覆盖）</td></tr>
+      <tr><td><code>min_signal_confidence</code></td><td>FLOAT</td><td>0.65</td><td>AI 信号最低置信度门槛</td></tr>
+      <tr><td><code>status</code></td><td>TEXT</td><td>"active"</td><td>active / paused（超回撤自动切换）</td></tr>
+      <tr><td><code>created_at</code></td><td>DATETIME</td><td>now()</td><td></td></tr>
+      <tr><td><code>updated_at</code></td><td>DATETIME</td><td>now()</td><td>每次写操作更新</td></tr>
+    </tbody>
+  </table>
+</details>
+
+<details>
+  <summary>表 2：SimulatedFundingLedger（simulated_funding_ledger）— 资金台账</summary>
+  <table>
+    <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>INTEGER PK</td><td>主键</td></tr>
+      <tr><td><code>account_id</code></td><td>INTEGER FK</td><td>→ simulated_accounts.id，ON DELETE CASCADE</td></tr>
+      <tr><td><code>direction</code></td><td>TEXT</td><td>deposit（入金）/ withdrawal（出金）</td></tr>
+      <tr><td><code>amount</code></td><td>FLOAT</td><td>金额（正数）</td></tr>
+      <tr><td><code>currency</code></td><td>TEXT</td><td>CNY / USD</td></tr>
+      <tr><td><code>note</code></td><td>TEXT nullable</td><td>可选备注</td></tr>
+      <tr><td><code>created_at</code></td><td>DATETIME</td><td>记录时间</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    出金校验：出金前验证 <code>cash_cny / cash_usd &gt;= amount</code>，不足则返回 400。
+    出金不影响 <code>total_deposited_*</code>，仅更新 <code>total_withdrawn_*</code>。
+  </div>
+</details>
+
+<details>
+  <summary>表 3：SimulatedOrder（simulated_orders）— 订单</summary>
+  <table>
+    <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>INTEGER PK</td><td></td></tr>
+      <tr><td><code>account_id</code></td><td>INTEGER FK</td><td>→ simulated_accounts.id</td></tr>
+      <tr><td><code>code</code></td><td>TEXT</td><td>股票代码，如 600519 / AAPL</td></tr>
+      <tr><td><code>name</code></td><td>TEXT</td><td>股票名称，下单时快照</td></tr>
+      <tr><td><code>market</code></td><td>TEXT</td><td>CN / US</td></tr>
+      <tr><td><code>currency</code></td><td>TEXT</td><td>CNY / US</td></tr>
+      <tr><td><code>side</code></td><td>TEXT</td><td>buy / sell</td></tr>
+      <tr><td><code>order_type</code></td><td>TEXT</td><td>limit / market</td></tr>
+      <tr><td><code>qty</code></td><td>INTEGER</td><td>委托数量（股）</td></tr>
+      <tr><td><code>limit_price</code></td><td>FLOAT nullable</td><td>限价，市价单为 null</td></tr>
+      <tr><td><code>fill_price</code></td><td>FLOAT nullable</td><td>实际成交价</td></tr>
+      <tr><td><code>fill_qty</code></td><td>INTEGER</td><td>已成交数量</td></tr>
+      <tr><td><code>commission</code></td><td>FLOAT</td><td>模拟佣金（写入时计算）</td></tr>
+      <tr><td><code>status</code></td><td>TEXT</td><td>pending / filled / partial / cancelled</td></tr>
+      <tr><td><code>source</code></td><td>TEXT</td><td>manual / auto（来源区分）</td></tr>
+      <tr><td><code>ai_signal_id</code></td><td>INTEGER FK nullable</td><td>→ simulated_ai_signals.id</td></tr>
+      <tr><td><code>rejection_reason</code></td><td>TEXT nullable</td><td>拒单原因（如资金不足、风控拦截）</td></tr>
+      <tr><td><code>created_at</code></td><td>DATETIME</td><td></td></tr>
+      <tr><td><code>filled_at</code></td><td>DATETIME nullable</td><td>完全成交时间</td></tr>
+    </tbody>
+  </table>
+  <div class="callout warn">
+    <strong>资金冻结语义</strong>
+    buy 订单创建时即从 <code>cash_*</code> 扣除预估金额（qty × limit_price + 预估佣金）；
+    若撤单则退回。市价单以当前价预估，成交后按实际价格结算差额。
+  </div>
+</details>
+
+<details>
+  <summary>表 4：SimulatedPosition（simulated_positions）— 持仓</summary>
+  <table>
+    <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>INTEGER PK</td><td></td></tr>
+      <tr><td><code>account_id</code></td><td>INTEGER FK</td><td></td></tr>
+      <tr><td><code>code</code></td><td>TEXT</td><td></td></tr>
+      <tr><td><code>name</code></td><td>TEXT</td><td>股票名称</td></tr>
+      <tr><td><code>market</code></td><td>TEXT</td><td>CN / US</td></tr>
+      <tr><td><code>currency</code></td><td>TEXT</td><td>CNY / USD</td></tr>
+      <tr><td><code>qty</code></td><td>INTEGER</td><td>持仓数量</td></tr>
+      <tr><td><code>avg_cost</code></td><td>FLOAT</td><td>加权平均成本价</td></tr>
+      <tr><td><code>total_cost</code></td><td>FLOAT</td><td>总成本（含历史佣金）</td></tr>
+      <tr><td><code>last_price</code></td><td>FLOAT</td><td>最新价（由调度器或下单时更新）</td></tr>
+      <tr><td><code>unrealized_pnl</code></td><td>FLOAT</td><td>(last_price − avg_cost) × qty</td></tr>
+      <tr><td><code>unrealized_pnl_pct</code></td><td>FLOAT</td><td>unrealized_pnl / total_cost × 100</td></tr>
+      <tr><td><code>realized_pnl</code></td><td>FLOAT</td><td>历史已实现盈亏（卖出时累加）</td></tr>
+      <tr><td><code>stop_loss_price</code></td><td>FLOAT nullable</td><td>触发止损的绝对价格</td></tr>
+      <tr><td><code>take_profit_price</code></td><td>FLOAT nullable</td><td>触发止盈的绝对价格</td></tr>
+      <tr><td><code>updated_at</code></td><td>DATETIME</td><td>最后更新时间</td></tr>
+      <tr><td colspan="3"><code>UNIQUE(account_id, code)</code>  — 同一账户同一股票仅一条持仓记录</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>平均成本更新公式</strong><br>
+    买入：<code>avg_cost = (total_cost + fill_price × fill_qty + commission) / (qty + fill_qty)</code><br>
+    卖出：<code>realized_pnl += (fill_price − avg_cost) × fill_qty − commission</code>；<code>qty −= fill_qty</code>；
+    qty 归零时删除该持仓记录。
+  </div>
+</details>
+
+<details>
+  <summary>表 5：SimulatedSnapshot（simulated_snapshots）— 每日权益快照</summary>
+  <table>
+    <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>INTEGER PK</td><td></td></tr>
+      <tr><td><code>account_id</code></td><td>INTEGER FK</td><td></td></tr>
+      <tr><td><code>date</code></td><td>TEXT</td><td>YYYY-MM-DD</td></tr>
+      <tr><td><code>cash_cny</code></td><td>FLOAT</td><td>快照时刻 CNY 现金</td></tr>
+      <tr><td><code>cash_usd</code></td><td>FLOAT</td><td>快照时刻 USD 现金</td></tr>
+      <tr><td><code>market_value_cny</code></td><td>FLOAT</td><td>所有持仓折算 CNY 市值（USD 按 fx_rate 换算）</td></tr>
+      <tr><td><code>total_equity_cny</code></td><td>FLOAT</td><td>cash_cny + cash_usd×fx_rate + market_value_cny</td></tr>
+      <tr><td><code>realized_pnl</code></td><td>FLOAT</td><td>截至该日累计已实现盈亏</td></tr>
+      <tr><td><code>unrealized_pnl</code></td><td>FLOAT</td><td>截至该日浮动盈亏</td></tr>
+      <tr><td><code>total_return_pct</code></td><td>FLOAT</td><td>(total_equity_cny / total_deposited_cny_equiv − 1) × 100</td></tr>
+      <tr><td><code>max_drawdown_pct</code></td><td>FLOAT</td><td>(peak_equity_cny − total_equity_cny) / peak_equity_cny × 100</td></tr>
+      <tr><td><code>peak_equity_cny</code></td><td>FLOAT</td><td>历史滚动峰值权益（含当日更新）</td></tr>
+      <tr><td colspan="3"><code>UNIQUE(account_id, date)</code>  — 每日幂等，重复调用 UPSERT</td></tr>
+    </tbody>
+  </table>
+</details>
+
+<details>
+  <summary>表 6：SimulatedAISignal（simulated_ai_signals）— AI 交易信号</summary>
+  <table>
+    <thead><tr><th>字段</th><th>类型</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>id</code></td><td>INTEGER PK</td><td></td></tr>
+      <tr><td><code>account_id</code></td><td>INTEGER FK</td><td></td></tr>
+      <tr><td><code>code</code></td><td>TEXT</td><td>股票代码</td></tr>
+      <tr><td><code>name</code></td><td>TEXT</td><td>股票名称</td></tr>
+      <tr><td><code>market</code></td><td>TEXT</td><td>CN / US</td></tr>
+      <tr><td><code>signal</code></td><td>TEXT</td><td>buy / sell / hold / skip</td></tr>
+      <tr><td><code>confidence</code></td><td>FLOAT</td><td>0.0 – 1.0</td></tr>
+      <tr><td><code>price_at_signal</code></td><td>FLOAT</td><td>信号生成时的价格</td></tr>
+      <tr><td><code>technical_score</code></td><td>FLOAT</td><td>技术面评分 0.0–1.0</td></tr>
+      <tr><td><code>sentiment_score</code></td><td>FLOAT</td><td>情绪面评分 0.0–1.0（Sentinel）</td></tr>
+      <tr><td><code>risk_score</code></td><td>FLOAT</td><td>风险评分 0.0–1.0（越高越危险）</td></tr>
+      <tr><td><code>position_size_pct</code></td><td>FLOAT</td><td>LLM 建议的仓位占比 %</td></tr>
+      <tr><td><code>suggested_qty</code></td><td>INTEGER nullable</td><td>服务层根据 pct 计算出的实际手数</td></tr>
+      <tr><td><code>suggested_price</code></td><td>FLOAT nullable</td><td>LLM 建议的限价（null 则下市价单）</td></tr>
+      <tr><td><code>stop_loss</code></td><td>FLOAT nullable</td><td>LLM 建议的止损价格</td></tr>
+      <tr><td><code>take_profit</code></td><td>FLOAT nullable</td><td>LLM 建议的止盈价格</td></tr>
+      <tr><td><code>reasoning</code></td><td>TEXT</td><td>AI 解释（最多 120 字符）</td></tr>
+      <tr><td><code>signal_factors</code></td><td>TEXT</td><td>JSON 字符串，存储原始因子明细（技术指标值等）</td></tr>
+      <tr><td><code>status</code></td><td>TEXT</td><td>pending / executed / expired / rejected</td></tr>
+      <tr><td><code>order_id</code></td><td>INTEGER FK nullable</td><td>→ simulated_orders.id（执行后回填）</td></tr>
+      <tr><td><code>created_at</code></td><td>DATETIME</td><td></td></tr>
+      <tr><td><code>expires_at</code></td><td>DATETIME</td><td>created_at + 4h，超期转 expired</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>信号有效期</strong>：信号创建后 4 小时内有效（<code>expires_at</code>），
+    调度器每轮扫描前先将过期信号批量标记为 <code>expired</code>，再生成新一轮信号。
+    这样历史信号仍保留完整记录，便于绩效归因。
+  </div>
+</details>
+
+<!-- ============================================================ -->
+<!-- 4. API ENDPOINTS                                             -->
+<!-- ============================================================ -->
+<h2 id="s4">4. REST API 接口（/api/v1/sim-trade/）</h2>
+
+<p>
+  路由模块：<code>api/v1/endpoints/simtrade.py</code>，Pydantic Schema：<code>api/v1/schemas/simtrade.py</code>。
+  在 <code>api/v1/router.py</code> 中以 <code>prefix="/sim-trade"</code> 注册，完整路径前缀为 <code>/api/v1/sim-trade/</code>。
+</p>
+
+<table>
+  <thead>
+    <tr><th>Method</th><th>Path</th><th>描述</th><th>主要 Schema</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>GET</code></td>
+      <td><code>/account</code></td>
+      <td>获取账户信息 + 实时权益汇总（含最新快照数据）</td>
+      <td><code>AccountResponse</code></td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/account/reset</code></td>
+      <td>重置账户：清空持仓、订单、信号；保留资金台账；现金归零</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><code>PATCH</code></td>
+      <td><code>/account/settings</code></td>
+      <td>更新自动交易配置（mode、max_position_pct 等）</td>
+      <td><code>AccountSettingsUpdate</code></td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/fund</code></td>
+      <td>入金或出金；创建台账记录并更新账户现金</td>
+      <td><code>FundRequest</code></td>
+    </tr>
+    <tr>
+      <td><code>GET</code></td>
+      <td><code>/fund/history</code></td>
+      <td>资金台账列表（最近 30 条，支持 <code>?limit=</code>）</td>
+      <td><code>FundingLedgerList</code></td>
+    </tr>
+    <tr>
+      <td><code>GET</code></td>
+      <td><code>/positions</code></td>
+      <td>当前所有持仓（含实时浮盈浮亏，由服务层实时计算）</td>
+      <td><code>PositionList</code></td>
+    </tr>
+    <tr>
+      <td><code>GET</code></td>
+      <td><code>/orders</code></td>
+      <td>订单列表；支持 <code>?status=</code>、<code>?source=</code>、<code>?side=</code>、<code>?limit=</code></td>
+      <td><code>OrderList</code></td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/orders</code></td>
+      <td>手动下单；自动交易开启时拒绝（返回 409）</td>
+      <td><code>PlaceOrderRequest → OrderResponse</code></td>
+    </tr>
+    <tr>
+      <td><code>DELETE</code></td>
+      <td><code>/orders/{id}</code></td>
+      <td>撤销 pending 订单；已成交订单返回 400</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><code>GET</code></td>
+      <td><code>/signals</code></td>
+      <td>最近 AI 信号列表（默认最近 20 条）</td>
+      <td><code>SignalList</code></td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/auto-trade/toggle</code></td>
+      <td>开启/关闭自动交易；开启前校验 Watchlist 非空</td>
+      <td><code>AutoTradeToggleRequest</code></td>
+    </tr>
+    <tr>
+      <td><code>POST</code></td>
+      <td><code>/auto-trade/run</code></td>
+      <td>手动触发一次自动交易循环（立即异步执行）</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td><code>GET</code></td>
+      <td><code>/snapshot/history</code></td>
+      <td>每日权益快照历史（默认最近 30 天，用于前端折线图）</td>
+      <td><code>SnapshotList</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<details>
+  <summary>关键请求 / 响应 Schema 示例</summary>
+
+  <h4>PlaceOrderRequest</h4>
+  <pre><code>class PlaceOrderRequest(BaseModel):
+    code: str                  # "600519" / "AAPL"
+    market: Literal["CN", "US"]
+    side: Literal["buy", "sell"]
+    order_type: Literal["limit", "market"]
+    qty: int                   # ≥ 100 for CN, ≥ 1 for US
+    limit_price: float | None = None  # required when order_type="limit"</code></pre>
+
+  <h4>AccountResponse（GET /account）</h4>
+  <pre><code>class AccountResponse(BaseModel):
+    id: int
+    name: str
+    base_currency: str
+    cash_cny: float
+    cash_usd: float
+    market_value_cny: float        # 所有持仓折 CNY 市值
+    total_equity_cny: float        # 总权益
+    total_return_pct: float        # 相对入金的总收益率
+    today_pnl_cny: float           # 当日盈亏（今日快照 - 昨日快照）
+    auto_trade_enabled: bool
+    auto_trade_mode: str
+    max_position_pct: float
+    max_drawdown_pct: float
+    stop_loss_pct: float
+    take_profit_pct: float
+    min_signal_confidence: float
+    status: str</code></pre>
+
+  <h4>FundRequest</h4>
+  <pre><code>class FundRequest(BaseModel):
+    direction: Literal["deposit", "withdrawal"]
+    amount: float              # 正数
+    currency: Literal["CNY", "USD"]
+    note: str | None = None</code></pre>
+
+  <h4>AutoTradeToggleRequest</h4>
+  <pre><code>class AutoTradeToggleRequest(BaseModel):
+    enabled: bool</code></pre>
+</details>
+
+<div class="callout">
+  <strong>错误码约定</strong>
+  <ul style="margin:0.5rem 0 0 1.2rem;">
+    <li><code>400</code>：参数错误、余额不足、撤销已成交订单</li>
+    <li><code>409</code>：自动交易开启时提交手动订单；自动交易已开启时再次开启</li>
+    <li><code>422</code>：Pydantic 校验失败（FastAPI 默认）</li>
+    <li><code>503</code>：LLM 服务不可用（signal 生成接口降级，仍返回 skip 信号）</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<!-- 5. AI SIGNAL GENERATION ALGORITHM                           -->
+<!-- ============================================================ -->
+<h2 id="s5">5. AI 信号生成算法（Signal Generation）</h2>
+
+<p>
+  入口方法：<code>SignalService.generate_signal(code: str, market: str) → SimulatedAISignal</code>。
+  分为四个阶段：数据采集 → 技术预评分 → LLM 推理 → 风险覆盖层。
+</p>
+
+<div class="signal-flow">
+  <span class="signal-step">① 数据采集</span>
+  <span class="signal-arrow">→</span>
+  <span class="signal-step">② 技术预评分</span>
+  <span class="signal-arrow">→</span>
+  <span class="signal-step">③ LLM 推理</span>
+  <span class="signal-arrow">→</span>
+  <span class="signal-step">④ 风险覆盖</span>
+  <span class="signal-arrow">→</span>
+  <span class="signal-step">⑤ 写入 DB</span>
+</div>
+
+<h3>5.1 数据采集</h3>
+<ul>
+  <li>从 <code>data_provider</code> 获取近 20 个交易日的 <code>StockDaily</code>（price、MA5/10/20、volume_ratio、pct_chg）</li>
+  <li>从 <code>simtrade_repo</code> 读取当前持仓（qty、avg_cost、unrealized_pnl_pct）</li>
+  <li>从 <code>simtrade_repo</code> 读取账户权益、可用现金、<code>max_position_pct</code></li>
+  <li>从 Sentinel 缓存读取最近新闻情绪摘要（可选，<code>try/except</code> 降级为 "N/A"）</li>
+</ul>
+
+<h3>5.2 技术预评分（rule-based，LLM 调用前）</h3>
+
+<p>在发起 LLM 请求前先用规则生成一个 <code>technical_score</code>（0.0–1.0）并注入 prompt，
+帮助 LLM 快速定位技术形态，同时保留 LLM 对最终分值的调整权。</p>
+
+<table>
+  <thead><tr><th>规则</th><th>分值影响</th></tr></thead>
+  <tbody>
+    <tr><td>MA5 &gt; MA10 &gt; MA20（多头排列）</td><td>+0.25</td></tr>
+    <tr><td>MA5 &lt; MA10 &lt; MA20（空头排列）</td><td>−0.25</td></tr>
+    <tr><td>当前价 &gt; MA20（趋势偏多）</td><td>+0.15</td></tr>
+    <tr><td>当前价 &lt; MA20（趋势偏空）</td><td>−0.15</td></tr>
+    <tr><td>volume_ratio &gt; 1.5（放量）</td><td>+0.10（方向由多空排列决定）</td></tr>
+    <tr><td>volume_ratio &lt; 0.5（缩量）</td><td>−0.05</td></tr>
+    <tr><td>近 5 日 pct_chg 累计 &gt; +5%</td><td>+0.10（动量延续）</td></tr>
+    <tr><td>近 5 日 pct_chg 累计 &lt; −5%</td><td>−0.10（动量下行）</td></tr>
+  </tbody>
+</table>
+<p>初始基准值 0.5，加减后 clamp 到 [0.0, 1.0]。</p>
+
+<h3>5.3 LLM Prompt 结构</h3>
+
+<pre><code>You are an AI trading advisor for a paper-trading simulation system.
+Analyze the following data and generate a precise trading signal.
+
+Stock: {code} ({name}), Market: {market}
+Current Price: {price} {currency}
+Technical Data (last 20 days):
+  MA5={ma5}, MA10={ma10}, MA20={ma20}
+  Volume Ratio={volume_ratio}
+  5-day return={change_5d}%
+  Pre-score: technical={technical_score:.2f}
+
+Current Position: {qty} shares @ avg cost {avg_cost} (P&amp;L: {pnl_pct}%)
+Portfolio: equity={equity} {base_currency}, available cash={cash},
+           max_position_pct={max_pos}%
+News Sentiment: {sentiment_summary}
+Auto-trade mode: {mode}
+  (conservative=low risk, balanced=moderate, aggressive=growth)
+
+Respond with JSON only:
+{
+  "signal": "buy|sell|hold|skip",
+  "confidence": 0.0-1.0,
+  "technical_score": 0.0-1.0,
+  "sentiment_score": 0.0-1.0,
+  "risk_score": 0.0-1.0,
+  "position_size_pct": 0.0-100.0,
+  "suggested_price": null or float,
+  "stop_loss": null or float,
+  "take_profit": null or float,
+  "reasoning": "one concise sentence max 120 chars"
+}
+
+Guidelines:
+- conservative: trade only on high conviction (confidence&gt;0.75), small size (≤10%)
+- balanced:     confidence&gt;0.65, size ≤20%
+- aggressive:   confidence&gt;0.55, size ≤30%
+- sell when:    stop-loss hit, take-profit hit, or signal reversal
+- skip when:    data insufficient or position already at max</code></pre>
+
+<h3>5.4 响应解析与校验</h3>
+<ol>
+  <li>优先用 <code>json.loads()</code> 直接解析；失败则用 <code>re.search(r'\{.*?\}', resp, re.DOTALL)</code> 提取</li>
+  <li>所有数值字段 clamp 到合法范围；缺失字段填默认值</li>
+  <li>若 <code>confidence &lt; min_signal_confidence</code>，强制将 signal 降为 <code>"skip"</code></li>
+  <li>LLM 调用失败（超时、5xx）：捕获异常，返回 <code>signal="skip"</code>、<code>reasoning="LLM unavailable"</code>，不抛出</li>
+</ol>
+
+<h3>5.5 风险覆盖层（Risk Management Overlay）</h3>
+
+<table>
+  <thead><tr><th>条件</th><th>动作</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>该股持仓占比 ≥ <code>max_position_pct</code></td>
+      <td>强制 signal → <code>skip</code>，rejection_reason = "position cap reached"</td>
+    </tr>
+    <tr>
+      <td>账户 <code>max_drawdown_pct</code> 已超限（status=paused）</td>
+      <td>buy/hold → <code>skip</code>，仅允许 sell 通过</td>
+    </tr>
+    <tr>
+      <td>signal = sell 但当前 qty = 0</td>
+      <td>强制 → <code>skip</code>（无仓可卖）</td>
+    </tr>
+    <tr>
+      <td>计算所得 suggested_qty &lt; 最小手数（CN:100，US:1）</td>
+      <td>signal → <code>skip</code>，rejection_reason = "qty below min lot"</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout success">
+  <strong>设计原则</strong>
+  风险覆盖层在服务层执行，不依赖 LLM 输出的准确性。LLM 负责策略，规则层负责风控，
+  两者各司其职。
+</div>
+
+<!-- ============================================================ -->
+<!-- 6. AUTO-TRADE SCHEDULER                                      -->
+<!-- ============================================================ -->
+<h2 id="s6">6. 自动交易调度器（Auto-Trade Scheduler）</h2>
+
+<p>
+  <code>AutoTradeService</code> 在服务启动时（<code>server.py</code> lifespan 事件）
+  启动一个 <code>threading.Thread(daemon=True)</code>，按配置间隔循环执行交易周期。
+</p>
+
+<details open>
+  <summary>调度循环伪代码（每个 tick）</summary>
+  <pre><code>interval = SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES * 60  # 默认 30 min
+
+while True:
+    sleep(interval)
+
+    account = repo.get_account()
+    if not account.auto_trade_enabled or account.status != 'active':
+        continue  # 自动交易未开启或账户已暂停，跳过
+
+    watchlist = watchlist_repo.list_all()
+    if len(watchlist) == 0:
+        logger.warning("[SimTrade] Watchlist is empty, skipping auto-trade cycle")
+        continue
+
+    last_snapshot = repo.get_latest_snapshot()
+    if last_snapshot and last_snapshot.max_drawdown_pct >= account.max_drawdown_pct:
+        logger.warning("[SimTrade] Max drawdown exceeded, pausing buys")
+        account_service.set_status('paused')
+        continue
+
+    # 批量过期旧信号
+    repo.expire_old_signals()
+
+    for stock in watchlist:
+        signal = signal_service.generate_signal(stock.code, stock.market)
+        repo.save_signal(signal)
+
+        if signal.signal in ('buy', 'sell') and signal.confidence >= account.min_signal_confidence:
+            order = order_service.place_order(
+                code=stock.code,
+                market=stock.market,
+                side=signal.signal,
+                order_type='limit' if signal.suggested_price else 'market',
+                qty=signal.suggested_qty,
+                limit_price=signal.suggested_price,
+                source='auto',
+                ai_signal_id=signal.id,
+            )
+            if order.status == 'filled':
+                signal.status = 'executed'
+                signal.order_id = order.id
+                repo.update_signal(signal)
+
+    # 巡检所有持仓的止损/止盈
+    order_service.check_stop_loss_take_profit()
+
+    # 每日快照（幂等，同一天只写一次）
+    auto_trade_service.take_daily_snapshot()
+
+    # 策略顾问（满 10 笔成交后生成绩效报告）
+    if repo.count_filled_orders() % 10 == 0:
+        auto_trade_service.generate_strategy_report()</code></pre>
+</details>
+
+<h3>6.1 止损 / 止盈巡检</h3>
+<p>
+  <code>order_service.check_stop_loss_take_profit()</code> 遍历所有持仓，
+  获取当前最新价，判断是否触及 <code>stop_loss_price</code> 或 <code>take_profit_price</code>，
+  若触发则以市价单（<code>source='auto'</code>）平仓，并在 <code>rejection_reason</code> 填入触发原因。
+</p>
+
+<div class="callout warn">
+  <strong>价格刷新策略</strong>
+  巡检调用 <code>data_provider.get_realtime_price(code)</code>，若市场已收盘则使用昨日收盘价。
+  非交易时段触发的止损/止盈订单记录到 DB 但标记 <code>status='pending'</code>，
+  等待下一个交易时段的价格确认后再撮合。
+</div>
+
+<h3>6.2 每日快照计算</h3>
+<pre><code>def take_daily_snapshot():
+    today = date.today().isoformat()
+    if repo.snapshot_exists(account.id, today):
+        return  # 幂等，已存在则跳过
+
+    positions = repo.list_positions(account.id)
+    fx = float(os.getenv("SIMTRADE_USD_CNY_RATE", "7.25"))
+
+    market_value_cny = sum(
+        p.qty * p.last_price * (fx if p.currency == "USD" else 1.0)
+        for p in positions
+    )
+    total_equity_cny = account.cash_cny + account.cash_usd * fx + market_value_cny
+
+    total_deposited_equiv = account.total_deposited_cny + account.total_deposited_usd * fx
+    total_return_pct = (total_equity_cny / total_deposited_equiv - 1) * 100 \
+                       if total_deposited_equiv > 0 else 0.0
+
+    prev_peak = repo.get_peak_equity(account.id) or total_equity_cny
+    peak_equity = max(prev_peak, total_equity_cny)
+    max_drawdown_pct = (peak_equity - total_equity_cny) / peak_equity * 100 \
+                       if peak_equity > 0 else 0.0
+
+    repo.upsert_snapshot(SimulatedSnapshot(
+        account_id=account.id, date=today,
+        cash_cny=account.cash_cny, cash_usd=account.cash_usd,
+        market_value_cny=market_value_cny, total_equity_cny=total_equity_cny,
+        realized_pnl=sum(p.realized_pnl for p in positions),
+        unrealized_pnl=sum(p.unrealized_pnl for p in positions),
+        total_return_pct=total_return_pct,
+        max_drawdown_pct=max_drawdown_pct, peak_equity_cny=peak_equity,
+    ))</code></pre>
+
+<!-- ============================================================ -->
+<!-- 7. COMMISSION & FILL RULES                                   -->
+<!-- ============================================================ -->
+<h2 id="s7">7. 佣金与撮合规则（Commission &amp; Fill Rules）</h2>
+
+<h3>7.1 佣金计算</h3>
+
+<table>
+  <thead><tr><th>市场</th><th>方向</th><th>规则</th><th>最低</th></tr></thead>
+  <tbody>
+    <tr><td>CN（A 股）</td><td>买入</td><td>成交金额 × 0.025%</td><td>5 CNY</td></tr>
+    <tr><td>CN（A 股）</td><td>卖出</td><td>成交金额 × 0.025% + 成交金额 × 0.1%（印花税）</td><td>5 CNY（佣金部分）</td></tr>
+    <tr><td>US（美股）</td><td>买入</td><td>max($1.00,  $0.005 × shares)</td><td>$1.00</td></tr>
+    <tr><td>US（美股）</td><td>卖出</td><td>max($1.00, $0.005 × shares)</td><td>$1.00</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  实现位置：<code>order_service._calc_commission(side, market, qty, fill_price, currency)</code>，
+  返回佣金金额（与订单同币种）。
+</div>
+
+<h3>7.2 订单撮合规则</h3>
+
+<table>
+  <thead><tr><th>订单类型</th><th>撮合规则</th><th>备注</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>市价单（Market）</strong></td>
+      <td>
+        立即成交，成交价 = last_price × slippage<br>
+        买入：slippage = 1.001（+0.1%）<br>
+        卖出：slippage = 0.999（−0.1%）
+      </td>
+      <td>模拟市场冲击</td>
+    </tr>
+    <tr>
+      <td><strong>限价单（Limit）</strong></td>
+      <td>
+        若 |limit_price − last_price| / last_price ≤ 3% → 立即以 limit_price 成交<br>
+        否则标记 <code>pending</code>，等待价格刷新
+      </td>
+      <td>3% 偏差阈值可在 config 中调整</td>
+    </tr>
+    <tr>
+      <td><strong>Pending 限价单</strong></td>
+      <td>
+        调度器每轮或价格刷新时重新检查；超过 1 个交易日（T+1 收盘）未成交则自动撤销
+      </td>
+      <td>退还冻结资金</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>7.3 最小交易单位</h3>
+<table>
+  <thead><tr><th>市场</th><th>最小手数</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>CN（A 股）</td><td>100 股 / 手</td><td>qty 必须是 100 的倍数</td></tr>
+    <tr><td>US（美股）</td><td>1 股</td><td>支持零股（fractional shares 不支持，整数股）</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- 8. FX RATE                                                   -->
+<!-- ============================================================ -->
+<h2 id="s8">8. 汇率处理（FX Rate）</h2>
+
+<p>
+  USD/CNY 汇率通过环境变量 <code>SIMTRADE_USD_CNY_RATE</code>（默认 <code>7.25</code>）静态配置，
+  不调用实时汇率 API（避免额外依赖，也符合模拟场景的简化需求）。
+</p>
+
+<p><strong>汇率使用场景：</strong></p>
+<ul>
+  <li>每日快照：USD 持仓和现金折算为 CNY 计算 <code>total_equity_cny</code></li>
+  <li>仓位上限检查：跨币种组合时，将 USD 仓位折 CNY 后与总权益对比</li>
+  <li>前端账户概览：统一以基准货币（默认 CNY）展示总资产</li>
+</ul>
+
+<div class="callout warn">
+  <strong>注意</strong>：汇率仅用于展示和仓位计算，不用于订单资金扣除，
+  订单冻结和扣款始终使用订单本身的货币（CNY 订单扣 CNY，USD 订单扣 USD）。
+</div>
+
+<!-- ============================================================ -->
+<!-- 9. FRONTEND DESIGN                                           -->
+<!-- ============================================================ -->
+<h2 id="s9">9. 前端设计（Frontend — SimTradePage）</h2>
+
+<p>
+  文件路径：<code>apps/dsa-web/src/pages/SimTradePage.tsx</code><br>
+  API 客户端：<code>apps/dsa-web/src/api/simtrade.ts</code><br>
+  TypeScript 类型：<code>apps/dsa-web/src/types/simtrade.ts</code>
+</p>
+
+<h3>9.1 路由与导航</h3>
+<ul>
+  <li>路由：<code>/sim-trade</code></li>
+  <li>导航标签：<strong>模拟交易</strong></li>
+  <li>图标：<code>TrendingUp</code>（lucide-react）</li>
+  <li>导航位置：自选股（Watchlist）与扫描仪（Scanner）之间</li>
+</ul>
+
+<h3>9.2 页面结构（4 个 Tab）</h3>
+
+<details open>
+  <summary>Tab 1：账户概览（Overview）</summary>
+  <ul>
+    <li><strong>权益卡片</strong>：总资产（CNY）、当日盈亏、总收益率（%），三列布局</li>
+    <li><strong>权益折线图</strong>：最近 30 个快照的 <code>total_equity_cny</code> 趋势（使用现有图表组件）</li>
+    <li><strong>持仓汇总表</strong>：代码、名称、持仓量、均价、现价、浮盈浮亏（%）——实时刷新（30s polling）</li>
+    <li><strong>AI 信号动态</strong>：最近 10 条信号，显示代码、信号方向（颜色标签）、置信度、reasoning</li>
+    <li><strong>自动交易状态徽标</strong>：ON（绿色）/ OFF（灰色）/ PAUSED（橙色）</li>
+  </ul>
+</details>
+
+<details>
+  <summary>Tab 2：手动交易（Manual Trade）</summary>
+  <div class="callout warn">
+    <strong>互斥守卫</strong>：若 <code>auto_trade_enabled == true</code>，
+    显示提示横幅 "自动交易已开启，手动交易不可用" 并隐藏下单表单。
+  </div>
+  <ul>
+    <li><strong>下单表单</strong>：股票代码输入框（blur 时自动查询当前价）、市场（CN/US）、方向（买/卖）、类型（限价/市价）、数量、限价（限价单时显示）</li>
+    <li><strong>余额提示</strong>：根据所选货币显示可用 CNY / USD；输入数量后预估总金额和佣金</li>
+    <li><strong>提交</strong> → <code>POST /api/v1/sim-trade/orders</code></li>
+    <li><strong>持仓列表</strong>：当前持仓（可直接点击"平仓"按钮，自动填入卖出表单）</li>
+    <li><strong>近期订单</strong>：最近 20 条订单，显示状态、成交价、佣金、时间</li>
+  </ul>
+</details>
+
+<details>
+  <summary>Tab 3：自动交易（Auto Trade）</summary>
+  <div class="callout warn">
+    <strong>空自选股守卫</strong>：若 Watchlist 为空，显示警告横幅 + 链接到 /watchlist，
+    自动交易开关置灰禁用。
+  </div>
+  <ul>
+    <li><strong>自动交易开关</strong>：Toggle 控件，POST <code>/auto-trade/toggle</code></li>
+    <li><strong>策略模式选择器</strong>：conservative / balanced / aggressive（三选一 Radio）</li>
+    <li><strong>参数配置面板（PATCH /account/settings）</strong>：
+      <ul>
+        <li>最低信号置信度（0.0–1.0，滑块）</li>
+        <li>最大单股仓位 %（1–50，滑块）</li>
+        <li>默认止损 %（1–20，滑块）</li>
+        <li>默认止盈 %（1–50，滑块）</li>
+        <li>最大回撤 %（1–50，滑块）</li>
+        <li>调度间隔（只读，显示 <code>SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES</code> 值）</li>
+      </ul>
+    </li>
+    <li><strong>"立即运行"按钮</strong>：POST <code>/auto-trade/run</code>，触发立即一轮扫描</li>
+    <li><strong>信号历史表</strong>：最近 20 条 AI 信号，列：代码、信号（buy/sell/hold/skip）、置信度、reasoning、状态（executed/expired/rejected）、关联订单 ID</li>
+  </ul>
+</details>
+
+<details>
+  <summary>Tab 4：资金管理（Funding）</summary>
+  <ul>
+    <li><strong>操作选择</strong>：入金 / 出金（两个按钮切换）</li>
+    <li><strong>货币选择</strong>：CNY / USD（Radio）</li>
+    <li><strong>金额输入</strong>：正数，出金时显示可用余额提示</li>
+    <li><strong>备注</strong>：可选文本框</li>
+    <li><strong>提交</strong> → <code>POST /api/v1/sim-trade/fund</code></li>
+    <li><strong>资金台账表</strong>：最近 30 条，列：方向（入/出）、金额、货币、备注、时间</li>
+  </ul>
+</details>
+
+<h3>9.3 数据刷新策略</h3>
+<table>
+  <thead><tr><th>数据</th><th>刷新方式</th><th>频率</th></tr></thead>
+  <tbody>
+    <tr><td>账户权益、持仓浮盈</td><td>轮询 GET /account + GET /positions</td><td>30 秒</td></tr>
+    <tr><td>AI 信号动态</td><td>轮询 GET /signals</td><td>60 秒</td></tr>
+    <tr><td>订单状态</td><td>操作后即时刷新 + 30s 轮询</td><td>30 秒</td></tr>
+    <tr><td>权益曲线</td><td>页面加载时一次性拉取</td><td>进入 Overview Tab 时</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- 10. AI-ENHANCED FEATURES                                     -->
+<!-- ============================================================ -->
+<h2 id="s10">10. AI 增强能力清单（AI-Enhanced Features）</h2>
+
+<table>
+  <thead><tr><th>#</th><th>能力</th><th>实现位置</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><strong>信号生成</strong> <span class="tag tag-ai">AI</span></td>
+      <td><code>signal_service.generate_signal()</code></td>
+      <td>LLM 综合技术面 + 情绪面输出结构化交易建议（buy/sell/hold/skip）</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><strong>自适应仓位</strong> <span class="tag tag-ai">AI</span></td>
+      <td><code>signal_service</code> → <code>order_service</code></td>
+      <td>LLM 输出的 <code>position_size_pct</code> 随置信度和账户模式变化，服务层换算为实际手数</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><strong>动态止损/止盈</strong> <span class="tag tag-ai">AI</span></td>
+      <td><code>signal_service → SimulatedPosition</code></td>
+      <td>LLM 根据 MA 支撑/压力位建议绝对价格，写入持仓的 <code>stop_loss_price / take_profit_price</code></td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><strong>市场趋势感知</strong> <span class="tag tag-ai">AI</span></td>
+      <td>Prompt context</td>
+      <td>Prompt 注入 MA 多空排列描述（bull/bear/sideways），引导 LLM 把握宏观方向</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><strong>策略顾问报告</strong> <span class="tag tag-ai">AI</span></td>
+      <td><code>auto_trade_service.generate_strategy_report()</code></td>
+      <td>每满 10 笔成交，用 LLM 生成绩效摘要（胜率、AI 信号 vs 手动对比），写入日志/信号表</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td><strong>交易日记</strong></td>
+      <td><code>SimulatedAISignal.reasoning</code></td>
+      <td>每笔自动交易保存 AI reasoning，信号历史表可读，形成可追溯的决策链</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td><strong>回撤保护</strong></td>
+      <td><code>auto_trade_service</code></td>
+      <td>自动监控快照中 <code>max_drawdown_pct</code>，超限后自动暂停所有买入，账户切换为 paused</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td><strong>绩效归因</strong></td>
+      <td><code>SimulatedAISignal + SimulatedOrder</code></td>
+      <td>信号历史通过 <code>order_id</code> 关联订单，可追溯哪些信号带来盈利/亏损</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- 11. CONFIGURATION                                            -->
+<!-- ============================================================ -->
+<h2 id="s11">11. 环境变量与配置（Configuration）</h2>
+
+<p>以下为本模块新增的环境变量，需同步更新 <code>.env.example</code>：</p>
+
+<table>
+  <thead><tr><th>变量名</th><th>默认值</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>SIMTRADE_USD_CNY_RATE</code> <span class="tag tag-cfg">cfg</span></td>
+      <td><code>7.25</code></td>
+      <td>USD/CNY 固定汇率，用于跨币种权益折算和仓位上限检查</td>
+    </tr>
+    <tr>
+      <td><code>SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES</code> <span class="tag tag-cfg">cfg</span></td>
+      <td><code>30</code></td>
+      <td>自动交易调度间隔（分钟），服务启动时读取，修改需重启</td>
+    </tr>
+    <tr>
+      <td><code>SIMTRADE_LLM_MODEL</code> <span class="tag tag-cfg">cfg</span></td>
+      <td>继承 <code>LITELLM_MODEL</code></td>
+      <td>信号生成专用 LLM，未设置则使用全局 <code>LITELLM_MODEL</code>；
+      可指定更快的 Flash 系列以降低延迟</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>11.1 .env.example 追加内容</h3>
+<pre><code># ── Simulated Trade ──────────────────────────────────────────────
+# USD/CNY conversion rate for cross-currency equity calculation
+SIMTRADE_USD_CNY_RATE=7.25
+# Auto-trade scheduler interval in minutes (requires restart to change)
+SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES=30
+# LLM model for signal generation; falls back to LITELLM_MODEL if unset
+# SIMTRADE_LLM_MODEL=</code></pre>
+
+<h3>11.2 账户级配置（运行时可修改，PATCH /account/settings）</h3>
+<p>
+  以下参数存储在 <code>simulated_accounts</code> 表中，通过 API 实时修改，
+  不需要重启服务：
+</p>
+<ul>
+  <li><code>auto_trade_mode</code>：conservative / balanced / aggressive</li>
+  <li><code>max_position_pct</code>：单股最大仓位 %</li>
+  <li><code>max_drawdown_pct</code>：最大回撤阈值 %</li>
+  <li><code>stop_loss_pct</code>：默认止损 %</li>
+  <li><code>take_profit_pct</code>：默认止盈 %</li>
+  <li><code>min_signal_confidence</code>：最低置信度</li>
+</ul>
+
+<!-- ============================================================ -->
+<!-- 12. NON-GOALS                                                -->
+<!-- ============================================================ -->
+<h2 id="s12">12. 非目标 / 范围边界（Non-Goals）</h2>
+
+<table>
+  <thead><tr><th>不在范围内</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>真实资金 / 券商接入</td><td>本模块仅为模拟演练，不与任何真实交易系统对接</td></tr>
+    <tr><td>订单簿模拟（买卖盘撮合）</td><td>不模拟 bid/ask spread，直接使用最新价加滑点</td></tr>
+    <tr><td>历史回测（Backtesting）</td><td>回测为独立功能，数据要求和计算架构不同，不在本模块范围</td></tr>
+    <tr><td>多用户隔离</td><td>每个 DSA 实例一个模拟账户，无用户认证隔离</td></tr>
+    <tr><td>卖空（Short Selling）</td><td>不支持，sell 订单只能基于现有持仓</td></tr>
+    <tr><td>期权、ETF 杠杆、衍生品</td><td>仅支持普通股票买卖</td></tr>
+    <tr><td>实时汇率</td><td>汇率静态配置，不调用实时 API</td></tr>
+    <tr><td>分红 / 拆股处理</td><td>不自动调整持仓的分红和拆股</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<!-- 13. DELIVERY CHECKLIST                                       -->
+<!-- ============================================================ -->
+<h2 id="s13">13. 交付检查清单（Delivery Checklist）</h2>
+
+<div class="callout">
+  <strong>参考 AGENTS.md §8：新增功能/模块/子系统时，必须同步产出"三件套"方可视为交付完成。</strong>
+</div>
+
+<details open>
+  <summary>后端实现清单</summary>
+  <ul>
+    <li>[ ] <code>src/storage.py</code> — 新增 6 张 ORM 表定义，并在 <code>Base.metadata.create_all()</code> 覆盖范围内</li>
+    <li>[ ] <code>src/repositories/simtrade_repo.py</code> — 所有 DB CRUD 操作，Services 不直接使用 Session</li>
+    <li>[ ] <code>src/services/simtrade/account_service.py</code> — 账户 CRUD、资金入出金、权益汇总</li>
+    <li>[ ] <code>src/services/simtrade/order_service.py</code> — 手动下单、撮合、持仓更新、止损/止盈巡检</li>
+    <li>[ ] <code>src/services/simtrade/signal_service.py</code> — AI 信号生成（含技术预评分、LLM 调用、风险覆盖）</li>
+    <li>[ ] <code>src/services/simtrade/auto_trade_service.py</code> — 调度线程、快照、策略顾问</li>
+    <li>[ ] <code>api/v1/schemas/simtrade.py</code> — 所有 Pydantic Request/Response 模型</li>
+    <li>[ ] <code>api/v1/endpoints/simtrade.py</code> — 13 个 REST 端点，含守卫逻辑</li>
+    <li>[ ] <code>api/v1/router.py</code> — 注册 simtrade_router（prefix="/sim-trade"）</li>
+    <li>[ ] <code>server.py</code> — lifespan 事件中启动 AutoTradeService 调度线程</li>
+    <li>[ ] <code>.env.example</code> — 追加 3 个 <code>SIMTRADE_*</code> 变量</li>
+    <li>[ ] <code>python -m py_compile</code> 检查所有新增 Python 文件</li>
+    <li>[ ] <code>./scripts/ci_gate.sh</code> 通过</li>
+  </ul>
+</details>
+
+<details>
+  <summary>前端实现清单</summary>
+  <ul>
+    <li>[ ] <code>apps/dsa-web/src/types/simtrade.ts</code> — 所有 TypeScript 接口定义</li>
+    <li>[ ] <code>apps/dsa-web/src/api/simtrade.ts</code> — 13 个 API 调用函数</li>
+    <li>[ ] <code>apps/dsa-web/src/pages/SimTradePage.tsx</code> — 4-Tab 页面（Overview / Manual / Auto / Funding）</li>
+    <li>[ ] <code>apps/dsa-web/src/components/layout/SidebarNav.tsx</code> — 添加"模拟交易"导航项（TrendingUp 图标）</li>
+    <li>[ ] <code>apps/dsa-web/src/App.tsx</code> — 注册 /sim-trade 路由</li>
+    <li>[ ] <code>npm run lint &amp;&amp; npm run build</code> 通过</li>
+  </ul>
+</details>
+
+<details>
+  <summary>文档与配置清单</summary>
+  <ul>
+    <li>[ ] <code>docs/design-simulated-trade.html</code> — 本文档（已完成）</li>
+    <li>[ ] <code>docs/CHANGELOG.md</code> — <code>[Unreleased]</code> 区段追加：
+      <ul>
+        <li><code>- [新功能] 模拟交易（SimTrade）模块：账户管理、手动/自动交易、AI 信号生成、资金台账、权益快照</code></li>
+      </ul>
+    </li>
+    <li>[ ] <code>docs/full-guide.md</code> / <code>full-guide_EN.md</code> — 评估是否需要追加模拟交易使用说明段落</li>
+    <li>[ ] <code>.env.example</code> — 已在后端清单中列出</li>
+    <li>[ ] 验证 <code>python scripts/check_ai_assets.py</code> 无报错</li>
+  </ul>
+</details>
+
+<details>
+  <summary>验证矩阵（按 AGENTS.md §6）</summary>
+  <ul>
+    <li>[ ] Python 后端：<code>./scripts/ci_gate.sh</code>（含 flake8 + pytest -m "not network"）</li>
+    <li>[ ] Web 前端：<code>cd apps/dsa-web &amp;&amp; npm ci &amp;&amp; npm run lint &amp;&amp; npm run build</code></li>
+    <li>[ ] API Schema 兼容性：确认现有客户端（dsa-desktop / bot）不受 /api/v1/ 新路由影响</li>
+    <li>[ ] 调度线程：确认服务启动时 AutoTradeService 线程正常注册，关闭时 daemon=True 自动退出</li>
+    <li>[ ] LLM 降级：信号生成 LLM 不可用时，返回 skip 信号，不抛出异常，服务正常运行</li>
+    <li>[ ] 空 Watchlist 守卫：Watchlist 为空时，前端 Auto 页面开关禁用，后端 /auto-trade/toggle 返回 409</li>
+  </ul>
+</details>
+
+<hr />
+<p style="color:var(--muted);font-size:0.85rem;text-align:center;">
+  DSA · 模拟交易设计文档 v1.0 · 2026-05-16 ·
+  如与实际代码有出入，以代码实现为准并更新本文档。
+</p>
+
+</body>
+</html>
