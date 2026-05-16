@@ -2,10 +2,10 @@
 
 import type {
   AccountSettingsRequest,
-  AutoRunResult,
   AutoTradeStatus,
   FundItem,
   FundRequest,
+  RunJob,
   SimAccount,
   SimOrder,
   SimPosition,
@@ -82,8 +82,11 @@ export const toggleAutoTrade = (enabled: boolean) =>
     body: JSON.stringify({ enabled }),
   });
 
-export const runAutoTrade = () =>
-  request<AutoRunResult>('/auto-trade/run', { method: 'POST' });
+export const startAutoTrade = () =>
+  request<RunJob>('/auto-trade/run', { method: 'POST' });
+
+export const getRunJob = (jobId: string) =>
+  request<RunJob>(`/auto-trade/run/${jobId}`);
 
 export const getAutoTradeStatus = () =>
   request<AutoTradeStatus>('/auto-trade/status');
