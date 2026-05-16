@@ -17,6 +17,7 @@ import type {
   AutoTradeStatus,
   FundItem,
   FundRequest,
+  MarketStatus,
   OrderRequest,
   RunJob,
   SimAccount,
@@ -61,6 +62,26 @@ const MODE_LABEL: Record<string, string> = {
 };
 
 // ─── sub-components ───────────────────────────────────────────────────────
+
+const MarketStatusBadges: React.FC<{ status?: MarketStatus }> = ({ status }) => {
+  if (!status) return null;
+  const dot = (open: boolean) => (
+    <span className={`inline-block h-1.5 w-1.5 rounded-full ${open ? 'bg-emerald-500' : 'bg-gray-400'}`} />
+  );
+  return (
+    <div className="flex items-center gap-3 mt-1.5">
+      <span className="flex items-center gap-1 text-xs text-secondary-text">
+        {dot(status.cn_open)} A-share {status.cn_open ? 'open' : 'closed'}
+      </span>
+      <span className="flex items-center gap-1 text-xs text-secondary-text">
+        {dot(status.us_open)} US {status.us_open ? 'open' : 'closed'}
+      </span>
+      {status.market_hours_only && (
+        <span className="text-xs text-secondary-text opacity-60">· runs during market hours only</span>
+      )}
+    </div>
+  );
+};
 
 const StatCard: React.FC<{
   label: string;
@@ -621,6 +642,7 @@ const AutoTradeTab: React.FC<{
               ? `运行中 · ${MODE_LABEL[account.auto_trade_mode]} 模式`
               : '已关闭 · 开启后将自动监控自选股并下单'}
           </p>
+          <MarketStatusBadges status={autoStatus?.market_status} />
         </div>
         <div className="flex items-center gap-3">
           {account.auto_trade_enabled ? (

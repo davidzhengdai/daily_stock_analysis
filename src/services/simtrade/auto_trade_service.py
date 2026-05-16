@@ -16,7 +16,7 @@ import os
 import threading
 import time
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, time as dtime
 from typing import Any, Dict, List, Optional
 
 from src.repositories.simtrade_repo import SimTradeRepo
@@ -26,6 +26,40 @@ from src.services.simtrade.order_service import OrderService
 logger = logging.getLogger(__name__)
 
 _DEFAULT_INTERVAL_MINUTES = 5
+
+
+# -------------------------------------------------------
+# Market hours helpers
+# -------------------------------------------------------
+
+def _is_cn_market_open() -> bool:
+    """A-share market: 09:30-11:30 and 13:00-15:00 CST, Mon-Fri."""
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+    now = datetime.now(ZoneInfo('Asia/Shanghai'))
+    if now.weekday() >= 5:
+        return False
+    t = now.time().replace(second=0, microsecond=0)
+    return dtime(9, 30) <= t < dtime(11, 30) or dtime(13, 0) <= t < dtime(15, 0)
+
+
+def _is_us_market_open() -> bool:
+    """US regular session: 09:30-16:00 ET, Mon-Fri."""
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+    now = datetime.now(ZoneInfo('America/New_York'))
+    if now.weekday() >= 5:
+        return False
+    t = now.time().replace(second=0, microsecond=0)
+    return dtime(9, 30) <= t < dtime(16, 0)
+
+
+def get_market_status() -> Dict[str, bool]:
+    return {'cn_open': _is_cn_market_open(), 'us_open': _is_us_market_open()}
 
 
 class AutoTradeService:
@@ -45,6 +79,9 @@ class AutoTradeService:
         ) * 60
         self._last_run_result: Dict[str, Any] = {}
         self._jobs: Dict[str, Dict[str, Any]] = {}
+        self._market_hours_only: bool = os.getenv(
+            'SIMTRADE_MARKET_HOURS_ONLY', 'true'
+        ).lower() not in ('false', '0', 'no')
 
     @classmethod
     def get_instance(cls) -> 'AutoTradeService':
@@ -144,6 +181,21 @@ class AutoTradeService:
             self._last_run_result = result
             return result
 
+        # ---- 市场交易时段检查 ----
+        if self._market_hours_only:
+            markets = {SignalService._infer_market(item['code']) for item in watchlist}
+            cn_open = _is_cn_market_open()
+            us_open = _is_us_market_open()
+            any_open = ('CN' in markets and cn_open) or ('US' in markets and us_open)
+            if not any_open:
+                result['skipped_reason'] = '非交易时段'
+                logger.info(
+                    "[AutoTrade] 跳过：非交易时段（关注市场 %s，CN=%s US=%s）",
+                    markets, cn_open, us_open,
+                )
+                self._last_run_result = result
+                return result
+
         # ---- 最大回撤保护 ----
         snapshots = self.repo.list_snapshots(account_id, limit=1)
         if snapshots:
@@ -242,6 +294,13 @@ class AutoTradeService:
 
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
+
+    def get_market_status(self) -> Dict[str, Any]:
+        return {
+            'cn_open': _is_cn_market_open(),
+            'us_open': _is_us_market_open(),
+            'market_hours_only': self._market_hours_only,
+        }
 
 
 def get_auto_trade_service() -> AutoTradeService:
