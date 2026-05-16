@@ -78,6 +78,12 @@ class LLMClassifier:
     def classify_pending(self, store: NewsStore) -> int:
         """Classify up to llm_max_per_cycle unclassified items. Returns count classified."""
         total_classified = 0
+        watched_codes: set = set()
+        if self._config.watched_stocks_boost:
+            try:
+                watched_codes = {s["code"] for s in store.get_watched_stocks()}
+            except Exception:
+                pass
         remaining = self._config.llm_max_per_cycle
 
         while remaining > 0:
@@ -94,7 +100,7 @@ class LLMClassifier:
 
             for item_dict, row in zip(results, rows):
                 try:
-                    fields = self._apply_priority_rules(item_dict, row)
+                    fields = self._apply_priority_rules(item_dict, row, watched_codes=watched_codes)
                     store.update_classification(row["url_hash"], fields)
                     total_classified += 1
                 except Exception:
@@ -175,7 +181,7 @@ class LLMClassifier:
 
         return []
 
-    def _apply_priority_rules(self, item: dict, row: Any) -> dict:
+    def _apply_priority_rules(self, item: dict, row: Any, watched_codes: Optional[set] = None) -> dict:
         """Validate and adjust classification fields; compute expires_at."""
         category = item.get("category", "other")
         priority_raw = item.get("priority")
@@ -208,6 +214,15 @@ class LLMClassifier:
                 if age_hours <= _FRESHNESS_HOURS and category == "breaking":
                     priority = min(5, priority + 1)
             except (ValueError, TypeError):
+                pass
+
+        # Watched stocks boost
+        if watched_codes and priority < 5:
+            try:
+                article_stocks = set(affected_stocks) if isinstance(affected_stocks, list) else set()
+                if article_stocks & watched_codes:
+                    priority = min(5, priority + 1)
+            except Exception:
                 pass
 
         # Compute expires_at from published_at (or fetched_at as fallback)

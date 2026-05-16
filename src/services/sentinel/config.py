@@ -21,6 +21,7 @@ class SentinelConfig:
     redis_url: str = ""
     enabled_spiders: str = "all"
     trading_hours_boost: bool = True
+    watched_stocks_boost: bool = True
 
     @classmethod
     def from_env(cls) -> "SentinelConfig":
@@ -59,4 +60,5 @@ class SentinelConfig:
             redis_url=os.getenv("SENTINEL_REDIS_URL", ""),
             enabled_spiders=os.getenv("SENTINEL_ENABLED_SPIDERS", "all"),
             trading_hours_boost=_bool("SENTINEL_TRADING_HOURS_BOOST", True),
+            watched_stocks_boost=_bool("SENTINEL_WATCHED_STOCKS_BOOST", True),
         )

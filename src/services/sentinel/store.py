@@ -73,6 +73,12 @@ CREATE TABLE IF NOT EXISTS cycle_analyses (
     model_used       TEXT,
     created_at       TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS watched_stocks (
+    code     TEXT PRIMARY KEY,
+    name     TEXT NOT NULL DEFAULT '',
+    added_at TEXT NOT NULL
+);
 """
 
 _FTS_DDL = """
@@ -504,5 +510,48 @@ class NewsStore:
                 con.commit()
             except sqlite3.Error as exc:
                 logger.error("update_cycle_triggered_stocks failed: %s", exc)
+            finally:
+                con.close()
+
+    # ── watched stocks ────────────────────────────────────────────────────────
+
+    def upsert_watched_stocks(self, stocks: List[dict]) -> int:
+        """Replace the watched stocks list. Returns count inserted."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            con = self._connect()
+            try:
+                con.execute("DELETE FROM watched_stocks")
+                count = 0
+                for s in stocks:
+                    code = (s.get("code") or "").strip()
+                    if not code:
+                        continue
+                    name = (s.get("name") or "").strip()
+                    con.execute(
+                        "INSERT OR REPLACE INTO watched_stocks (code, name, added_at) VALUES (?, ?, ?)",
+                        (code, name, now_iso),
+                    )
+                    count += 1
+                con.commit()
+                return count
+            except sqlite3.Error as exc:
+                logger.error("upsert_watched_stocks failed: %s", exc)
+                return 0
+            finally:
+                con.close()
+
+    def get_watched_stocks(self) -> List[dict]:
+        """Return [{"code": ..., "name": ...}] sorted by added_at."""
+        with self._lock:
+            con = self._connect()
+            try:
+                rows = con.execute(
+                    "SELECT code, name FROM watched_stocks ORDER BY added_at"
+                ).fetchall()
+                return [{"code": row[0], "name": row[1]} for row in rows]
+            except sqlite3.Error as exc:
+                logger.error("get_watched_stocks failed: %s", exc)
+                return []
             finally:
                 con.close()

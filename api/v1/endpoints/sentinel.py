@@ -62,6 +62,11 @@ class SentinelAnalysisItem(BaseModel):
     created_at: Optional[str] = None
 
 
+class WatchedStockItem(BaseModel):
+    code: str
+    name: str = ""
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -211,3 +216,25 @@ def get_analyses(
     except Exception as exc:
         logger.warning("sentinel /analyses error: %s", exc)
         return []
+
+
+@router.get("/watched-stocks", response_model=List[dict], summary="List current watched stocks")
+def get_watched_stocks() -> List[dict]:
+    try:
+        _, store = _get_store_and_config()
+        return store.get_watched_stocks()
+    except Exception as exc:
+        logger.warning("sentinel /watched-stocks GET error: %s", exc)
+        return []
+
+
+@router.put("/watched-stocks", summary="Set watched stock list for targeted scraping")
+def set_watched_stocks(stocks: List[WatchedStockItem]) -> dict:
+    try:
+        _, store = _get_store_and_config()
+        data = [{"code": s.code.strip(), "name": s.name.strip()} for s in stocks if s.code.strip()]
+        count = store.upsert_watched_stocks(data)
+        return {"updated": count}
+    except Exception as exc:
+        logger.warning("sentinel /watched-stocks PUT error: %s", exc)
+        return {"updated": 0, "error": str(exc)}
