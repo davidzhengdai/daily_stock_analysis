@@ -4,6 +4,7 @@ import { BarChart3 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getParsedApiError, type ParsedApiError } from '../api/error';
 import { analysisApi } from '../api/analysis';
+import { watchlistApi } from '../api/watchlist';
 import { systemConfigApi } from '../api/systemConfig';
 import { ApiErrorAlert, ConfirmDialog, Button, EmptyState, InlineAlert } from '../components/common';
 import { DashboardStateBlock } from '../components/dashboard';
@@ -56,6 +57,7 @@ const HomePage: React.FC = () => {
 
   useEffect(() => stopMarketReviewPolling, [stopMarketReviewPolling]);
   const [setupStatus, setSetupStatus] = useState<SetupStatusResponse | null>(null);
+  const [watchedCodes, setWatchedCodes] = useState<Set<string>>(new Set());
 
   const {
     query,
@@ -112,6 +114,22 @@ const HomePage: React.FC = () => {
         }
       });
 
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    watchlistApi.listAll()
+      .then((res) => {
+        if (active) {
+          setWatchedCodes(new Set(res.items.map((item) => item.code)));
+        }
+      })
+      .catch(() => {
+        // Watchlist load failure is non-critical; silently ignore.
+      });
     return () => {
       active = false;
     };
@@ -344,6 +362,27 @@ const HomePage: React.FC = () => {
     setShowDeleteConfirm(false);
   }, [deleteSelectedHistory]);
 
+  const handleToggleWatchlist = useCallback((code: string, name: string) => {
+    const isCurrentlyWatched = watchedCodes.has(code);
+    if (isCurrentlyWatched) {
+      watchlistApi.remove(code).then(() => {
+        setWatchedCodes((prev) => {
+          const next = new Set(prev);
+          next.delete(code);
+          return next;
+        });
+      }).catch(() => {
+        // Silently ignore
+      });
+    } else {
+      watchlistApi.add(code, name).then(() => {
+        setWatchedCodes((prev) => new Set([...prev, code]));
+      }).catch(() => {
+        // Silently ignore
+      });
+    }
+  }, [watchedCodes]);
+
   const sidebarContent = useMemo(
     () => (
       <div className="flex min-h-0 h-full flex-col gap-3 overflow-hidden">
@@ -362,6 +401,8 @@ const HomePage: React.FC = () => {
           onToggleSelectAll={toggleSelectAllVisible}
           onDeleteSelected={() => setShowDeleteConfirm(true)}
           className="flex-1 overflow-hidden"
+          watchedCodes={watchedCodes}
+          onToggleWatchlist={handleToggleWatchlist}
         />
       </div>
     ),
@@ -378,6 +419,8 @@ const HomePage: React.FC = () => {
       selectedReport?.meta.id,
       toggleHistorySelection,
       toggleSelectAllVisible,
+      watchedCodes,
+      handleToggleWatchlist,
     ],
   );
 

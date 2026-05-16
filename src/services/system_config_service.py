@@ -198,6 +198,11 @@ class SystemConfigService:
         """Return grouped schema metadata for UI rendering."""
         return build_schema_response()
 
+    def get_litellm_yaml_models(self) -> List[str]:
+        """Return model names declared in the current litellm_config.yaml, in declaration order."""
+        effective_map = self._build_setup_effective_config_map()
+        return self._collect_yaml_models_from_map(effective_map)
+
     @staticmethod
     def _reload_runtime_singletons() -> None:
         """Reset runtime singleton services after config reload."""

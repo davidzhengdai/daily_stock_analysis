@@ -2295,12 +2295,17 @@ class GeminiAnalyzer:
                 "temperature": config.llm_temperature,
                 "max_output_tokens": 8192,
             }
+            retry_max_tokens = max(
+                256,
+                int(getattr(config, "report_integrity_retry_max_tokens", 1024) or 1024),
+            )
 
             logger.info(f"[LLM调用] 开始调用 {model_name}...")
             _emit_progress(68, f"{name}：LLM 已接收请求，等待响应")
 
             # 使用 litellm 调用（支持完整性校验重试）
             current_prompt = prompt
+            current_generation_config = generation_config
             retry_count = 0
             max_retries = config.report_integrity_retry if config.report_integrity_enabled else 0
             best_result: Optional[AnalysisResult] = None
@@ -2314,7 +2319,7 @@ class GeminiAnalyzer:
                 try:
                     response_text, model_used, llm_usage = self._call_litellm(
                         current_prompt,
-                        generation_config,
+                        current_generation_config,
                         system_prompt=system_prompt,
                         stream=True,
                         stream_progress_callback=stream_progress_callback,
@@ -2384,6 +2389,13 @@ class GeminiAnalyzer:
                 best_response_text = response_text
                 best_model_used = model_used
                 best_llm_usage = llm_usage
+                if not self._should_retry_integrity_missing_fields(missing_fields):
+                    self._apply_placeholder_fill(result, missing_fields)
+                    logger.warning(
+                        "[LLM完整性] 必填字段缺失 %s，已本地占位补全，跳过 LLM 补全重试",
+                        missing_fields,
+                    )
+                    break
                 if retry_count < max_retries:
                     current_prompt = self._build_integrity_retry_prompt(
                         prompt,
@@ -2391,11 +2403,19 @@ class GeminiAnalyzer:
                         missing_fields,
                         report_language=report_language,
                     )
+                    current_generation_config = {
+                        **generation_config,
+                        "max_output_tokens": min(
+                            int(generation_config.get("max_output_tokens", retry_max_tokens)),
+                            retry_max_tokens,
+                        ),
+                    }
                     retry_count += 1
                     logger.info(
-                        "[LLM完整性] 必填字段缺失 %s，第 %d 次补全重试",
+                        "[LLM完整性] 必填字段缺失 %s，第 %d 次补全重试，max_output_tokens=%s",
                         missing_fields,
                         retry_count,
+                        current_generation_config.get("max_output_tokens"),
                     )
                     retry_progress = min(99, 92 + retry_count * 2)
                     _emit_progress(
@@ -2992,6 +3012,16 @@ class GeminiAnalyzer:
             previous_output,
             complement,
         ])
+
+    @staticmethod
+    def _should_retry_integrity_missing_fields(missing_fields: List[str]) -> bool:
+        """Return whether missing fields are important enough for another LLM call."""
+        placeholder_safe_fields = {
+            "dashboard.core_conclusion.one_sentence",
+            "dashboard.intelligence.risk_alerts",
+            "dashboard.battle_plan.sniper_points.stop_loss",
+        }
+        return any(field not in placeholder_safe_fields for field in missing_fields)
 
     def _apply_placeholder_fill(self, result: AnalysisResult, missing_fields: List[str]) -> None:
         """Delegate to module-level apply_placeholder_fill."""

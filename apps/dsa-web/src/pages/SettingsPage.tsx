@@ -8,6 +8,7 @@ import {
   AuthSettingsCard,
   ChangePasswordCard,
   IntelligentImport,
+  LiteLLMModelSelect,
   LLMChannelEditor,
   NotificationTestPanel,
   SettingsCategoryNav,
@@ -200,6 +201,7 @@ function formatEnvBackupFilename(isDesktopRuntime: boolean) {
 
 const SettingsPage: React.FC = () => {
   const { authEnabled, passwordChangeable } = useAuth();
+  const [yamlModels, setYamlModels] = useState<string[]>([]);
   const [envBackupActionError, setEnvBackupActionError] = useState<ParsedApiError | null>(null);
   const [envBackupActionSuccess, setEnvBackupActionSuccess] = useState<string>('');
   const [isExportingEnv, setIsExportingEnv] = useState(false);
@@ -249,6 +251,10 @@ const SettingsPage: React.FC = () => {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void systemConfigApi.getLiteLLMYamlModels().then(setYamlModels);
+  }, []);
 
   useEffect(() => {
     if (!toast) {
@@ -347,9 +353,16 @@ const SettingsPage: React.FC = () => {
     'ADMIN_AUTH_ENABLED',
   ]);
   const AGENT_HIDDEN_KEYS = new Set<string>();
+  // Hide model keys that are rendered by LiteLLMModelSelect above the generic fields
+  const SENTINEL_MODEL_KEY = 'SENTINEL_LLM_MODEL';
+  const AI_MODEL_PRIMARY_KEY = 'LITELLM_MODEL';
+  const SENTINEL_HIDDEN_KEYS = new Set([SENTINEL_MODEL_KEY]);
   const activeItems =
     activeCategory === 'ai_model'
       ? rawActiveItems.filter((item) => {
+        if (item.key === AI_MODEL_PRIMARY_KEY) {
+          return false; // rendered by LiteLLMModelSelect below
+        }
         if (hasConfiguredChannels && LLM_CHANNEL_KEY_RE.test(item.key)) {
           return false;
         }
@@ -362,6 +375,8 @@ const SettingsPage: React.FC = () => {
         ? rawActiveItems.filter((item) => !SYSTEM_HIDDEN_KEYS.has(item.key))
       : activeCategory === 'agent'
         ? rawActiveItems.filter((item) => !AGENT_HIDDEN_KEYS.has(item.key))
+      : activeCategory === 'sentinel'
+        ? rawActiveItems.filter((item) => !SENTINEL_HIDDEN_KEYS.has(item.key))
       : rawActiveItems;
   const isEnvBackupAllowed = isDesktopRuntime || authEnabled;
   const envBackupActionDisabled = isLoading || isSaving || isExportingEnv || isImportingEnv || !isEnvBackupAllowed;
@@ -747,6 +762,35 @@ const SettingsPage: React.FC = () => {
                     await refreshAfterExternalSave(updatedItems.map((item) => item.key));
                   }}
                   disabled={isSaving || isLoading}
+                />
+              </SettingsSectionCard>
+            ) : null}
+            {activeCategory === 'ai_model' ? (
+              <SettingsSectionCard
+                title="股票分析主模型"
+                description="选择用于股票分析的 LLM。若已配置 litellm_config.yaml，可从下拉列表中选择已声明的模型；否则直接填写模型名称（如 gemini/gemini-2.0-flash）。"
+              >
+                <LiteLLMModelSelect
+                  fieldKey={AI_MODEL_PRIMARY_KEY}
+                  value={String(rawActiveItems.find((i) => i.key === AI_MODEL_PRIMARY_KEY)?.value ?? '')}
+                  onChange={setDraftValue}
+                  yamlModels={yamlModels}
+                  disabled={isSaving || isLoading}
+                />
+              </SettingsSectionCard>
+            ) : null}
+            {activeCategory === 'sentinel' ? (
+              <SettingsSectionCard
+                title="情报中心 LLM"
+                description="新闻分类 LLM。留空则继承全局 LITELLM_MODEL。若已配置 litellm_config.yaml，可从下拉列表中选择已声明的模型。"
+              >
+                <LiteLLMModelSelect
+                  fieldKey={SENTINEL_MODEL_KEY}
+                  value={String(rawActiveItems.find((i) => i.key === SENTINEL_MODEL_KEY)?.value ?? '')}
+                  onChange={setDraftValue}
+                  yamlModels={yamlModels}
+                  disabled={isSaving || isLoading}
+                  placeholder="留空则继承全局 LITELLM_MODEL"
                 />
               </SettingsSectionCard>
             ) : null}

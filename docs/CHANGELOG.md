@@ -37,12 +37,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] Web 设置页新增通知渠道一键测试，支持临时配置、耗时与脱敏 attempts 展示。
 - [新功能] 系统设置页新增配置项帮助入口与多语言帮助文案基础设施，首批覆盖自选股、LLM 主模型、LLM 渠道、飞书 Webhook 与 WebUI 监听地址。
 - [改进] 设置项帮助窗口支持键盘焦点限制、Esc 关闭和关闭后焦点恢复，并移除短描述重复 hover tooltip。
+- [新功能] 系统设置页新增「情报中心」分类，支持在 Web UI 管理 News Sentinel 所有关键配置（开关、LLM 模型、抓取周期、分析周期、缓存时效、批次大小、Spider 列表、优先级加成开关）；新增 `SENTINEL_LLM_MODEL` 配置项，情报中心可独立指定 LLM 分类模型，留空则继承全局 `LITELLM_MODEL`。
+- [新功能] 系统设置页「AI 模型」和「情报中心」分类新增 litellm_config.yaml 模型选择器：新增 `GET /api/v1/system/config/llm/yaml-models` 接口读取 YAML 声明的模型列表，前端 `LiteLLMModelSelect` 组件在检测到 YAML 模型时以下拉框展示，支持切换为手动输入，适配无 YAML 场景。
 - [文档] 新增设置页配置帮助维护说明，明确帮助元数据字段、首批覆盖范围、事实源和多语言文案同步规则。
 - [测试] 补充设置项帮助元数据、API schema、前端弹窗交互测试，并修复 Bot 名称路由与调度时间 provider 测试的离线 CI 稳定性问题。
 - [新功能] 新增 Moomoo OpenAPI 实时行情数据源，可通过本地 OpenD 网关接入美股、港股和 A 股实时行情。
 - [新功能] 新增东方财富、财联社、Google News CN/HK RSS 三个 A 股 / 港股专属新闻 Provider，无需 API Key；A 股/港股多维度搜索同步新增宏观政策、社交热度两个维度，与美股分析维度对齐。
 - [修复] 修复 LLM（qwen3:8b）输出中文 key JSON 时评分恒为 50 的问题：新增 _scan_strings_for_score 对叙述字段进行兜底评分提取（识别"系统评分77/100"等嵌入式格式）。
 - [修复] 修复 LLM 未输出 dashboard 块时 ideal_buy / take_profit 始终显示 N/A：新增 _synthesize_dashboard_from_cn 从中文 key 合成 sniper_points；pipeline 新增 ideal_buy（MA5 附近）与 take_profit（最近阻力位）技术数据兜底。
+- [新功能] News Sentinel 新增美股 HTML 新闻 Spider：`StockAnalysisNewsSpider`（stockanalysis.com 逐 ticker 新闻页）与 `FinvizNewsSpider`（finviz.com news-table），对关注列表中的美股在每轮周期内定向抓取，补充 Google News RSS 以外的 HTML 原生新闻来源。
+- [改进] News Sentinel 缓存未命中时从"仅注册关注列表"升级为"立即触发后台抓取"：`SentinelCacheClient.fetch_for_stock_async()` 在 daemon 线程中执行完整的 fetch → dedup → classify 流程，确保下次分析调用时缓存已预热；美股 ticker 同时从 StockAnalysis 和 Finviz 补充文章。
+- [改进] News Sentinel Docker 部署改为通过 `server_sentinel.py` 暴露 HTTP API；主服务新增 `SENTINEL_SERVER_URL`，情报中心、关注股票注入、即时预取与搜索缓存优先通过 HTTP 访问 Sentinel，SQLite 直读仅作为本地回退。
+- [改进] News Sentinel 情报搜索新增 `/stock-news/stream` 流式 HTTP 端点：主服务发起分析时优先向 Sentinel 请求股票/行业/政策相关缓存；缓存未命中则由 Sentinel 即时抓取并周期发送 heartbeat，主服务 3 秒内未收到 heartbeat 即回退到在线搜索。
+- [改进] 报告完整性校验对可本地占位的 dashboard 字段跳过 LLM 补全重试，并新增 `REPORT_INTEGRITY_RETRY_MAX_TOKENS` 限制补全输出，降低本地 Ollama 模型分析耗时。
 - [改进] 新增 Docker 构建并启动脚本 `scripts/docker-build-launch.sh`，支持先 build 再启动 server、analyzer 或全部服务。
 - [改进] Moomoo 数据源优先使用市场快照补充美股估值/股本/盘前盘后字段，并支持通过 Moomoo 拉取美股日 K。
 - [修复] Moomoo OpenD 不可达时先执行短超时连接预检查，避免 SDK 重试阻塞股票分析流程。

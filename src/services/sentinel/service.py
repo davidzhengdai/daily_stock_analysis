@@ -35,6 +35,7 @@ from .spiders.rsshub import RSSHubSpider
 from .spiders.sec_edgar import SECEdgarSpider
 from .spiders.sina_finance import SinaFinanceRSSHubSpider
 from .spiders.stcn import STCNRSSHubSpider
+from .spiders.us_stock_html import StockAnalysisNewsSpider, FinvizNewsSpider
 from .spiders.yahoo_finance import YahooFinanceRSSSpider
 from .spiders.yicai import YicaiRSSHubSpider
 
@@ -88,6 +89,11 @@ class SentinelService:
         _ws = WatchedStocksNewsSpider(self._store)
         if _ws.is_enabled(self._config) and spiders is None:
             self._spiders.append(_ws)
+        # US stock HTML spiders: store-aware, added after store init
+        for _cls in (StockAnalysisNewsSpider, FinvizNewsSpider):
+            _sp = _cls(self._store)
+            if _sp.is_enabled(self._config) and spiders is None:
+                self._spiders.append(_sp)
         self._classifier = classifier if classifier is not None else LLMClassifier(self._config)
         self._purger = TTLPurger(self._store)
         self._comprehensive = comprehensive if comprehensive is not None else ComprehensiveAnalyzer(self._config)
@@ -219,6 +225,7 @@ class SentinelService:
     def fetch_for_stock(self, code: str, name: str) -> dict:
         """Immediately fetch, store, and classify news for a single stock.
 
+        For US tickers (alpha codes), also queries StockAnalysis and Finviz.
         Also registers the stock for ongoing targeted fetching in future cycles.
         Returns {"fetched": N, "new": M, "classified": K}.
         """
@@ -230,6 +237,17 @@ class SentinelService:
             WatchedStocksNewsSpider(self._store),
         )
         articles = ws_spider.fetch_single(code, name)
+
+        # For US tickers, also pull from HTML-based sources
+        for _cls in (StockAnalysisNewsSpider, FinvizNewsSpider):
+            sp = next(
+                (s for s in self._spiders if isinstance(s, _cls)),
+                _cls(self._store),
+            )
+            try:
+                articles.extend(sp.fetch_single(code, name))
+            except Exception:
+                logger.exception("fetch_single failed for %s on %s", _cls.__name__, code)
 
         deduper = Deduplicator(self._store)
         new_count = 0

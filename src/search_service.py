@@ -2918,11 +2918,17 @@ class SearchService:
         code: str,
         name: str,
         max_results: int = 10,
+        context: str = "",
     ) -> Optional['SearchResponse']:
         """Try to fetch news from the Sentinel cache.
 
-        Returns a ``SearchResponse`` if the cache is available and has enough
-        data, otherwise returns ``None``.
+        Return semantics (intentional — callers branch on this):
+        - ``None``                          : sentinel not available / disabled / timed-out
+                                              → caller should fall back to online search.
+        - ``SearchResponse`` with results   : cache hit (or immediate fetch found articles)
+                                              → use these results.
+        - ``SearchResponse`` with no results: immediate fetch ran and confirmed no articles
+                                              → caller should SKIP online search (same sources).
         """
         try:
             from src.services.sentinel.client import SentinelCacheClient
@@ -2930,19 +2936,76 @@ class SearchService:
                 self._sentinel_client = SentinelCacheClient()
             client: SentinelCacheClient = self._sentinel_client
             if not client.is_available():
+                logger.info("[Sentinel] 缓存不可用（未启用或数据不足），跳过")
                 return None
+            live_response = client.search_for_stock_live(
+                code,
+                name,
+                max_results=max_results,
+                context=context,
+                heartbeat_timeout=3.0,
+            )
+            if live_response is not None:
+                if live_response.results:
+                    logger.info(
+                        "[Sentinel] HTTP 情报返回：%s(%s) 相关新闻 %d 条",
+                        name, code, len(live_response.results),
+                    )
+                else:
+                    logger.info("[Sentinel] HTTP 即时搜索确认无相关新闻：%s(%s)", name, code)
+                return live_response
+            if client._server_url():
+                logger.info("[Sentinel] HTTP 情报请求无响应或 heartbeat 超时：%s(%s)，回退到在线搜索", name, code)
+                return None
+
             response = client.search_for_stock(code, name, max_results=max_results)
             if response.success and response.results:
                 logger.info(
-                    "[Sentinel] 从缓存获取 %s(%s) 相关新闻 %d 条",
+                    "[Sentinel] 命中缓存：%s(%s) 相关新闻 %d 条",
                     name, code, len(response.results),
                 )
                 return response
-            # Cache miss — register the stock so the next cycle fetches targeted news
-            client.register_stock(code, name)
-            return None
+
+            # Cache miss — trigger immediate fetch; sentinel signals us via Event when done
+            logger.info("[Sentinel] 缓存未命中：%s(%s)，触发即时抓取，等待结果…", name, code)
+            done = client.fetch_for_stock_async(code, name)
+            if done is None:
+                # fetch_for_stock_async returned None → sentinel disabled mid-flight
+                return None
+
+            # Poll every 1 s so we wake up the moment sentinel is done
+            completed = False
+            for elapsed in range(1, 91):
+                if done.wait(timeout=1.0):
+                    logger.info("[Sentinel] 即时抓取完成（%ds）：%s(%s)", elapsed, name, code)
+                    completed = True
+                    break
+                logger.info("[Sentinel] 等待即时抓取结果… (%ds) %s(%s)", elapsed, name, code)
+
+            if not completed:
+                logger.info("[Sentinel] 即时抓取超时（90s）：%s(%s)，回退到在线搜索", name, code)
+                return None  # uncertain — let online search proceed
+
+            # Re-check cache with freshly fetched articles
+            response2 = client.search_for_stock(code, name, max_results=max_results)
+            if response2.success and response2.results:
+                logger.info(
+                    "[Sentinel] 即时抓取后命中：%s(%s) %d 条新闻",
+                    name, code, len(response2.results),
+                )
+                return response2
+
+            # Immediate fetch ran and confirmed no news for this stock.
+            # Return the empty-but-successful response (not None) so the caller
+            # knows sentinel already covered these sources and can skip online search.
+            logger.info(
+                "[Sentinel] 即时抓取确认无相关新闻：%s(%s)，通知调用方跳过在线搜索",
+                name, code,
+            )
+            return response2
+
         except Exception as exc:
-            logger.debug("_try_sentinel_for_stock failed for %s: %s", code, exc)
+            logger.warning("[Sentinel] 缓存查询异常 %s(%s): %s，回退到在线搜索", name, code, exc)
             return None
 
     @staticmethod
@@ -3733,19 +3796,43 @@ class SearchService:
         """
         results = {}
         search_count = 0
+        related_board_names = self._extract_related_board_names(related_boards)
+        related_board_terms = " ".join(related_board_names[:3])
+        sentinel_context = " ".join(
+            term for term in [
+                related_board_terms,
+                "industry sector policy regulation political geopolitical macro",
+            ]
+            if term
+        )
 
-        # Inject Sentinel cache as the "latest_news" dimension when available
+        # Inject Sentinel cache as the "latest_news" dimension when available.
+        # _try_sentinel_for_stock has three distinct return values — see its docstring.
         if use_sentinel_cache:
             sentinel_response = self._try_sentinel_for_stock(
-                stock_code, stock_name, max_results=10
+                stock_code, stock_name, max_results=10, context=sentinel_context
             )
             if sentinel_response is not None:
-                results["latest_news"] = sentinel_response
+                if sentinel_response.results:
+                    # Sentinel is the source of truth when available. Do not
+                    # mix in online providers unless Sentinel is unavailable.
+                    results["latest_news"] = sentinel_response
+                    logger.info(
+                        "[情报搜索] Sentinel 已返回 %s(%s) 情报，跳过本地/在线搜索",
+                        stock_name,
+                        stock_code,
+                    )
+                    return results
+                # Immediate fetch ran and confirmed no news — skip online search
+                # because Sentinel was available and completed the request.
+                logger.info(
+                    "[情报搜索] Sentinel 即时抓取确认 %s(%s) 暂无相关新闻，跳过在线搜索",
+                    stock_name, stock_code,
+                )
+                return results
 
         is_foreign = self._is_foreign_stock(stock_code)
         is_index_etf = self.is_index_or_etf(stock_code, stock_name)
-        related_board_names = self._extract_related_board_names(related_boards)
-        related_board_terms = " ".join(related_board_names[:3])
 
         if is_foreign:
             search_dimensions = [
@@ -3920,6 +4007,10 @@ class SearchService:
         provider_index = 0
 
         for dim in search_dimensions:
+            if dim["name"] in results:
+                logger.info("[情报搜索] %s: 已由 Sentinel 提供，跳过在线搜索", dim["desc"])
+                continue
+
             if search_count >= max_searches:
                 break
 

@@ -437,6 +437,22 @@ def test_notification_channel(
         )
 
 
+@router.get(
+    "/config/llm/yaml-models",
+    summary="List model names declared in the current litellm_config.yaml",
+    description="Returns model names from the litellm_config.yaml model_list, in declaration order. Empty list when LITELLM_CONFIG is not set or file is unreadable.",
+)
+def get_llm_yaml_models(
+    service: SystemConfigService = Depends(get_system_config_service),
+) -> dict:
+    try:
+        models = service.get_litellm_yaml_models()
+        return {"models": models}
+    except Exception as exc:
+        logger.warning("Failed to list yaml models: %s", exc)
+        return {"models": []}
+
+
 @router.post(
     "/config/llm/discover-models",
     response_model=DiscoverLLMChannelModelsResponse,

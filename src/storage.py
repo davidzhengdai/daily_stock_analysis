@@ -625,6 +625,27 @@ class LLMUsage(Base):
     called_at = Column(DateTime, default=datetime.now, index=True)
 
 
+class Watchlist(Base):
+    """用户自选股列表，驱动分析任务和 Sentinel 定向抓取。"""
+
+    __tablename__ = 'watchlist'
+
+    code = Column(String(20), primary_key=True)
+    name = Column(String(100), default="")
+    added_at = Column(DateTime, default=datetime.utcnow)
+    notes = Column(String(500), default="")
+    last_analyzed_at = Column(DateTime, nullable=True)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "code": self.code,
+            "name": self.name,
+            "added_at": self.added_at.isoformat() if self.added_at else None,
+            "notes": self.notes,
+            "last_analyzed_at": self.last_analyzed_at.isoformat() if self.last_analyzed_at else None,
+        }
+
+
 class DatabaseManager:
     """
     数据库管理器 - 单例模式

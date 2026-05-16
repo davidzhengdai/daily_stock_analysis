@@ -1,4 +1,5 @@
 export * from './LLMChannelEditor';
+export { default as LiteLLMModelSelect } from './LiteLLMModelSelect';
 export * from './SettingsAlert';
 export * from './ChangePasswordCard';
 export * from './IntelligentImport';

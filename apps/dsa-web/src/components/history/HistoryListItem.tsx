@@ -1,4 +1,5 @@
 import type React from 'react';
+import { Star } from 'lucide-react';
 import { Badge } from '../common';
 import type { HistoryItem } from '../../types/analysis';
 import { getSentimentColor } from '../../types/analysis';
@@ -12,6 +13,8 @@ interface HistoryListItemProps {
   isDeleting: boolean;
   onToggleChecked: (recordId: number) => void;
   onClick: (recordId: number) => void;
+  isWatched?: boolean;
+  onToggleWatchlist?: (code: string, name: string) => void;
 }
 
 const getOperationBadgeLabel = (advice?: string) => {
@@ -41,6 +44,8 @@ export const HistoryListItem: React.FC<HistoryListItemProps> = ({
   isDeleting,
   onToggleChecked,
   onClick,
+  isWatched = false,
+  onToggleWatchlist,
 }) => {
   const sentimentColor = item.sentimentScore !== undefined ? getSentimentColor(item.sentimentScore) : null;
   const stockName = item.stockName || item.stockCode;
@@ -48,7 +53,7 @@ export const HistoryListItem: React.FC<HistoryListItemProps> = ({
 
   return (
     <div className="flex items-start gap-2 group">
-      <div className="pt-5">
+      <div className="pt-5 flex items-center gap-1">
         <input
           type="checkbox"
           checked={isChecked}
@@ -56,6 +61,24 @@ export const HistoryListItem: React.FC<HistoryListItemProps> = ({
           disabled={isDeleting}
           className="h-3.5 w-3.5 cursor-pointer rounded border-subtle-hover bg-transparent accent-primary focus:ring-primary/30 disabled:opacity-50"
         />
+        {onToggleWatchlist ? (
+          <button
+            type="button"
+            title={isWatched ? '已加入自选股' : '添加到自选股'}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleWatchlist(item.stockCode, item.stockName || item.stockCode);
+            }}
+            className="flex h-4 w-4 items-center justify-center rounded transition-colors hover:text-yellow-400"
+            aria-label={isWatched ? '已加入自选股' : '添加到自选股'}
+          >
+            <Star
+              className="h-3.5 w-3.5"
+              fill={isWatched ? 'currentColor' : 'none'}
+              style={{ color: isWatched ? '#facc15' : undefined }}
+            />
+          </button>
+        ) : null}
       </div>
       <button
         type="button"

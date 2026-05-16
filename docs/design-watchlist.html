@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>自选股（Watchlist）功能设计文档</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+    --text: #e2e4f0; --muted: #8b8fa8; --accent: #6c8ef5;
+    --success: #4ade80; --warn: #facc15; --danger: #f87171;
+    --code-bg: #13151f;
+  }
+  body { font-family: system-ui, sans-serif; background: var(--bg); color: var(--text);
+         max-width: 900px; margin: 0 auto; padding: 2rem; line-height: 1.7; }
+  h1 { font-size: 1.8rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  h2 { font-size: 1.25rem; color: var(--accent); margin-top: 2.5rem; }
+  h3 { font-size: 1rem; color: var(--text); margin-top: 1.5rem; }
+  code, pre { background: var(--code-bg); border: 1px solid var(--border);
+               border-radius: 6px; font-family: monospace; font-size: 0.875rem; }
+  code { padding: 0.15em 0.4em; }
+  pre { padding: 1rem; overflow-x: auto; }
+  pre code { background: none; border: none; padding: 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { border: 1px solid var(--border); padding: 0.5rem 0.75rem; text-align: left; }
+  th { background: var(--surface); color: var(--accent); }
+  .tag { display: inline-block; padding: 0.1em 0.5em; border-radius: 4px;
+          font-size: 0.75rem; font-weight: 600; }
+  .new  { background: color-mix(in srgb, var(--success) 15%, transparent);
+          color: var(--success); border: 1px solid color-mix(in srgb, var(--success) 30%, transparent); }
+  .mod  { background: color-mix(in srgb, var(--warn) 15%, transparent);
+          color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); }
+  details { background: var(--surface); border: 1px solid var(--border);
+             border-radius: 8px; margin: 1rem 0; }
+  summary { cursor: pointer; padding: 0.75rem 1rem; font-weight: 600; list-style: none; }
+  summary::before { content: "▶ "; font-size: 0.7rem; }
+  details[open] summary::before { content: "▼ "; }
+  details > *:not(summary) { padding: 0 1rem 1rem; }
+  .callout { border-left: 3px solid var(--accent); background: var(--surface);
+              padding: 0.75rem 1rem; border-radius: 0 8px 8px 0; margin: 1rem 0; }
+  .callout.warn { border-color: var(--warn); }
+</style>
+</head>
+<body>
+
+<h1>自选股（Watchlist）功能设计文档</h1>
+<p style="color:var(--muted)">版本 1.0 · 2026-05-15 · 适用范围：stock-server + dsa-web</p>
+
+<h2>1. 背景与目标</h2>
+<p>
+  系统原有的 <code>watched_stocks</code> 表属于 Sentinel 爬虫服务的内部状态，
+  不对用户直接暴露。用户需要一个独立的、面向业务的自选股列表，用于：
+</p>
+<ul>
+  <li>集中管理长期关注的股票</li>
+  <li>一键触发单只或批量分析任务</li>
+  <li>在分析历史中通过"收藏"快速加入自选</li>
+  <li>驱动 Sentinel 定向抓取（自动同步）</li>
+</ul>
+
+<h2>2. 架构总览</h2>
+<pre><code>┌─────────────────────────────────────────────────────────┐
+│  Web UI  /watchlist                                      │
+│  ┌───────────────┐   ┌──────────────────────────────┐   │
+│  │ WatchlistPage │   │ ⭐ on HistoryListItem         │   │
+│  └──────┬────────┘   └──────────────┬───────────────┘   │
+└─────────┼──────────────────────────┼───────────────────┘
+          │  watchlist API            │  watchlist API
+          ▼                           ▼
+┌─────────────────────────────────────────────────────────┐
+│  POST /api/v1/watchlist          (add)                   │
+│  DELETE /api/v1/watchlist/{code} (remove)                │
+│  GET /api/v1/watchlist           (list)                  │
+│  POST /api/v1/watchlist/analyze  (bulk analyze)          │
+└────────────────┬────────────────────────────────────────┘
+                 │
+        ┌────────┴───────────┐
+        ▼                    ▼
+  main DB: watchlist    Sentinel DB: watched_stocks
+  (SQLAlchemy ORM)      (sync on every write)
+</code></pre>
+
+<h2>3. 数据模型</h2>
+
+<h3>3.1 Watchlist（主库 <code>stock_analysis.db</code>）</h3>
+<table>
+  <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+  <tr><td><code>code</code></td><td>String(20) PK</td><td>股票代码（大写规范化，如 AAPL、600519）</td></tr>
+  <tr><td><code>name</code></td><td>String(100)</td><td>股票名称（可选）</td></tr>
+  <tr><td><code>added_at</code></td><td>DateTime</td><td>加入时间（UTC）</td></tr>
+  <tr><td><code>notes</code></td><td>String(500)</td><td>用户备注（可选）</td></tr>
+  <tr><td><code>last_analyzed_at</code></td><td>DateTime nullable</td><td>最近一次分析触发时间</td></tr>
+</table>
+
+<div class="callout">
+  <strong>规范化</strong>：所有写入路径在进入 <code>WatchlistRepo</code> 前将
+  <code>code</code> 转换为 <code>.strip().upper()</code>，以防大小写不一致导致重复记录。
+</div>
+
+<h2>4. 文件清单</h2>
+<table>
+  <tr><th>文件</th><th>状态</th><th>职责</th></tr>
+  <tr><td><code>src/storage.py</code></td><td><span class="tag mod">改</span></td><td>新增 Watchlist ORM 模型（已含 to_dict）</td></tr>
+  <tr><td><code>src/repositories/watchlist_repo.py</code></td><td><span class="tag new">新</span></td><td>CRUD：list_all, get, upsert, remove, mark_analyzed, is_watched</td></tr>
+  <tr><td><code>src/services/watchlist_service.py</code></td><td><span class="tag new">新</span></td><td>业务层 + sync_to_sentinel（直接写 Sentinel DB，try/except 保护）</td></tr>
+  <tr><td><code>api/v1/endpoints/watchlist.py</code></td><td><span class="tag new">新</span></td><td>5 个端点：GET / POST / DELETE / PATCH / POST analyze</td></tr>
+  <tr><td><code>api/v1/router.py</code></td><td><span class="tag mod">改</span></td><td>注册 /watchlist 路由</td></tr>
+  <tr><td><code>apps/dsa-web/src/types/watchlist.ts</code></td><td><span class="tag new">新</span></td><td>WatchlistItem, AnalyzeWatchlistResult TypeScript 类型</td></tr>
+  <tr><td><code>apps/dsa-web/src/api/watchlist.ts</code></td><td><span class="tag new">新</span></td><td>watchlistApi：listAll, add, remove, update, analyze, isWatched</td></tr>
+  <tr><td><code>apps/dsa-web/src/pages/WatchlistPage.tsx</code></td><td><span class="tag new">新</span></td><td>完整自选股管理页（见第 5 节）</td></tr>
+  <tr><td><code>apps/dsa-web/src/components/layout/SidebarNav.tsx</code></td><td><span class="tag mod">改</span></td><td>新增"自选股"导航项（Star 图标，位于"持仓"之后）</td></tr>
+  <tr><td><code>apps/dsa-web/src/App.tsx</code></td><td><span class="tag mod">改</span></td><td>注册 /watchlist 路由</td></tr>
+  <tr><td><code>apps/dsa-web/src/components/history/HistoryListItem.tsx</code></td><td><span class="tag mod">改</span></td><td>新增 isWatched / onToggleWatchlist props，渲染收藏星标按钮</td></tr>
+  <tr><td><code>apps/dsa-web/src/components/history/HistoryList.tsx</code></td><td><span class="tag mod">改</span></td><td>向下传递 watchedCodes / onToggleWatchlist</td></tr>
+  <tr><td><code>apps/dsa-web/src/pages/HomePage.tsx</code></td><td><span class="tag mod">改</span></td><td>加载自选股集合，提供 handleToggleWatchlist 回调</td></tr>
+  <tr><td><code>apps/dsa-web/src/pages/SentinelPage.tsx</code></td><td><span class="tag mod">改</span></td><td>移除临时 WatchedStocksSection（已迁移至专属页面）</td></tr>
+</table>
+
+<h2>5. REST API</h2>
+<table>
+  <tr><th>方法</th><th>路径</th><th>描述</th></tr>
+  <tr><td>GET</td><td><code>/api/v1/watchlist</code></td><td>返回全部自选股，按 added_at 降序</td></tr>
+  <tr><td>POST</td><td><code>/api/v1/watchlist</code></td><td>添加/更新一只股票 <code>{code, name?, notes?}</code>，同步 Sentinel</td></tr>
+  <tr><td>DELETE</td><td><code>/api/v1/watchlist/{code}</code></td><td>移除股票，同步 Sentinel</td></tr>
+  <tr><td>PATCH</td><td><code>/api/v1/watchlist/{code}</code></td><td>更新 name/notes</td></tr>
+  <tr><td>POST</td><td><code>/api/v1/watchlist/analyze</code></td><td>批量触发分析 <code>{codes?: list}</code>，空 = 全部。返回 <code>{submitted, codes}</code></td></tr>
+</table>
+
+<h2>6. Sentinel 同步机制</h2>
+<p>
+  每次自选股写操作（add / remove）结束后，<code>WatchlistService.sync_to_sentinel()</code>
+  会将完整列表 upsert 到 Sentinel 的 <code>watched_stocks</code> 表。
+  Sentinel 每轮周期会对 <code>watched_stocks</code> 中的每只股票定向抓取 Google News RSS
+  及 StockAnalysis / Finviz HTML 新闻（美股）。
+</p>
+<div class="callout warn">
+  同步为本进程直接写 DB，Sentinel 需共享同一 SQLite 文件（Docker volume 挂载）。
+  若 Sentinel 未启用（<code>SENTINEL_ENABLED=false</code>），同步调用会被 try/except 静默跳过，不影响主流程。
+</div>
+
+<h2>7. Web UI 交互流</h2>
+
+<details open>
+  <summary>自选股页面（/watchlist）</summary>
+  <ul>
+    <li><strong>添加股票</strong>：输入框 + "添加" → POST /watchlist → 刷新列表 → 后台触发 Sentinel 即时抓取</li>
+    <li><strong>分析单只</strong>：行内"分析"按钮 → POST /watchlist/analyze 仅含该 code</li>
+    <li><strong>批量分析</strong>：勾选 checkbox → "分析选中 (N)" → POST /watchlist/analyze 含选中 codes</li>
+    <li><strong>分析全部</strong>：页头"分析全部" → POST /watchlist/analyze 无 codes（后端取全部）</li>
+    <li><strong>移除</strong>：行内删除按钮 → DELETE /watchlist/{code} → 刷新</li>
+  </ul>
+</details>
+
+<details>
+  <summary>分析历史 ⭐ 收藏（HomePage）</summary>
+  <ul>
+    <li>页面加载时 GET /watchlist 取 <code>watchedCodes: Set&lt;string&gt;</code></li>
+    <li>每条历史记录右侧显示 Star 图标：已收藏填充金色，未收藏空心灰色</li>
+    <li>点击 → 切换（POST or DELETE /watchlist/{code}）→ 乐观更新本地集合</li>
+  </ul>
+</details>
+
+<h2>8. 边界条件与注意事项</h2>
+<ul>
+  <li><code>code</code> 主键大小写敏感（SQLite 默认）— 写入路径统一 <code>.upper()</code> 规范化。</li>
+  <li>分析任务通过任务队列异步提交（202），自选股页面仅展示"已提交 N 个任务"，不等待结果。</li>
+  <li><code>last_analyzed_at</code> 当前由后端在 <code>/analyze</code> 端点提交时更新；
+      分析完成事件尚无回调写入，可作后续优化。</li>
+  <li>自选股列表与持仓（Portfolio）相互独立，用途不同，不合并。</li>
+</ul>
+
+<h2>9. 未来扩展点</h2>
+<ul>
+  <li>分组标签（板块、策略）</li>
+  <li>价格提醒 / 目标价设定</li>
+  <li>定时自动分析（cron 触发全部自选股）</li>
+  <li>从扫股结果一键加入自选</li>
+</ul>
+
+</body>
+</html>

@@ -7,6 +7,7 @@ const categoryTitleMap: Record<SystemConfigCategory, string> = {
   notification: '通知渠道',
   system: '系统设置',
   agent: 'Agent 设置',
+  sentinel: '情报中心',
   backtest: '回测配置',
   uncategorized: '其他',
 };
@@ -18,6 +19,7 @@ const categoryDescriptionMap: Partial<Record<SystemConfigCategory, string>> = {
   notification: '管理机器人、Webhook 和消息推送配置。',
   system: '管理调度、日志、端口等系统级参数。',
   agent: '管理 Agent 模式、策略与多 Agent 编排配置。',
+  sentinel: '管理新闻爬虫调度、LLM 分类模型与优先级规则。',
   backtest: '管理回测开关、评估窗口和引擎参数。',
   uncategorized: '其他未归类的配置项。',
 };
@@ -91,6 +93,15 @@ const fieldTitleMap: Record<string, string> = {
   BACKTEST_MIN_AGE_DAYS: '回测最小历史天数',
   BACKTEST_ENGINE_VERSION: '回测引擎版本',
   BACKTEST_NEUTRAL_BAND_PCT: '回测中性区间阈值（%）',
+  SENTINEL_ENABLED: '启用情报中心',
+  SENTINEL_LLM_MODEL: '情报中心 LLM 模型',
+  SENTINEL_CYCLE_INTERVAL_MINUTES: '抓取周期（分钟）',
+  SENTINEL_ANALYSIS_INTERVAL_HOURS: '分析周期（小时）',
+  SENTINEL_MAX_CACHE_AGE_HOURS: '缓存最大时效（小时）',
+  SENTINEL_LLM_BATCH_SIZE: 'LLM 分类批次大小',
+  SENTINEL_ENABLED_SPIDERS: '启用的爬虫列表',
+  SENTINEL_TRADING_HOURS_BOOST: '交易时段优先级加成',
+  SENTINEL_WATCHED_STOCKS_BOOST: '自选股优先级加成',
 };
 
 const fieldDescriptionMap: Record<string, string> = {

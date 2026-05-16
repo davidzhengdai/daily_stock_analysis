@@ -205,7 +205,7 @@ volumes:
   sentinel_data:</code></pre>
 
 <div class="tip">
-  <strong>提示：</strong>若主服务（<code>server.py</code>）和 <code>server_sentinel.py</code> 需共享 SQLite 数据库，请确保两者挂载同一目录，并将 <code>SENTINEL_DB_PATH</code> 设置为一致路径。SQLite WAL 模式下两个进程可以并发读写。
+  <strong>提示：</strong>推荐让主服务通过 <code>SENTINEL_SERVER_URL=http://sentinel:9100</code> 访问 Sentinel HTTP API。SQLite 共享目录仅作为本地部署或 HTTP 不可用时的回退路径；若仍需共享 SQLite，请确保两者挂载同一目录，并将 <code>SENTINEL_DB_PATH</code> 设置为一致路径。
 </div>
 
 <!-- ═══════════════════════════════════════════ -->
@@ -215,6 +215,7 @@ volumes:
   <tr><th>变量</th><th>默认值</th><th>说明</th></tr>
   <tr><td><code>SENTINEL_ENABLED</code></td><td><code>false</code></td><td>主开关；false 时所有 Sentinel 组件静默，不影响主流程</td></tr>
   <tr><td><code>SENTINEL_DB_PATH</code></td><td><code>data/sentinel.db</code></td><td>SQLite 数据库路径，支持绝对路径</td></tr>
+  <tr><td><code>SENTINEL_SERVER_URL</code></td><td>（空）</td><td>主服务访问 Sentinel HTTP 服务的 base URL；Docker Compose 中为 <code>http://sentinel:9100</code>，为空则直接读取本地 SQLite</td></tr>
   <tr><td><code>SENTINEL_SERVER_PORT</code></td><td><code>9100</code></td><td><code>server_sentinel.py</code> 内置 HTTP 服务监听端口</td></tr>
   <tr><td><code>SENTINEL_RSSHUB_BASE_URL</code></td><td><code>http://localhost:1200</code></td><td>本地 RSSHub 实例地址；空则所有 RSSHubSpider 跳过</td></tr>
   <tr><td><code>SENTINEL_RSSHUB_TIMEOUT</code></td><td><code>15</code></td><td>RSSHub 请求超时（秒）</td></tr>
@@ -251,6 +252,26 @@ volumes:
     <td><code>GET /status</code></td>
     <td>配置摘要 + DB 统计 + Spider 列表</td>
     <td>运维快速诊断</td>
+  </tr>
+  <tr>
+    <td><code>GET /news</code> / <code>GET /news/search</code></td>
+    <td>分类新闻列表或全文搜索结果</td>
+    <td>供主服务情报中心和搜索缓存通过 HTTP 读取</td>
+  </tr>
+  <tr>
+    <td><code>GET /stock-news/stream</code></td>
+    <td>NDJSON 事件流：<code>heartbeat</code> / <code>result</code> / <code>error</code></td>
+    <td>供主服务分析单股时请求股票、行业、政策相关情报；Sentinel 缓存未命中时即时抓取，并在抓取期间周期发送 heartbeat</td>
+  </tr>
+  <tr>
+    <td><code>GET /analyses</code></td>
+    <td>宏观综合分析记录</td>
+    <td>供主服务情报中心展示最新分析</td>
+  </tr>
+  <tr>
+    <td><code>GET</code>/<code>PUT /watched-stocks</code> 与 <code>POST /fetch-now</code></td>
+    <td>关注股票列表与单股即时预取结果</td>
+    <td>供主服务注入关注股票并触发即时抓取</td>
   </tr>
 </table>
 

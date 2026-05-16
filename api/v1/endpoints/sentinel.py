@@ -9,7 +9,10 @@ GET /api/v1/sentinel/analyses     — cycle analysis records
 """
 import json
 import logging
+import os
 from typing import Any, Dict, List, Optional
+from urllib import error as urlerror
+from urllib import parse, request
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
@@ -28,6 +31,7 @@ class SentinelStatusResponse(BaseModel):
     total_items: int
     unclassified_count: int
     last_analysis_at: Optional[str] = None
+    watched_stocks_count: int = 0
 
 
 class SentinelNewsItem(BaseModel):
@@ -134,6 +138,45 @@ def _get_store_and_config():
     return cfg, store
 
 
+def _sentinel_server_url() -> str:
+    return os.getenv("SENTINEL_SERVER_URL", "").strip().rstrip("/")
+
+
+def _http_json(
+    path: str,
+    *,
+    query: Optional[dict] = None,
+    method: str = "GET",
+    body: Any = None,
+) -> Optional[Any]:
+    base_url = _sentinel_server_url()
+    if not base_url:
+        return None
+    url = f"{base_url}{path}"
+    if query:
+        url = f"{url}?{parse.urlencode(query)}"
+    data = None
+    headers = {"Accept": "application/json"}
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except (OSError, urlerror.URLError, json.JSONDecodeError) as exc:
+        logger.warning("sentinel HTTP proxy failed for %s: %s", path, exc)
+        return None
+
+
+def _items_payload(payload: Any) -> Optional[list]:
+    if isinstance(payload, dict) and isinstance(payload.get("items"), list):
+        return payload["items"]
+    if isinstance(payload, list):
+        return payload
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -144,6 +187,16 @@ def _get_store_and_config():
     summary="Sentinel status & DB stats",
 )
 def get_status() -> SentinelStatusResponse:
+    payload = _http_json("/status")
+    if isinstance(payload, dict):
+        return SentinelStatusResponse(
+            enabled=bool(payload.get("enabled", False)),
+            db_path=str(payload.get("db_path") or ""),
+            total_items=int(payload.get("total_items") or 0),
+            unclassified_count=int(payload.get("unclassified_count") or 0),
+            last_analysis_at=payload.get("last_analysis_at"),
+            watched_stocks_count=int(payload.get("watched_stocks_count") or 0),
+        )
     try:
         cfg, store = _get_store_and_config()
         return SentinelStatusResponse(
@@ -152,6 +205,7 @@ def get_status() -> SentinelStatusResponse:
             total_items=store.count(),
             unclassified_count=store.count_unclassified(),
             last_analysis_at=store.get_last_cycle_analysis_at(),
+            watched_stocks_count=len(store.get_watched_stocks()),
         )
     except Exception as exc:
         logger.warning("sentinel /status error: %s", exc)
@@ -174,6 +228,13 @@ def get_news(
     priority_min: int = Query(default=3, ge=1, le=5, description="Minimum priority level"),
     limit: int = Query(default=50, ge=1, le=200, description="Max items to return"),
 ) -> List[SentinelNewsItem]:
+    payload = _http_json(
+        "/news",
+        query={"hours": hours, "priority_min": priority_min, "limit": limit},
+    )
+    items = _items_payload(payload)
+    if items is not None:
+        return [SentinelNewsItem(**item) for item in items if isinstance(item, dict)]
     try:
         _, store = _get_store_and_config()
         rows = store.get_recent_classified(hours=hours, priority_min=priority_min, limit=limit)
@@ -192,6 +253,10 @@ def search_news(
     q: str = Query(..., description="Full-text search query"),
     limit: int = Query(default=20, ge=1, le=100, description="Max items to return"),
 ) -> List[SentinelNewsItem]:
+    payload = _http_json("/news/search", query={"q": q, "limit": limit})
+    items = _items_payload(payload)
+    if items is not None:
+        return [SentinelNewsItem(**item) for item in items if isinstance(item, dict)]
     try:
         _, store = _get_store_and_config()
         rows = store.search_fts(q, limit=limit)
@@ -209,6 +274,10 @@ def search_news(
 def get_analyses(
     limit: int = Query(default=10, ge=1, le=50, description="Max items to return"),
 ) -> List[SentinelAnalysisItem]:
+    payload = _http_json("/analyses", query={"limit": limit})
+    items = _items_payload(payload)
+    if items is not None:
+        return [SentinelAnalysisItem(**item) for item in items if isinstance(item, dict)]
     try:
         _, store = _get_store_and_config()
         rows = store.get_cycle_analyses(limit=limit)
@@ -220,6 +289,10 @@ def get_analyses(
 
 @router.get("/watched-stocks", response_model=List[dict], summary="List current watched stocks")
 def get_watched_stocks() -> List[dict]:
+    payload = _http_json("/watched-stocks")
+    items = _items_payload(payload)
+    if items is not None:
+        return [item for item in items if isinstance(item, dict)]
     try:
         _, store = _get_store_and_config()
         return store.get_watched_stocks()
@@ -233,6 +306,14 @@ def set_watched_stocks(
     stocks: List[WatchedStockItem],
     merge: bool = Query(default=False, description="If true, append to existing list instead of replacing"),
 ) -> dict:
+    payload = _http_json(
+        "/watched-stocks",
+        query={"merge": str(merge).lower()},
+        method="PUT",
+        body=[s.dict() for s in stocks],
+    )
+    if isinstance(payload, dict):
+        return payload
     try:
         _, store = _get_store_and_config()
         data = [{"code": s.code.strip(), "name": s.name.strip()} for s in stocks if s.code.strip()]
@@ -262,6 +343,9 @@ def fetch_now(item: FetchNowItem) -> dict:
     name = item.name.strip()
     if not code:
         return {"code": "", "fetched": 0, "new": 0, "classified": 0, "error": "code is required"}
+    payload = _http_json("/fetch-now", method="POST", body={"code": code, "name": name})
+    if isinstance(payload, dict):
+        return payload
     try:
         cfg, store = _get_store_and_config()
         from src.services.sentinel.spiders.watched_stocks import WatchedStocksNewsSpider

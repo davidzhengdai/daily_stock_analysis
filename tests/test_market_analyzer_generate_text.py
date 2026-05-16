@@ -484,9 +484,9 @@ class TestAnalyzerGenerateText:
         """When all models return non-JSON, analyze() must still run integrity
         checks, placeholder fill, and persist_llm_usage — no early return.
 
-        With report_integrity_retry=1, the retry loop runs once (re-prompting
-        with complement instructions); when that also yields invalid JSON the
-        exhausted-retries path fires placeholder fill.
+        Dashboard-only misses are placeholder-filled without another LLM call,
+        so invalid text fallback still goes through post-processing without
+        paying for an expensive retry.
         """
         from src.analyzer import AnalysisResult, _AllModelsFailedError
 
@@ -541,11 +541,11 @@ class TestAnalyzerGenerateText:
                 news_context="some news",
             )
 
-        # _call_litellm called twice: initial + 1 retry
-        assert mock_call.call_count == 2
+        # _call_litellm called once; dashboard-only integrity gaps are local fill.
+        assert mock_call.call_count == 1
 
-        # _parse_response called twice (initial + retry)
-        assert mock_parse.call_count == 2
+        # _parse_response called once for the initial text fallback.
+        assert mock_parse.call_count == 1
         mock_parse.assert_called_with("这不是 JSON，而是纯文本分析结果", "600519", "贵州茅台")
 
         # Placeholder fill was applied after retry exhaustion
@@ -565,9 +565,9 @@ class TestAnalyzerGenerateText:
         assert result.code == "600519"
         assert result.search_performed is True
 
-    def test_integrity_retry_invalid_json_keeps_previous_valid_result(self):
-        """A bad integrity retry should not discard the first valid parsed report."""
-        from src.analyzer import AnalysisResult, _AllModelsFailedError
+    def test_dashboard_integrity_gap_uses_placeholder_without_retry(self):
+        """Dashboard-only integrity gaps should not trigger another LLM call."""
+        from src.analyzer import AnalysisResult
 
         analyzer = self._make_analyzer()
         analyzer._config_override = SimpleNamespace(
@@ -590,12 +590,6 @@ class TestAnalyzerGenerateText:
             analysis_summary="首轮 JSON 可解析",
             success=True,
         )
-        retry_error = _AllModelsFailedError(
-            "all failed",
-            last_response_text="### System:\n补全提示片段",
-            last_model="provider/primary-model",
-            last_usage={"prompt_tokens": 20, "completion_tokens": 5, "total_tokens": 25},
-        )
 
         with patch.object(analyzer, "is_available", return_value=True), \
              patch.object(analyzer, "_get_analysis_system_prompt", return_value="system"), \
@@ -603,15 +597,12 @@ class TestAnalyzerGenerateText:
              patch.object(
                  analyzer,
                  "_call_litellm",
-                 side_effect=[
-                     ("{\"analysis_summary\":\"ok\"}", "provider/primary-model", {"prompt_tokens": 10}),
-                     retry_error,
-                 ],
-             ), \
+                 return_value=("{\"analysis_summary\":\"ok\"}", "provider/primary-model", {"prompt_tokens": 10}),
+             ) as mock_call, \
              patch.object(analyzer, "_parse_response", return_value=first_result) as mock_parse, \
              patch.object(analyzer, "_build_market_snapshot", return_value={}), \
              patch.object(analyzer, "_check_content_integrity", return_value=(False, ["dashboard.core_conclusion.one_sentence"])), \
-             patch.object(analyzer, "_build_integrity_retry_prompt", return_value="retry prompt"), \
+             patch.object(analyzer, "_build_integrity_retry_prompt", return_value="retry prompt") as mock_retry_prompt, \
              patch.object(analyzer, "_apply_placeholder_fill") as mock_fill, \
              patch("src.analyzer.persist_llm_usage"):
 
@@ -621,6 +612,8 @@ class TestAnalyzerGenerateText:
             )
 
         assert mock_parse.call_count == 1
+        assert mock_call.call_count == 1
+        mock_retry_prompt.assert_not_called()
         mock_fill.assert_called_once_with(first_result, ["dashboard.core_conclusion.one_sentence"])
         assert result.success is True
         assert result.analysis_summary == "首轮 JSON 可解析"

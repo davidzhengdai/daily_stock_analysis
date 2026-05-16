@@ -4,6 +4,20 @@ export interface SentinelStatus {
   totalItems: number;
   unclassifiedCount: number;
   lastAnalysisAt: string | null;
+  watchedStocksCount: number;
+}
+
+export interface WatchedStockItem {
+  code: string;
+  name: string;
+}
+
+export interface FetchNowResult {
+  code: string;
+  fetched: number;
+  new: number;
+  classified: number;
+  error?: string;
 }
 
 export interface SentinelNewsItem {
