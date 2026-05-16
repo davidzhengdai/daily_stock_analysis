@@ -618,7 +618,7 @@ const AutoTradeTab: React.FC<{
           <button
             type="button"
             onClick={() => void handleRunNow()}
-            disabled={running || noWatchlist}
+            disabled={running || noWatchlist || !account.auto_trade_enabled}
             className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm hover:bg-hover disabled:opacity-40"
           >
             <Play className="h-3.5 w-3.5" />
