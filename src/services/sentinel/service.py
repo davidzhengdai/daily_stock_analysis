@@ -83,6 +83,11 @@ class SentinelService:
         self._config = config or SentinelConfig.from_env()
         self._store = store or NewsStore(self._config.db_path)
         self._spiders = spiders if spiders is not None else _build_default_spiders(self._config)
+        # Watched-stocks spider: store-aware, added after store init
+        from .spiders.watched_stocks import WatchedStocksNewsSpider
+        _ws = WatchedStocksNewsSpider(self._store)
+        if _ws.is_enabled(self._config) and spiders is None:
+            self._spiders.append(_ws)
         self._classifier = classifier if classifier is not None else LLMClassifier(self._config)
         self._purger = TTLPurger(self._store)
         self._comprehensive = comprehensive if comprehensive is not None else ComprehensiveAnalyzer(self._config)
@@ -207,12 +212,17 @@ class SentinelService:
 
         return summary
 
+    def update_watched_stocks(self, stocks: List[dict]) -> int:
+        """Replace the watched stocks list. Returns count stored."""
+        return self._store.upsert_watched_stocks(stocks)
+
     def status(self) -> dict:
         return {
             "enabled_spiders": [s.name for s in self._spiders],
             "total_items": self._store.count(),
             "items_by_spider": self._store.count_by_spider(),
             "metrics": self._metrics.summary(db_path=self._config.db_path),
+            "watched_stocks_count": len(self._store.get_watched_stocks()),
         }
 
 
