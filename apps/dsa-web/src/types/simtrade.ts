@@ -138,12 +138,19 @@ export interface AutoRunResult {
   skipped_reason: string | null;
 }
 
+export interface MarketStatus {
+  cn_open: boolean;
+  us_open: boolean;
+  market_hours_only: boolean;
+}
+
 export interface AutoTradeStatus {
   auto_trade_enabled: boolean;
   account_status: string;
   scheduler_running: boolean;
   watchlist_count: number;
   last_run: AutoRunResult | null;
+  market_status?: MarketStatus;
 }
 
 export interface RunJob {

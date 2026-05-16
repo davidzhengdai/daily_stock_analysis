@@ -305,6 +305,7 @@ def auto_trade_status():
             "scheduler_running": auto_svc.is_running(),
             "watchlist_count": watchlist_count,
             "last_run": auto_svc.get_last_run_result(),
+            "market_status": auto_svc.get_market_status(),
         }
     except Exception as exc:
         raise _err("获取自动交易状态失败", exc)
