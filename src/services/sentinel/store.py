@@ -280,6 +280,23 @@ class NewsStore:
             finally:
                 con.close()
 
+    def get_latest_spider_run_time(self) -> Optional[datetime]:
+        """Return the most recent successful spider run finish time, or None."""
+        with self._lock:
+            con = self._connect()
+            try:
+                row = con.execute(
+                    "SELECT MAX(finished_at) FROM spider_runs WHERE status='ok'"
+                ).fetchone()
+                if row and row[0]:
+                    ts = str(row[0]).replace("Z", "+00:00")
+                    return datetime.fromisoformat(ts)
+                return None
+            except sqlite3.Error:
+                return None
+            finally:
+                con.close()
+
     def count(self) -> int:
         with self._lock:
             con = self._connect()

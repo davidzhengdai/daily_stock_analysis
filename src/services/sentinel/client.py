@@ -43,13 +43,35 @@ class SentinelCacheClient:
     # ── public API ────────────────────────────────────────────────────────────
 
     def is_available(self, min_items: int = 10) -> bool:
-        """Return True when sentinel is enabled and the cache has enough data."""
+        """Return True when sentinel is enabled, cache has data, and data is fresh.
+
+        Freshness is checked against the most recent successful spider run recorded
+        in spider_runs. If the sentinel Docker has stopped scraping, this will
+        return False after max_cache_age_hours, causing SearchService to fall back
+        to online search providers.
+        """
         try:
             cfg = self._get_config()
             if not cfg.enabled:
                 return False
             store = self._get_store()
-            return store.count() >= min_items
+            if store.count() < min_items:
+                return False
+            # Freshness check: bail out if no successful spider run within the window
+            if cfg.max_cache_age_hours > 0:
+                from datetime import datetime, timezone, timedelta
+                latest = store.get_latest_spider_run_time()
+                if latest is None:
+                    return False  # no successful run ever recorded
+                age = datetime.now(timezone.utc) - latest
+                if age > timedelta(hours=cfg.max_cache_age_hours):
+                    logger.info(
+                        "[Sentinel] cache is stale (last run %.1fh ago, threshold %dh) — falling back",
+                        age.total_seconds() / 3600,
+                        cfg.max_cache_age_hours,
+                    )
+                    return False
+            return True
         except Exception as exc:
             logger.debug("SentinelCacheClient.is_available: %s", exc)
             return False

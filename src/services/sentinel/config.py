@@ -22,6 +22,7 @@ class SentinelConfig:
     enabled_spiders: str = "all"
     trading_hours_boost: bool = True
     watched_stocks_boost: bool = True
+    max_cache_age_hours: int = 4  # treat cache as stale if no successful spider run within this window
 
     @classmethod
     def from_env(cls) -> "SentinelConfig":
@@ -61,4 +62,5 @@ class SentinelConfig:
             enabled_spiders=os.getenv("SENTINEL_ENABLED_SPIDERS", "all"),
             trading_hours_boost=_bool("SENTINEL_TRADING_HOURS_BOOST", True),
             watched_stocks_boost=_bool("SENTINEL_WATCHED_STOCKS_BOOST", True),
+            max_cache_age_hours=_int("SENTINEL_MAX_CACHE_AGE_HOURS", 4),
         )
