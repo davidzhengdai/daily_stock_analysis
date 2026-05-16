@@ -73,6 +73,14 @@ services:
     # 若使用 network_mode: host，则以下 ports 映射无效，端口由 command 中的 --port 指定
     ports:
       - "${API_PORT:-8000}:${API_PORT:-8000}"
+    environment:
+      - TZ=Asia/Shanghai
+      - LITELLM_CONFIG=/app/litellm_config.yaml
+      - WEBUI_HOST=0.0.0.0
+      # 允许 server 读取 sentinel DB（sentinel Docker 负责写入，server 只读）
+      # .env 中的 SENTINEL_ENABLED=false 会被此处覆盖，仅影响读取行为
+      - SENTINEL_ENABLED=true
+      - SENTINEL_DB_PATH=/app/data/sentinel.db
 
   # RSSHub — 为没有原生 RSS 的中国财经网站合成 RSS 源
   # 财联社、证券时报、新浪财经、东方财富等均走此服务
