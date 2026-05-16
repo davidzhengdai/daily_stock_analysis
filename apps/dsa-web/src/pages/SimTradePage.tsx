@@ -521,8 +521,16 @@ const AutoTradeTab: React.FC<{
 
   const handleToggle = async () => {
     setToggling(true);
+    const turningOff = account.auto_trade_enabled;
     try {
       await api.toggleAutoTrade(!account.auto_trade_enabled);
+      if (turningOff) {
+        if (pollRef.current !== null) {
+          clearInterval(pollRef.current);
+          pollRef.current = null;
+        }
+        setRunning(false);
+      }
       onRefresh();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : '操作失败');
