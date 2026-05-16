@@ -1,6 +1,12 @@
 import apiClient from './index';
 import { toCamelCase } from './utils';
-import type { SentinelStatus, SentinelNewsItem, SentinelAnalysisItem } from '../types/sentinel';
+import type {
+  SentinelStatus,
+  SentinelNewsItem,
+  SentinelAnalysisItem,
+  WatchedStockItem,
+  FetchNowResult,
+} from '../types/sentinel';
 
 export const sentinelApi = {
   getStatus: async (): Promise<SentinelStatus> => {
@@ -33,5 +39,21 @@ export const sentinelApi = {
       params: { limit },
     });
     return toCamelCase<SentinelAnalysisItem[]>(res.data);
+  },
+
+  getWatchedStocks: async (): Promise<WatchedStockItem[]> => {
+    const res = await apiClient.get<WatchedStockItem[]>('/api/v1/sentinel/watched-stocks');
+    return Array.isArray(res.data) ? res.data : [];
+  },
+
+  setWatchedStocks: async (stocks: WatchedStockItem[], merge = false): Promise<void> => {
+    await apiClient.put('/api/v1/sentinel/watched-stocks', stocks, {
+      params: { merge },
+    });
+  },
+
+  fetchNow: async (code: string, name = ''): Promise<FetchNowResult> => {
+    const res = await apiClient.post<FetchNowResult>('/api/v1/sentinel/fetch-now', { code, name });
+    return res.data;
   },
 };

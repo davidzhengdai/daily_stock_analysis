@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 class SentinelConfig:
     enabled: bool = False
     db_path: str = "data/sentinel.db"
+    server_url: str = ""
     rsshub_base_url: str = "http://localhost:1200"
     rsshub_timeout: int = 15
     cycle_interval_minutes: int = 30
@@ -23,6 +24,7 @@ class SentinelConfig:
     trading_hours_boost: bool = True
     watched_stocks_boost: bool = True
     max_cache_age_hours: int = 4  # treat cache as stale if no successful spider run within this window
+    llm_model: str = ""  # override model for LLM classifier; empty → inherit global LITELLM_MODEL
 
     @classmethod
     def from_env(cls) -> "SentinelConfig":
@@ -47,6 +49,7 @@ class SentinelConfig:
         return cls(
             enabled=_bool("SENTINEL_ENABLED", False),
             db_path=os.getenv("SENTINEL_DB_PATH", "data/sentinel.db"),
+            server_url=os.getenv("SENTINEL_SERVER_URL", "").strip().rstrip("/"),
             rsshub_base_url=os.getenv("SENTINEL_RSSHUB_BASE_URL", "http://localhost:1200").rstrip("/"),
             rsshub_timeout=_int("SENTINEL_RSSHUB_TIMEOUT", 15),
             cycle_interval_minutes=_int("SENTINEL_CYCLE_INTERVAL_MINUTES", 30),
@@ -63,4 +66,5 @@ class SentinelConfig:
             trading_hours_boost=_bool("SENTINEL_TRADING_HOURS_BOOST", True),
             watched_stocks_boost=_bool("SENTINEL_WATCHED_STOCKS_BOOST", True),
             max_cache_age_hours=_int("SENTINEL_MAX_CACHE_AGE_HOURS", 4),
+            llm_model=os.getenv("SENTINEL_LLM_MODEL", "").strip(),
         )

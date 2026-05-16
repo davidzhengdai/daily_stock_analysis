@@ -25,6 +25,7 @@ from api.v1.endpoints import (
     stocks,
     system_config,
     usage,
+    watchlist,
 )
 
 # 创建 v1 版本主路由
@@ -91,6 +92,18 @@ router.include_router(
 )
 
 router.include_router(
+    watchlist.router,
+    prefix="/watchlist",
+    tags=["Watchlist"]
+)
+
+router.include_router(
+    sentinel.router,
+    prefix="/sentinel",
+    tags=["Sentinel"]
+)
+
+router.include_router(
     scanner.router,
     prefix="/scanner",
     tags=["Scanner"]
@@ -100,10 +113,4 @@ router.include_router(
     gold_digger.router,
     prefix="/gold-digger",
     tags=["GoldDigger"]
-)
-
-router.include_router(
-    sentinel.router,
-    prefix="/sentinel",
-    tags=["Sentinel"]
 )

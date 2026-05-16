@@ -119,7 +119,9 @@ fi
 echo ""
 echo "  Server API     : http://localhost:${API_PORT}/docs"
 if [[ "${WITH_SENTINEL}" == "true" ]]; then
-  echo "  Sentinel health: curl http://localhost:${RSSHUB_PORT}/healthz   (rsshub)"
+  echo "  RSSHub          : http://localhost:${RSSHUB_PORT}"
+  echo "  Sentinel health: curl http://localhost:${SENTINEL_SERVER_PORT}/healthz"
+  echo "  Sentinel metrics: curl http://localhost:${SENTINEL_SERVER_PORT}/metrics"
   echo "  Sentinel status: curl http://localhost:${API_PORT}/api/v1/sentinel/status"
 fi
 echo ""

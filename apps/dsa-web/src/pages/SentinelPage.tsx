@@ -93,6 +93,10 @@ const StatusCard: React.FC<{ status: SentinelStatus }> = ({ status }) => (
       <p className="font-mono font-bold text-warning">{status.unclassifiedCount.toLocaleString()}</p>
     </div>
     <div className="text-center">
+      <p className="text-xs text-muted-text">关注股票</p>
+      <p className="font-mono font-bold text-cyan">{status.watchedStocksCount}</p>
+    </div>
+    <div className="text-center">
       <p className="text-xs text-muted-text">上次综合分析</p>
       <p className="text-sm text-foreground">{formatTimestamp(status.lastAnalysisAt)}</p>
     </div>

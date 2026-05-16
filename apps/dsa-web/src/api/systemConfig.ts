@@ -190,6 +190,15 @@ export const systemConfigApi = {
     return toCamelCase<TestNotificationChannelResponse>(response.data);
   },
 
+  async getLiteLLMYamlModels(): Promise<string[]> {
+    try {
+      const response = await apiClient.get<{ models: string[] }>('/api/v1/system/config/llm/yaml-models');
+      return Array.isArray(response.data?.models) ? response.data.models : [];
+    } catch {
+      return [];
+    }
+  },
+
   async discoverLLMChannelModels(
     payload: DiscoverLLMChannelModelsRequest,
   ): Promise<DiscoverLLMChannelModelsResponse> {

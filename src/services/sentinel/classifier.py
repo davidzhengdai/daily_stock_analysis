@@ -70,7 +70,14 @@ class LLMClassifier:
     def _get_analyzer(self) -> Any:
         if self._analyzer is None:
             from src.analyzer import GeminiAnalyzer
-            self._analyzer = GeminiAnalyzer()
+            override_model = self._config.llm_model
+            if override_model:
+                import dataclasses
+                from src.config import get_config
+                custom_config = dataclasses.replace(get_config(), litellm_model=override_model)
+                self._analyzer = GeminiAnalyzer(config=custom_config)
+            else:
+                self._analyzer = GeminiAnalyzer()
         return self._analyzer
 
     # ── public API ────────────────────────────────────────────────────────────
@@ -128,6 +135,8 @@ class LLMClassifier:
         # Re-align by idx; fall back to positional if idx is missing
         result: List[dict] = [{} for _ in rows]
         for item in parsed:
+            if not isinstance(item, dict):
+                continue
             idx = item.get("idx")
             if isinstance(idx, int) and 0 <= idx < len(rows):
                 result[idx] = item
