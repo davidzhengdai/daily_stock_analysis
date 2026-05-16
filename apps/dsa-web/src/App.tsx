@@ -12,6 +12,7 @@ import WatchlistPage from './pages/WatchlistPage';
 import ScannerPage from './pages/ScannerPage';
 import GoldDiggerPage from './pages/GoldDiggerPage';
 import SentinelPage from './pages/SentinelPage';
+import SimTradePage from './pages/SimTradePage';
 import { ApiErrorAlert, Shell } from './components/common';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { useAgentChatStore } from './stores/agentChatStore';
@@ -72,6 +73,7 @@ const AppContent: React.FC = () => {
         <Route path="/scanner" element={<ScannerPage />} />
         <Route path="/gold-digger" element={<GoldDiggerPage />} />
         <Route path="/sentinel" element={<SentinelPage />} />
+        <Route path="/sim-trade" element={<SimTradePage />} />
         <Route path="/backtest" element={<BacktestPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />

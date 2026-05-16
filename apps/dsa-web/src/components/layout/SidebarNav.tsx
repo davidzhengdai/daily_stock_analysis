@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { BarChart3, BriefcaseBusiness, Gem, Home, LogOut, MessageSquareQuote, Newspaper, Scan, Settings2, Star } from 'lucide-react';
+import { BarChart3, BriefcaseBusiness, Gem, Home, LogOut, MessageSquareQuote, Newspaper, Scan, Settings2, Star, TrendingUp } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAgentChatStore } from '../../stores/agentChatStore';
@@ -28,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'chat', label: '问股', to: '/chat', icon: MessageSquareQuote, badge: 'completion' },
   { key: 'portfolio', label: '持仓', to: '/portfolio', icon: BriefcaseBusiness },
   { key: 'watchlist', label: '自选股', to: '/watchlist', icon: Star },
+  { key: 'sim-trade', label: '模拟交易', to: '/sim-trade', icon: TrendingUp },
   { key: 'scanner', label: '扫股', to: '/scanner', icon: Scan },
   { key: 'gold-digger', label: '沙里淘金', to: '/gold-digger', icon: Gem },
   { key: 'sentinel', label: '情报中心', to: '/sentinel', icon: Newspaper },

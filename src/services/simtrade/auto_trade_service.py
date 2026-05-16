@@ -1,0 +1,220 @@
+# -*- coding: utf-8 -*-
+"""
+===================================
+AI 自动交易调度服务
+===================================
+
+职责：
+1. 后台线程周期触发自动交易循环
+2. 每轮：为自选股生成信号 → 执行信号 → 止损/止盈检查 → 日快照
+3. 最大回撤保护：超阈值自动暂停
+4. 支持手动触发单次循环（用于 API 即时调用）
+"""
+
+import logging
+import os
+import threading
+import time
+from datetime import datetime, date
+from typing import Any, Dict, List, Optional
+
+from src.repositories.simtrade_repo import SimTradeRepo
+from src.services.simtrade.signal_service import SignalService
+from src.services.simtrade.order_service import OrderService
+
+logger = logging.getLogger(__name__)
+
+_DEFAULT_INTERVAL_MINUTES = 30
+
+
+class AutoTradeService:
+    """AI 自动交易调度服务（单例）。"""
+
+    _instance: Optional['AutoTradeService'] = None
+    _lock: threading.Lock = threading.Lock()
+
+    def __init__(self):
+        self.repo = SimTradeRepo()
+        self.signal_svc = SignalService(repo=self.repo)
+        self.order_svc = OrderService(repo=self.repo)
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._interval_seconds = int(
+            os.getenv('SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES', str(_DEFAULT_INTERVAL_MINUTES))
+        ) * 60
+        self._last_run_result: Dict[str, Any] = {}
+
+    @classmethod
+    def get_instance(cls) -> 'AutoTradeService':
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls()
+            return cls._instance
+
+    # -------------------------------------------------------
+    # 调度器管理
+    # -------------------------------------------------------
+
+    def start(self) -> None:
+        """启动后台调度线程（幂等）。"""
+        if self._thread and self._thread.is_alive():
+            return
+        self._stop_event.clear()
+        self._thread = threading.Thread(
+            target=self._scheduler_loop,
+            name='simtrade-auto-trader',
+            daemon=True,
+        )
+        self._thread.start()
+        logger.info("[AutoTrade] 调度线程已启动，间隔 %d 分钟", self._interval_seconds // 60)
+
+    def stop(self) -> None:
+        """停止后台调度线程。"""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+        logger.info("[AutoTrade] 调度线程已停止")
+
+    def _scheduler_loop(self) -> None:
+        while not self._stop_event.is_set():
+            try:
+                acct = self.repo.get_or_create_account()
+                if acct.get('auto_trade_enabled') and acct.get('status') == 'active':
+                    self._run_cycle(acct)
+            except Exception as exc:
+                logger.error("[AutoTrade] 调度循环异常: %s", exc, exc_info=True)
+            self._stop_event.wait(timeout=self._interval_seconds)
+
+    # -------------------------------------------------------
+    # 单次周期
+    # -------------------------------------------------------
+
+    def run_once(self) -> Dict[str, Any]:
+        """手动触发一次自动交易周期（API 调用入口）。"""
+        acct = self.repo.get_or_create_account()
+        return self._run_cycle(acct)
+
+    def _run_cycle(self, acct: Dict[str, Any]) -> Dict[str, Any]:
+        account_id = acct['id']
+        started_at = datetime.now().isoformat()
+        result: Dict[str, Any] = {
+            'started_at': started_at,
+            'account_id': account_id,
+            'signals_generated': 0,
+            'orders_placed': 0,
+            'stop_loss_triggered': [],
+            'errors': [],
+            'skipped_reason': None,
+        }
+
+        # ---- 前置条件检查 ----
+        from src.services.watchlist_service import WatchlistService
+        watchlist = WatchlistService().list_all()
+        if not watchlist:
+            result['skipped_reason'] = '自选股列表为空'
+            logger.info("[AutoTrade] 跳过：自选股列表为空")
+            self._last_run_result = result
+            return result
+
+        # ---- 最大回撤保护 ----
+        snapshots = self.repo.list_snapshots(account_id, limit=1)
+        if snapshots:
+            last_dd = snapshots[-1].get('max_drawdown_pct', 0.0)
+            if last_dd >= acct.get('max_drawdown_pct', 20.0):
+                result['skipped_reason'] = f"最大回撤保护触发 ({last_dd:.1f}% ≥ {acct['max_drawdown_pct']:.1f}%)"
+                self.repo.update_account(account_id, status='paused')
+                logger.warning("[AutoTrade] 最大回撤保护：账户已暂停")
+                self._last_run_result = result
+                return result
+
+        # ---- 生成信号并执行 ----
+        from src.services.simtrade.signal_service import SignalService
+        signal_svc = SignalService(repo=self.repo)
+        order_svc = OrderService(repo=self.repo)
+
+        for item in watchlist:
+            code = item['code']
+            name = item.get('name', '')
+            market = SignalService._infer_market(code)
+            try:
+                signal = signal_svc.generate_signal(code, market, name)
+                result['signals_generated'] += 1
+
+                if signal['signal'] in ('buy', 'sell') and signal.get('suggested_qty', 0):
+                    try:
+                        order = order_svc.place_order(
+                            code=code,
+                            market=market,
+                            side=signal['signal'],
+                            order_type='limit' if signal.get('suggested_price') else 'market',
+                            qty=signal['suggested_qty'],
+                            limit_price=signal.get('suggested_price'),
+                            name=name,
+                            source='auto',
+                            ai_signal_id=signal['id'],
+                            current_price=signal.get('price_at_signal'),
+                        )
+                        # 标记信号已执行
+                        self.repo.update_signal(signal['id'], status='executed', order_id=order['id'])
+                        result['orders_placed'] += 1
+                    except Exception as exc:
+                        self.repo.update_signal(signal['id'], status='rejected')
+                        logger.warning("[AutoTrade] %s 下单失败: %s", code, exc)
+                        result['errors'].append(f"{code}: {exc}")
+                elif signal['signal'] in ('hold', 'skip'):
+                    self.repo.update_signal(signal['id'], status='rejected')
+
+            except Exception as exc:
+                logger.error("[AutoTrade] %s 信号生成失败: %s", code, exc)
+                result['errors'].append(f"{code} signal: {exc}")
+
+        # ---- 挂单撮合 ----
+        try:
+            filled = order_svc.try_fill_pending_orders(account_id)
+            if filled:
+                result['orders_placed'] += filled
+        except Exception as exc:
+            logger.warning("[AutoTrade] 挂单撮合失败: %s", exc)
+
+        # ---- 止损/止盈 ----
+        try:
+            triggered = order_svc.check_stop_loss_take_profit(account_id)
+            result['stop_loss_triggered'] = triggered
+        except Exception as exc:
+            logger.warning("[AutoTrade] 止损/止盈检查失败: %s", exc)
+
+        # ---- 刷新价格 ----
+        try:
+            order_svc.refresh_position_prices(account_id)
+        except Exception as exc:
+            logger.debug("[AutoTrade] 价格刷新失败: %s", exc)
+
+        # ---- 日快照 ----
+        try:
+            order_svc.take_daily_snapshot(account_id)
+        except Exception as exc:
+            logger.warning("[AutoTrade] 日快照失败: %s", exc)
+
+        # ---- 过期信号清理 ----
+        try:
+            self.repo.expire_old_signals(account_id)
+        except Exception:
+            pass
+
+        result['finished_at'] = datetime.now().isoformat()
+        self._last_run_result = result
+        logger.info(
+            "[AutoTrade] 周期完成：信号 %d，委托 %d，止损触发 %s",
+            result['signals_generated'], result['orders_placed'], result['stop_loss_triggered'],
+        )
+        return result
+
+    def get_last_run_result(self) -> Dict[str, Any]:
+        return self._last_run_result
+
+    def is_running(self) -> bool:
+        return self._thread is not None and self._thread.is_alive()
+
+
+def get_auto_trade_service() -> AutoTradeService:
+    return AutoTradeService.get_instance()

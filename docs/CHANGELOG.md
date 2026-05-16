@@ -101,6 +101,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] LLM 模型名规范化：DeepSeek 官方模型名 deepseek-chat / deepseek-reasoner 迁移为 deepseek-v4-flash / deepseek-v4-pro，同步更新 ccr config、orchestrator skill、启动脚本和 litellm_config.yaml。
 - [文档] 新增设计文档 docs/design-per-task-model-routing.html，说明按任务分配模型的架构、数据流、配置项语义、成本估算和回滚方案。
 - [文档] AGENTS.md 新增 AI 对话风格规范：维护者中文交流可幽默（沈腾式），但所有正式产出必须使用标准技术用语。
+- [新功能] 新增模拟交易功能（Simulated Trading）：支持 CNY/USD 双货币入金出金、A 股与美股手动买卖（市价单/限价单）、AI 自动交易（基于自选股 + LLM 信号生成）；当自选股为空时禁止开启自动交易并提示用户；自动交易开启时禁用手动下单；含 AI 信号生成（技术预评分 + LLM 深度分析）、止损/止盈自动触发、最大回撤保护、每日净值快照和权益曲线展示。
+- [新功能] 模拟交易新增 REST API：`/api/v1/sim-trade/` 下 14 个端点，覆盖账户、资金、委托、持仓、AI 信号、自动交易开关与快照历史。
+- [新功能] 模拟交易前端（`/sim-trade` 页）：四标签页（账户概览、手动交易、自动交易、资金管理），侧边栏新增「模拟交易」导航入口（TrendingUp 图标，位于自选股与扫股之间）。
+- [文档] 新增 `docs/design-simulated-trade.html` 模拟交易设计文档，覆盖数据模型、API 契约、AI 信号算法、自动交易调度、佣金规则与前端设计。
 
 ## [3.16.0] - 2026-05-10
 

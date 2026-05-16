@@ -83,6 +83,11 @@ services:
       - SENTINEL_DB_PATH=/app/data/sentinel.db
       - SENTINEL_SERVER_URL=http://sentinel:${SENTINEL_SERVER_PORT:-9100}
 
+      # 模拟交易配置（从 .env 透传；容器内可覆盖）
+      - SIMTRADE_USD_CNY_RATE=${SIMTRADE_USD_CNY_RATE:-7.25}
+      - SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES=${SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES:-30}
+      - SIMTRADE_LLM_MODEL=${SIMTRADE_LLM_MODEL:-deepseek-smart-model}
+
   # RSSHub — 为没有原生 RSS 的中国财经网站合成 RSS 源
   # 财联社、证券时报、新浪财经、东方财富等均走此服务
   # 参考: https://docs.rsshub.app/deploy/

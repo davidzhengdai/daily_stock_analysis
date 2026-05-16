@@ -646,6 +646,282 @@ class Watchlist(Base):
         }
 
 
+class SimulatedAccount(Base):
+    """模拟交易账户。支持多货币资金管理与 AI 自动交易配置。"""
+
+    __tablename__ = 'simulated_accounts'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(64), nullable=False, default='模拟账户')
+    base_currency = Column(String(8), nullable=False, default='CNY')
+    cash_cny = Column(Float, nullable=False, default=0.0)
+    cash_usd = Column(Float, nullable=False, default=0.0)
+    total_deposited_cny = Column(Float, nullable=False, default=0.0)
+    total_deposited_usd = Column(Float, nullable=False, default=0.0)
+    total_withdrawn_cny = Column(Float, nullable=False, default=0.0)
+    total_withdrawn_usd = Column(Float, nullable=False, default=0.0)
+    auto_trade_enabled = Column(Boolean, nullable=False, default=False)
+    auto_trade_mode = Column(String(16), nullable=False, default='conservative')
+    max_position_pct = Column(Float, nullable=False, default=20.0)
+    max_drawdown_pct = Column(Float, nullable=False, default=20.0)
+    stop_loss_pct = Column(Float, nullable=False, default=5.0)
+    take_profit_pct = Column(Float, nullable=False, default=15.0)
+    min_signal_confidence = Column(Float, nullable=False, default=0.65)
+    status = Column(String(16), nullable=False, default='active')
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'name': self.name,
+            'base_currency': self.base_currency,
+            'cash_cny': self.cash_cny,
+            'cash_usd': self.cash_usd,
+            'total_deposited_cny': self.total_deposited_cny,
+            'total_deposited_usd': self.total_deposited_usd,
+            'total_withdrawn_cny': self.total_withdrawn_cny,
+            'total_withdrawn_usd': self.total_withdrawn_usd,
+            'auto_trade_enabled': self.auto_trade_enabled,
+            'auto_trade_mode': self.auto_trade_mode,
+            'max_position_pct': self.max_position_pct,
+            'max_drawdown_pct': self.max_drawdown_pct,
+            'stop_loss_pct': self.stop_loss_pct,
+            'take_profit_pct': self.take_profit_pct,
+            'min_signal_confidence': self.min_signal_confidence,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class SimulatedFundingLedger(Base):
+    """模拟账户资金流水（入金/出金）。"""
+
+    __tablename__ = 'simulated_funding_ledger'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('simulated_accounts.id'), nullable=False, index=True)
+    direction = Column(String(16), nullable=False)  # deposit / withdrawal
+    amount = Column(Float, nullable=False)
+    currency = Column(String(8), nullable=False)  # CNY / USD
+    note = Column(String(255))
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'account_id': self.account_id,
+            'direction': self.direction,
+            'amount': self.amount,
+            'currency': self.currency,
+            'note': self.note,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class SimulatedOrder(Base):
+    """模拟交易委托单，支持限价/市价买卖。"""
+
+    __tablename__ = 'simulated_orders'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('simulated_accounts.id'), nullable=False, index=True)
+    code = Column(String(20), nullable=False, index=True)
+    name = Column(String(100))
+    market = Column(String(8), nullable=False)   # CN / US
+    currency = Column(String(8), nullable=False)  # CNY / USD
+    side = Column(String(8), nullable=False)      # buy / sell
+    order_type = Column(String(8), nullable=False)  # limit / market
+    qty = Column(Integer, nullable=False)
+    limit_price = Column(Float)
+    fill_price = Column(Float)
+    fill_qty = Column(Integer, default=0)
+    commission = Column(Float, default=0.0)
+    status = Column(String(16), default='pending')  # pending/filled/partial/cancelled
+    source = Column(String(16), default='manual')   # manual / auto
+    ai_signal_id = Column(Integer)
+    rejection_reason = Column(String(255))
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    filled_at = Column(DateTime)
+
+    __table_args__ = (
+        Index('ix_simulated_order_account_status', 'account_id', 'status'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'account_id': self.account_id,
+            'code': self.code,
+            'name': self.name,
+            'market': self.market,
+            'currency': self.currency,
+            'side': self.side,
+            'order_type': self.order_type,
+            'qty': self.qty,
+            'limit_price': self.limit_price,
+            'fill_price': self.fill_price,
+            'fill_qty': self.fill_qty,
+            'commission': self.commission,
+            'status': self.status,
+            'source': self.source,
+            'ai_signal_id': self.ai_signal_id,
+            'rejection_reason': self.rejection_reason,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'filled_at': self.filled_at.isoformat() if self.filled_at else None,
+        }
+
+
+class SimulatedPosition(Base):
+    """模拟持仓（每只股票一行）。"""
+
+    __tablename__ = 'simulated_positions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('simulated_accounts.id'), nullable=False, index=True)
+    code = Column(String(20), nullable=False, index=True)
+    name = Column(String(100))
+    market = Column(String(8), nullable=False)   # CN / US
+    currency = Column(String(8), nullable=False)  # CNY / USD
+    qty = Column(Integer, nullable=False, default=0)
+    avg_cost = Column(Float, nullable=False, default=0.0)
+    total_cost = Column(Float, nullable=False, default=0.0)
+    last_price = Column(Float, default=0.0)
+    unrealized_pnl = Column(Float, default=0.0)
+    unrealized_pnl_pct = Column(Float, default=0.0)
+    realized_pnl = Column(Float, default=0.0)
+    stop_loss_price = Column(Float)
+    take_profit_price = Column(Float)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint('account_id', 'code', name='uix_simulated_position_account_code'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'account_id': self.account_id,
+            'code': self.code,
+            'name': self.name,
+            'market': self.market,
+            'currency': self.currency,
+            'qty': self.qty,
+            'avg_cost': self.avg_cost,
+            'total_cost': self.total_cost,
+            'last_price': self.last_price,
+            'unrealized_pnl': self.unrealized_pnl,
+            'unrealized_pnl_pct': self.unrealized_pnl_pct,
+            'realized_pnl': self.realized_pnl,
+            'stop_loss_price': self.stop_loss_price,
+            'take_profit_price': self.take_profit_price,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class SimulatedSnapshot(Base):
+    """模拟账户每日资产快照，用于绘制净值曲线。"""
+
+    __tablename__ = 'simulated_snapshots'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('simulated_accounts.id'), nullable=False, index=True)
+    date = Column(String(16), nullable=False, index=True)  # YYYY-MM-DD
+    cash_cny = Column(Float, nullable=False, default=0.0)
+    cash_usd = Column(Float, nullable=False, default=0.0)
+    fx_rate_usd_cny = Column(Float, nullable=False, default=7.25)
+    market_value_cny = Column(Float, nullable=False, default=0.0)
+    total_equity_cny = Column(Float, nullable=False, default=0.0)
+    realized_pnl = Column(Float, nullable=False, default=0.0)
+    unrealized_pnl = Column(Float, nullable=False, default=0.0)
+    total_return_pct = Column(Float, nullable=False, default=0.0)
+    max_drawdown_pct = Column(Float, nullable=False, default=0.0)
+    peak_equity_cny = Column(Float, nullable=False, default=0.0)
+    created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint('account_id', 'date', name='uix_simulated_snapshot_account_date'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'account_id': self.account_id,
+            'date': self.date,
+            'cash_cny': self.cash_cny,
+            'cash_usd': self.cash_usd,
+            'fx_rate_usd_cny': self.fx_rate_usd_cny,
+            'market_value_cny': self.market_value_cny,
+            'total_equity_cny': self.total_equity_cny,
+            'realized_pnl': self.realized_pnl,
+            'unrealized_pnl': self.unrealized_pnl,
+            'total_return_pct': self.total_return_pct,
+            'max_drawdown_pct': self.max_drawdown_pct,
+            'peak_equity_cny': self.peak_equity_cny,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class SimulatedAISignal(Base):
+    """AI 生成的模拟交易信号，记录每次分析结果与执行状态。"""
+
+    __tablename__ = 'simulated_ai_signals'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('simulated_accounts.id'), nullable=False, index=True)
+    code = Column(String(20), nullable=False, index=True)
+    name = Column(String(100))
+    market = Column(String(8), nullable=False)
+    signal = Column(String(8), nullable=False)   # buy / sell / hold / skip
+    confidence = Column(Float, nullable=False, default=0.0)
+    price_at_signal = Column(Float)
+    technical_score = Column(Float)
+    sentiment_score = Column(Float)
+    risk_score = Column(Float)
+    position_size_pct = Column(Float)
+    suggested_qty = Column(Integer)
+    suggested_price = Column(Float)
+    stop_loss = Column(Float)
+    take_profit = Column(Float)
+    reasoning = Column(Text)
+    signal_factors = Column(Text)   # JSON
+    status = Column(String(16), default='pending')  # pending/executed/expired/rejected
+    order_id = Column(Integer)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+    expires_at = Column(DateTime)
+
+    __table_args__ = (
+        Index('ix_simulated_signal_account_code', 'account_id', 'code'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'account_id': self.account_id,
+            'code': self.code,
+            'name': self.name,
+            'market': self.market,
+            'signal': self.signal,
+            'confidence': self.confidence,
+            'price_at_signal': self.price_at_signal,
+            'technical_score': self.technical_score,
+            'sentiment_score': self.sentiment_score,
+            'risk_score': self.risk_score,
+            'position_size_pct': self.position_size_pct,
+            'suggested_qty': self.suggested_qty,
+            'suggested_price': self.suggested_price,
+            'stop_loss': self.stop_loss,
+            'take_profit': self.take_profit,
+            'reasoning': self.reasoning,
+            'signal_factors': self.signal_factors,
+            'status': self.status,
+            'order_id': self.order_id,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+        }
+
+
 class DatabaseManager:
     """
     数据库管理器 - 单例模式
