@@ -18,7 +18,8 @@
   DELETE /orders/{order_id}        — 撤单
   GET    /signals                  — AI 信号列表
   POST   /auto-trade/toggle        — 开启 / 关闭自动交易
-  POST   /auto-trade/run           — 立即触发一次自动交易循环
+  POST   /auto-trade/run           — 异步触发一次自动交易循环，返回 job_id
+  GET    /auto-trade/run/{job_id}  — 轮询任务状态
   GET    /auto-trade/status        — 自动交易运行状态
   GET    /snapshot/history         — 权益曲线历史
 """
@@ -45,6 +46,8 @@ from api.v1.schemas.simtrade import (
     OrderRequest,
     PositionItem,
     PositionListResponse,
+    RunJobStarted,
+    RunJobStatus,
     SignalItem,
     SignalListResponse,
     SnapshotHistoryResponse,
@@ -251,23 +254,41 @@ def toggle_auto_trade(request: AutoTradeToggleRequest):
         raise _err("切换自动交易状态失败", exc)
 
 
-@router.post("/auto-trade/run", response_model=AutoRunResult, summary="立即触发一次自动交易循环")
+@router.post("/auto-trade/run", response_model=RunJobStarted, status_code=202, summary="异步触发一次自动交易循环，返回 job_id 供轮询")
 def run_auto_trade():
     auto_svc = get_auto_trade_service()
     try:
-        result = auto_svc.run_once()
-        return AutoRunResult(
-            started_at=result.get('started_at'),
-            finished_at=result.get('finished_at'),
-            account_id=result.get('account_id'),
-            signals_generated=result.get('signals_generated', 0),
-            orders_placed=result.get('orders_placed', 0),
-            stop_loss_triggered=result.get('stop_loss_triggered', []),
-            errors=result.get('errors', []),
-            skipped_reason=result.get('skipped_reason'),
-        )
+        job_id = auto_svc.run_once_async()
+        return RunJobStarted(job_id=job_id, status='running')
     except Exception as exc:
-        raise _err("自动交易周期执行失败", exc)
+        raise _err("启动自动交易失败", exc)
+
+
+@router.get("/auto-trade/run/{job_id}", response_model=RunJobStatus, summary="轮询自动交易任务状态")
+def get_run_job(job_id: str):
+    auto_svc = get_auto_trade_service()
+    job = auto_svc.get_job_status(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail={"error": "not_found", "message": "任务不存在或已过期"})
+    status = job.get('status', 'running')
+    if status == 'done':
+        return RunJobStatus(
+            job_id=job_id,
+            status='done',
+            result=AutoRunResult(
+                started_at=job.get('started_at'),
+                finished_at=job.get('finished_at'),
+                account_id=job.get('account_id'),
+                signals_generated=job.get('signals_generated', 0),
+                orders_placed=job.get('orders_placed', 0),
+                stop_loss_triggered=job.get('stop_loss_triggered', []),
+                errors=job.get('errors', []),
+                skipped_reason=job.get('skipped_reason'),
+            ),
+        )
+    if status == 'error':
+        return RunJobStatus(job_id=job_id, status='error', error=job.get('error', '未知错误'))
+    return RunJobStatus(job_id=job_id, status='running')
 
 
 @router.get("/auto-trade/status", summary="自动交易运行状态")

@@ -196,3 +196,15 @@ class AutoRunResult(BaseModel):
     stop_loss_triggered: List[str]
     errors: List[str]
     skipped_reason: Optional[str]
+
+
+class RunJobStarted(BaseModel):
+    job_id: str
+    status: str  # "running"
+
+
+class RunJobStatus(BaseModel):
+    job_id: str
+    status: str  # "running" | "done" | "error"
+    result: Optional[AutoRunResult] = None
+    error: Optional[str] = None

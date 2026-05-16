@@ -146,6 +146,13 @@ export interface AutoTradeStatus {
   last_run: AutoRunResult | null;
 }
 
+export interface RunJob {
+  job_id: string;
+  status: 'running' | 'done' | 'error';
+  result?: AutoRunResult;
+  error?: string;
+}
+
 // Request types
 export interface FundRequest {
   direction: 'deposit' | 'withdrawal';

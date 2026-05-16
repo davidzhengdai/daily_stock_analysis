@@ -15,6 +15,7 @@ import logging
 import os
 import threading
 import time
+import uuid
 from datetime import datetime, date
 from typing import Any, Dict, List, Optional
 
@@ -43,6 +44,7 @@ class AutoTradeService:
             os.getenv('SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES', str(_DEFAULT_INTERVAL_MINUTES))
         ) * 60
         self._last_run_result: Dict[str, Any] = {}
+        self._jobs: Dict[str, Dict[str, Any]] = {}
 
     @classmethod
     def get_instance(cls) -> 'AutoTradeService':
@@ -90,9 +92,35 @@ class AutoTradeService:
     # -------------------------------------------------------
 
     def run_once(self) -> Dict[str, Any]:
-        """手动触发一次自动交易周期（API 调用入口）。"""
+        """手动触发一次自动交易周期（同步，保留供内部调用）。"""
         acct = self.repo.get_or_create_account()
         return self._run_cycle(acct)
+
+    def run_once_async(self) -> str:
+        """在后台线程触发一次周期，立即返回 job_id 供轮询。"""
+        job_id = str(uuid.uuid4())
+        self._jobs[job_id] = {'status': 'running', 'started_at': datetime.now().isoformat()}
+        if len(self._jobs) > 20:
+            oldest = next(iter(self._jobs))
+            del self._jobs[oldest]
+
+        def _worker() -> None:
+            try:
+                acct = self.repo.get_or_create_account()
+                result = self._run_cycle(acct)
+                self._jobs[job_id] = {'status': 'done', **result}
+            except Exception as exc:
+                self._jobs[job_id] = {
+                    'status': 'error',
+                    'error': str(exc),
+                    'started_at': self._jobs[job_id].get('started_at'),
+                }
+
+        threading.Thread(target=_worker, name=f'simtrade-run-{job_id[:8]}', daemon=True).start()
+        return job_id
+
+    def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
+        return self._jobs.get(job_id)
 
     def _run_cycle(self, acct: Dict[str, Any]) -> Dict[str, Any]:
         account_id = acct['id']

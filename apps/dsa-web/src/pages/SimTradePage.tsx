@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -18,6 +18,7 @@ import type {
   FundItem,
   FundRequest,
   OrderRequest,
+  RunJob,
   SimAccount,
   SimOrder,
   SimPosition,
@@ -510,6 +511,13 @@ const AutoTradeTab: React.FC<{
   const [settingsMsg, setSettingsMsg] = useState('');
 
   const noWatchlist = (autoStatus?.watchlist_count ?? 0) === 0;
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pollRef.current !== null) clearInterval(pollRef.current);
+    };
+  }, []);
 
   const handleToggle = async () => {
     setToggling(true);
@@ -526,15 +534,41 @@ const AutoTradeTab: React.FC<{
   const handleRunNow = async () => {
     setRunning(true);
     setRunResult(null);
+    let job: RunJob;
     try {
-      const result = await api.runAutoTrade();
-      setRunResult(result);
-      onRefresh();
+      job = await api.startAutoTrade();
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : '执行失败');
-    } finally {
       setRunning(false);
+      return;
     }
+    let attempts = 0;
+    pollRef.current = setInterval(() => {
+      attempts++;
+      api.getRunJob(job.job_id).then((status) => {
+        if (status.status === 'done') {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          if (status.result) setRunResult(status.result);
+          onRefresh();
+          setRunning(false);
+        } else if (status.status === 'error') {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          alert(status.error ?? '执行失败');
+          setRunning(false);
+        } else if (attempts >= 120) {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          alert('执行超时，请稍后刷新查看结果');
+          setRunning(false);
+        }
+      }).catch(() => {
+        clearInterval(pollRef.current!);
+        pollRef.current = null;
+        setRunning(false);
+      });
+    }, 2000);
   };
 
   const handleSaveSettings = async () => {
