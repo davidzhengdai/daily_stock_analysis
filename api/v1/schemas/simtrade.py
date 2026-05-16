@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class FundRequest(BaseModel):
     direction: str = Field(..., description="deposit 或 withdrawal")
-    amount: float = Field(..., gt=0, description="金额，必须大于 0")
+    amount: int = Field(..., gt=0, description="金额，必须为大于 0 的整数")
     currency: str = Field(..., description="CNY 或 USD")
     note: str = Field("", description="备注")
 
@@ -149,7 +149,7 @@ class AccountResponse(BaseModel):
     status: str
     created_at: Optional[str]
     updated_at: Optional[str]
-    equity_summary: Optional[EquitySummary]
+    equity_summary: Optional[EquitySummary] = None
 
 
 class AccountSettingsRequest(BaseModel):

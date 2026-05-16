@@ -13,6 +13,7 @@
 """
 
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 from src.repositories.simtrade_repo import SimTradeRepo
@@ -21,6 +22,11 @@ logger = logging.getLogger(__name__)
 
 # 最低出金余额保护：出金后账户余额不得为负
 _MIN_RESIDUAL = 0.0
+
+
+def _validate_integer_amount(amount: float, action: str) -> None:
+    if not math.isfinite(amount) or int(amount) != amount:
+        raise ValueError(f"{action}金额必须为整数")
 
 
 class AccountService:
@@ -92,6 +98,7 @@ class AccountService:
         """入金。currency 为 CNY 或 USD。"""
         if amount <= 0:
             raise ValueError("入金金额必须大于 0")
+        _validate_integer_amount(amount, "入金")
         currency = currency.upper()
         if currency not in ('CNY', 'USD'):
             raise ValueError("货币只支持 CNY 或 USD")
@@ -122,6 +129,7 @@ class AccountService:
         """出金。不得超过当前可用余额。"""
         if amount <= 0:
             raise ValueError("出金金额必须大于 0")
+        _validate_integer_amount(amount, "出金")
         currency = currency.upper()
         if currency not in ('CNY', 'USD'):
             raise ValueError("货币只支持 CNY 或 USD")

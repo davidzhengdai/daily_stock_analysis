@@ -242,6 +242,8 @@ def toggle_auto_trade(request: AutoTradeToggleRequest):
         data = svc.set_auto_trade_enabled(request.enabled)
         if request.enabled:
             auto_svc.start()
+        else:
+            auto_svc.stop()
         return AccountResponse(**data)
     except ValueError as exc:
         raise _bad(str(exc))

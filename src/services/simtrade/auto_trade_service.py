@@ -24,7 +24,7 @@ from src.services.simtrade.order_service import OrderService
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_INTERVAL_MINUTES = 30
+_DEFAULT_INTERVAL_MINUTES = 5
 
 
 class AutoTradeService:

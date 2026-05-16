@@ -42,16 +42,38 @@ class SimTradeRepo:
 
     def get_or_create_account(self) -> Dict[str, Any]:
         """获取默认模拟账户；不存在则创建。"""
+        def _create_account(session) -> SimulatedAccount:
+            row = SimulatedAccount()
+            session.add(row)
+            session.flush()
+            session.refresh(row)
+            return row
+
         with self.db.get_session() as session:
+            rows = session.execute(
+                select(SimulatedAccount).order_by(SimulatedAccount.id).limit(2)
+            ).scalars().all()
+            if rows:
+                row = rows[0]
+                if len(rows) > 1:
+                    logger.warning(
+                        "检测到多个模拟交易账户，默认使用最早账户 id=%s",
+                        row.id,
+                    )
+                return row.to_dict()
+
+        def _ensure_account(session) -> Dict[str, Any]:
             row = session.execute(
-                select(SimulatedAccount).order_by(SimulatedAccount.id)
+                select(SimulatedAccount).order_by(SimulatedAccount.id).limit(1)
             ).scalar_one_or_none()
             if row is None:
-                row = SimulatedAccount()
-                session.add(row)
-                session.commit()
-                session.refresh(row)
+                row = _create_account(session)
             return row.to_dict()
+
+        return self.db._run_write_transaction(
+            "simtrade_get_or_create_account",
+            _ensure_account,
+        )
 
     def get_account(self, account_id: int) -> Optional[Dict[str, Any]]:
         with self.db.get_session() as session:
