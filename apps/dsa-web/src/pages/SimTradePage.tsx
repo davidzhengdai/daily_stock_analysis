@@ -615,15 +615,17 @@ const AutoTradeTab: React.FC<{
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => void handleRunNow()}
-            disabled={running || noWatchlist || !account.auto_trade_enabled}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm hover:bg-hover disabled:opacity-40"
-          >
-            <Play className="h-3.5 w-3.5" />
-            {running ? '执行中…' : '立即运行'}
-          </button>
+          {account.auto_trade_enabled ? (
+            <button
+              type="button"
+              onClick={() => void handleRunNow()}
+              disabled={running || noWatchlist}
+              className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm hover:bg-hover disabled:opacity-40"
+            >
+              <Play className="h-3.5 w-3.5" />
+              {running ? '执行中…' : '立即运行'}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={() => void handleToggle()}
