@@ -541,6 +541,26 @@ class NewsStore:
             finally:
                 con.close()
 
+    def append_watched_stock(self, code: str, name: str = "") -> bool:
+        """Add a single stock without clearing existing entries. Returns True if newly inserted."""
+        if not code.strip():
+            return False
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            con = self._connect()
+            try:
+                cur = con.execute(
+                    "INSERT OR IGNORE INTO watched_stocks (code, name, added_at) VALUES (?,?,?)",
+                    (code.strip(), name.strip(), now_iso),
+                )
+                con.commit()
+                return cur.rowcount > 0
+            except sqlite3.Error as exc:
+                logger.error("append_watched_stock failed: %s", exc)
+                return False
+            finally:
+                con.close()
+
     def get_watched_stocks(self) -> List[dict]:
         """Return [{"code": ..., "name": ...}] sorted by added_at."""
         with self._lock:

@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] News Sentinel Phase 4：新增 `SentinelCacheClient` 只读缓存门面，将 Sentinel DB 接入 `SearchService` 综合情报流（`sentinel_cache` provider），新增 `/api/v1/sentinel/` REST API（status/news/news/search/analyses），新增 Web 情报中心页面（`/sentinel`）含状态卡片/宏观分析/优先级过滤新闻流/5 分钟自动刷新。
 - [新功能] News Sentinel Phase 5：新增 8 个抓取源（证券时报/上海证券报/第一财经/新浪财经 via RSSHub，证监会/央行/发改委 HTML 列表页，SEC EDGAR Atom），新增 `HTMLListSpider` 通用 HTML 列表页基类（stdlib html.parser，无新依赖），新增 `SentinelMetrics` 运行指标采集（每 Spider 成功率、LLM 分类延迟、TTL 清理量、DB 大小），新增 `server_sentinel.py` 独立进程模式（内置 HTTP 健康/指标端点 `/healthz` `/metrics` `/status`）；默认 Spider 数量从 5 扩展到 13。
 - [新功能] News Sentinel 关注股票注入：新增 `watched_stocks` DB 表与 `WatchedStocksNewsSpider`，主服务可通过 `PUT /api/v1/sentinel/watched-stocks` 注入用户自选股列表；Sentinel 每轮对每支关注股票发起 Google News RSS 定向抓取，LLM 分类时命中关注股的文章自动 +1 优先级（最高 P5，可通过 `SENTINEL_WATCHED_STOCKS_BOOST` 控制）；新增 `GET /api/v1/sentinel/watched-stocks` 只读查询接口。
+- [新功能] News Sentinel 即时新闻预取：新增 `POST /api/v1/sentinel/fetch-now` 端点，对单只股票立即执行定向抓取 + LLM 分类并将股票注册到关注列表，用于用户首次分析某股票时实时预热缓存；`PUT /watched-stocks?merge=true` 支持追加模式，Scanner 可在不清空手动自选股的情况下批量注入候选股池；SearchService 缓存未命中时自动将股票注册到关注列表，确保下次分析时享有定向缓存。
 - [修复] Scanner 情报搜索为空时不再向 LLM 注入“未找到信息”占位新闻，并为美股候选增加 Yahoo Finance 新闻兜底。
 - [改进] 单股分析与 Scanner 推荐结果展示新闻证据来源，保留标题、来源、日期与链接，便于用户核对消息面依据。
 - [改进] Docker 镜像支持非 root 用户 (`dsa`, UID 1000) 执行，并增强 `Dockerfile` 安全性与构建稳健性。

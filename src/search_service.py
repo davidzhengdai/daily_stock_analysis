@@ -2938,6 +2938,8 @@ class SearchService:
                     name, code, len(response.results),
                 )
                 return response
+            # Cache miss — register the stock so the next cycle fetches targeted news
+            client.register_stock(code, name)
             return None
         except Exception as exc:
             logger.debug("_try_sentinel_for_stock failed for %s: %s", code, exc)

@@ -119,6 +119,22 @@ class SentinelCacheClient:
                 search_time=time.monotonic() - t0,
             )
 
+    def register_stock(self, code: str, name: str = "") -> bool:
+        """Register a stock for future targeted news fetching (non-blocking, best-effort).
+
+        Called on sentinel cache miss so the next cycle will pre-fetch news for
+        this stock. Safe to call even when sentinel is disabled — returns False silently.
+        """
+        try:
+            cfg = self._get_config()
+            if not cfg.enabled:
+                return False
+            store = self._get_store()
+            return store.append_watched_stock(code.strip(), name.strip())
+        except Exception as exc:
+            logger.debug("SentinelCacheClient.register_stock failed: %s", exc)
+            return False
+
     def get_recent_news(
         self,
         hours: int = 24,
