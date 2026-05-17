@@ -8,15 +8,17 @@ Scanner finds medium-term investment opportunities from configured market univer
 
 - US: NYSE + NASDAQ universe
 - China: A-share universe from local data providers
-- Five-tier funnel: metadata, technicals, fundamentals, sector diversity, deep AI analysis
+- Five-tier funnel: metadata, technicals, fundamentals, sector diversity, AI preselection, and deep AI analysis
 - China policy weighting: boosts A-share candidates tied to national policy and hot topics
+- Cross-market reservation: when US and China are scanned together, Scanner keeps capacity for each market with valid surviving candidates during technical screening, fundamental screening, and final Top Picks
+- AI preselection: before deep analysis, a lightweight LLM chooses Tier-5 candidates from the market/sector-diverse pool; if the LLM is unavailable, the system falls back to rule ranking
 - Top Picks show why-selected explanations and key screening factors
 
 GoldDigger looks for overlooked beaten-down value stocks:
 
 - US small caps: default USD 50M-1000M market cap
 - China A-share low-position candidates
-- Price drawdown, valuation discount, analyst neglect, theme matching, deep AI analysis
+- Price drawdown, valuation discount, analyst neglect, theme matching, AI preselection, and deep AI analysis
 - China policy weighting for A-share candidate ranking
 
 ## CLI Usage
@@ -115,6 +117,8 @@ SCANNER_MAX_TIER5_STOCKS=30
 SCANNER_MAX_CN_STOCKS=800
 SCANNER_CHINA_POLICY_WEIGHT=0.25
 SCANNER_UNIVERSE_CACHE_HOURS=24
+SCANNER_AI_PRESELECT_ENABLED=true
+GOLD_DIGGER_AI_PRESELECT_ENABLED=true
 ```
 
 Explicit Web and CLI request values override these defaults.
@@ -122,7 +126,9 @@ Explicit Web and CLI request values override these defaults.
 ## Notes
 
 - Scanner why-selected explanations combine funnel metrics and AI analysis summaries. They explain ranking rationale and are not standalone buy recommendations.
-- China scanning depends on local Tushare, Baostock, and Akshare availability.
+- When both US and China markets are selected, Scanner preserves cross-market coverage first. If one market has too few valid candidates, unused slots are filled by the remaining markets according to ranking.
+- China universes filter indices, funds, and ETFs. Batch quote screening uses the shared data-source manager with a Baostock-first order, then falls back across other available providers to avoid slow failing endpoints stalling the whole batch.
 - China policy weighting only affects A-share candidate ranking.
 - Higher weight favors national policy, industrial themes, and hot-topic relevance; `0` disables the boost.
+- AI preselection uses `SCANNER_MODEL` / `GOLD_DIGGER_MODEL`. It only selects which candidates enter deep analysis and does not replace the final full report analysis.
 - Both features can issue many quote, search, and LLM requests. Start with smaller candidate counts when validating a setup.

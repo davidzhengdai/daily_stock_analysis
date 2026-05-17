@@ -11,6 +11,7 @@ Fallback:        S&P 500 + NASDAQ-100 + S&P 400 + S&P 600 via Wikipedia
 import json
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -61,6 +62,8 @@ GICS_SECTORS = [
     "Utilities",
     "Real Estate",
 ]
+
+_A_SHARE_ETF_PREFIXES = ("15", "16", "18", "51", "52", "56", "58")
 
 _SECTOR_ALIASES: Dict[str, str] = {
     "health care": "Healthcare",
@@ -113,6 +116,19 @@ def _parse_price(raw: str) -> float:
         return float(str(raw).replace("$", "").replace(",", "").strip())
     except (ValueError, TypeError):
         return 0.0
+
+
+def _is_valid_a_share_universe_row(code: str, name: str) -> bool:
+    """Keep common A-share stocks and skip indices/funds before applying limits."""
+    code = code.strip()
+    name = (name or "").strip()
+    if not re.fullmatch(r"\d{6}", code):
+        return False
+    if code.startswith(_A_SHARE_ETF_PREFIXES):
+        return False
+    if any(token in name for token in ("指数", "基金", "ETF", "etf")):
+        return False
+    return code.startswith(("000", "001", "002", "003", "300", "301", "600", "601", "603", "605", "688", "689"))
 
 
 class USStockUniverse:
@@ -304,13 +320,14 @@ class CNStockUniverse:
     def get_all(self, limit: int = 800) -> List[StockInfo]:
         rows = self._fetch_rows()
         stocks: List[StockInfo] = []
-        for row in rows[:limit]:
+        for row in rows:
             code = str(row.get("code", "")).strip()
-            if not code or code.lower() == "nan":
+            name = str(row.get("name") or code).strip()
+            if not _is_valid_a_share_universe_row(code, name):
                 continue
             stocks.append(StockInfo(
                 ticker=code,
-                name=str(row.get("name") or code).strip(),
+                name=name,
                 sector=str(row.get("industry") or "A股").strip() or "A股",
                 industry=str(row.get("industry") or "").strip(),
                 market_cap_m=0.0,
@@ -319,6 +336,8 @@ class CNStockUniverse:
                 exchange=str(row.get("market") or "").strip(),
                 market="cn",
             ))
+            if len(stocks) >= limit:
+                break
         return stocks
 
     def _fetch_rows(self) -> List[Dict[str, str]]:

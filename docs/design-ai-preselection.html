@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scanner / GoldDigger AI 预选设计</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f8fb;
+      --fg: #1f2937;
+      --muted: #64748b;
+      --panel: #ffffff;
+      --border: #d8dee9;
+      --accent: #2563eb;
+      --code: #eef2ff;
+    }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    main {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 40px 22px 64px;
+    }
+    h1, h2, h3 {
+      line-height: 1.25;
+      margin: 0 0 14px;
+    }
+    h1 {
+      font-size: 34px;
+      margin-bottom: 10px;
+    }
+    h2 {
+      font-size: 24px;
+      margin-top: 34px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+    h3 {
+      font-size: 19px;
+      margin-top: 24px;
+    }
+    p {
+      margin: 0 0 14px;
+    }
+    ul, ol {
+      margin-top: 0;
+      padding-left: 24px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 20px;
+      background: var(--panel);
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 9px 11px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: rgba(37, 99, 235, 0.08);
+    }
+    code {
+      background: var(--code);
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+    pre {
+      overflow: auto;
+      padding: 14px;
+      border: 1px solid var(--border);
+      background: #111827;
+      color: #e5e7eb;
+      border-radius: 8px;
+    }
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+    .meta, .note {
+      color: var(--muted);
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+    }
+    .flow {
+      display: grid;
+      gap: 10px;
+    }
+    .flow div {
+      background: var(--panel);
+      border-left: 4px solid var(--accent);
+      padding: 10px 12px;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f172a;
+        --fg: #e5e7eb;
+        --muted: #94a3b8;
+        --panel: #111827;
+        --border: #334155;
+        --code: #1e293b;
+      }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Scanner / GoldDigger AI 预选设计</h1>
+  <p class="meta">状态：已实现。适用范围：Scanner 全市场扫股、沙里淘金 GoldDigger。</p>
+
+  <h2>目标</h2>
+  <p>在深度 AI 分析前增加轻量 AI 预选，让 LLM 参与“第一批进入深度分析的几十只股票”的选择，而不是只在规则漏斗完成后才做逐只研报分析。</p>
+  <p>该设计保留原有确定性筛选作为前置降噪层：行情、流动性、技术面、基本面、主题匹配和市场/行业分散仍由规则层完成；AI 预选只在较小候选池中做语义排序和取舍。</p>
+
+  <h2>数据流</h2>
+  <div class="flow">
+    <div><strong>Scanner：</strong>股票池 → 元数据过滤 → 技术筛选 → 基本面筛选 → A股政策权重 → 行业/市场分散扩池 → AI 预选 → Tier 5 深度分析 → Top Picks。</div>
+    <div><strong>GoldDigger：</strong>美股小盘/A股低位候选 → 超跌/估值/低覆盖过滤 → 主题检测 → 主题匹配评分 → 每市场扩池 → AI 预选 → 深度分析 → Gold Picks。</div>
+  </div>
+
+  <h2>模块边界</h2>
+  <table>
+    <thead>
+      <tr><th>模块</th><th>职责</th><th>输入</th><th>输出</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>src/services/ai_preselector.py</code></td><td>构造轻量 prompt、解析 JSON 排名、按 ticker 回填、失败回退</td><td>已筛选候选、目标数量、Analyzer、可选模型</td><td>进入深度分析的候选列表</td></tr>
+      <tr><td><code>MarketScanner</code></td><td>把 Tier 4 从“直接截断”改为“扩池 + AI 预选”，并继续执行市场均衡护栏</td><td><code>FundScore</code> / <code>CandidateStock</code></td><td>Tier 5 候选</td></tr>
+      <tr><td><code>GoldDigger</code></td><td>按市场分别扩池并预选，避免美股/A股互相挤占每市场深度分析名额</td><td><code>GoldCandidate</code></td><td>每市场 Tier 5 候选</td></tr>
+    </tbody>
+  </table>
+
+  <h2>算法</h2>
+  <h3>Scanner</h3>
+  <ol>
+    <li>Tier 3 后先按现有行业分散和跨市场保留逻辑生成预选池。</li>
+    <li>预选池大小为 <code>min(Tier3 数量, SCANNER_MAX_TIER5_STOCKS * 2)</code>，但不小于 <code>SCANNER_MAX_TIER5_STOCKS</code>。</li>
+    <li>AI 根据候选的市场、行业、技术评分、趋势信号、基本面评分、估值、增长等字段，返回 JSON 排名。</li>
+    <li>系统只接受候选池内已有 ticker；缺失名额按原规则排序回填。</li>
+    <li>AI 预选结果再经过跨市场保留，确保仍有有效候选的市场不会被单一市场完全挤出。</li>
+  </ol>
+
+  <h3>GoldDigger</h3>
+  <ol>
+    <li>主题匹配候选先按综合分排序。</li>
+    <li>每个市场取 <code>max_tier5_per_market * 2</code> 作为预选池。</li>
+    <li>AI 根据超跌幅度、估值折价、主题相关性、机构信号和反转迹象，选择进入深度分析的 <code>max_tier5_per_market</code> 只。</li>
+    <li>每个市场独立预选，避免美股候选挤占 A股候选，或反过来。</li>
+  </ol>
+
+  <h2>Prompt 与解析</h2>
+  <p>预选 prompt 要求 LLM 只返回 JSON 数组或包含 <code>selected</code> 字段的 JSON 对象，元素至少包含 <code>ticker</code>。系统兼容 <code>ticker</code>、<code>symbol</code>、<code>code</code> 三种字段名。</p>
+  <pre><code>[
+  {"ticker": "AAPL", "score": 92, "reason": "Quality setup and durable catalyst"},
+  {"ticker": "300750", "score": 89, "reason": "Policy theme fit and improving setup"}
+]</code></pre>
+  <p>解析策略是严格白名单：返回 ticker 必须存在于输入候选池；重复、未知或空 ticker 会被忽略。</p>
+
+  <h2>配置项</h2>
+  <table>
+    <thead>
+      <tr><th>环境变量</th><th>默认值</th><th>语义</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>SCANNER_AI_PRESELECT_ENABLED</code></td><td><code>true</code></td><td>是否启用 Scanner 深度分析前的 AI 预选。</td></tr>
+      <tr><td><code>GOLD_DIGGER_AI_PRESELECT_ENABLED</code></td><td><code>true</code></td><td>是否启用沙里淘金深度分析前的 AI 预选。</td></tr>
+      <tr><td><code>SCANNER_MODEL</code></td><td>空，继承全局模型</td><td>Scanner AI 预选与 Tier 5 深度分析复用该模型。</td></tr>
+      <tr><td><code>GOLD_DIGGER_MODEL</code></td><td>空，继承全局模型</td><td>GoldDigger AI 预选与深度分析复用该模型。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>失败与降级</h2>
+  <ul>
+    <li>LLM 调用异常：记录 warning，按原规则排序截断。</li>
+    <li>LLM 调用超过 120 秒：记录 warning，按原规则排序截断，避免 Scanner 长时间停在预选阶段。</li>
+    <li>JSON 解析失败：记录 warning，按原规则排序截断。</li>
+    <li>AI 返回未知 ticker：忽略未知 ticker，并用原规则排序补齐。</li>
+    <li>候选数不足：直接返回现有候选，不额外调用 LLM。</li>
+  </ul>
+
+  <h2>边界条件</h2>
+  <ul>
+    <li>AI 预选不会扩大最终深度分析数量，只改变候选选择顺序。</li>
+    <li>Scanner 的最终 Top Picks 仍按深度分析置信度与规则综合分排序，并保留跨市场覆盖。</li>
+    <li>GoldDigger 仍先用新闻主题检测生成宏观主题，AI 预选只选择进入完整分析的股票。</li>
+    <li>A 股候选进入 AI 预选前会过滤指数、基金和 ETF；技术面/价格筛选通过统一数据源管理器 fallback，并对批量任务采用 Baostock 优先顺序，避免单一慢速行情接口失败导致 A 股候选全部丢失或长时间停滞。</li>
+    <li>关闭预选开关后，行为回到规则排序 + 深度分析的旧路径。</li>
+  </ul>
+
+  <div class="panel">
+    <strong>实现文件</strong>
+    <p><code>src/services/ai_preselector.py</code>、<code>src/services/market_scanner.py</code>、<code>src/services/gold_digger.py</code>、<code>src/config.py</code>。</p>
+    <p class="note">相关测试位于 <code>tests/test_scanner_universe_gold_digger.py</code>。</p>
+  </div>
+</main>
+</body>
+</html>

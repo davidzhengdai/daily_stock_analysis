@@ -71,6 +71,13 @@ const MarketBadge: React.FC<{ market: string }> = ({ market }) => (
   </Badge>
 );
 
+function splitPicksByMarket(picks: GoldPick[]) {
+  return {
+    us: picks.filter((pick) => pick.market === 'US'),
+    cn: picks.filter((pick) => pick.market !== 'US'),
+  };
+}
+
 const ThemeCard: React.FC<{ theme: InvestmentTheme; index: number }> = ({ theme, index }) => (
   <div className="rounded-lg border border-border/60 bg-card/40 p-3">
     <div className="mb-1 flex items-center gap-2">
@@ -163,6 +170,7 @@ const PickCard: React.FC<{
             <span className="truncate text-sm text-secondary-text">{pick.name}</span>
             <MarketBadge market={pick.market} />
             {pick.sector && <Badge variant="default" size="sm">{pick.sector}</Badge>}
+            {pick.industry && <Badge variant="default" size="sm">行业：{pick.industry}</Badge>}
           </div>
           <div className="mt-0.5 flex flex-wrap items-center gap-3 text-xs text-secondary-text">
             <span>{pick.market === 'US' ? '$' : '¥'}{pick.currentPrice.toFixed(2)}</span>
@@ -460,6 +468,28 @@ const GoldDiggerPage: React.FC = () => {
     if (next.length > 0) setMarkets(next);
   };
 
+  const renderPickGroup = (title: string, picks: GoldPick[]) => {
+    if (picks.length === 0) return null;
+    return (
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="label-uppercase">{title}</h3>
+          <Badge variant="default" size="sm">{picks.length} 只</Badge>
+        </div>
+        <div className="space-y-3">
+          {picks.map((pick) => (
+            <PickCard
+              key={pick.ticker}
+              pick={pick}
+              isWatched={watchedCodes.has(pick.ticker.toUpperCase())}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
+          ))}
+        </div>
+      </section>
+    );
+  };
+
   return (
     <AppPage>
       <PageHeader
@@ -601,15 +631,9 @@ const GoldDiggerPage: React.FC = () => {
             {/* Gold picks */}
             {report.goldPicks.length > 0 ? (
               <SectionCard title="金股推荐">
-                <div className="space-y-3">
-                  {report.goldPicks.map((pick) => (
-                    <PickCard
-                      key={pick.ticker}
-                      pick={pick}
-                      isWatched={watchedCodes.has(pick.ticker.toUpperCase())}
-                      onToggleWatchlist={handleToggleWatchlist}
-                    />
-                  ))}
+                <div className="space-y-5">
+                  {renderPickGroup('美股金股', splitPicksByMarket(report.goldPicks).us)}
+                  {renderPickGroup('A股金股', splitPicksByMarket(report.goldPicks).cn)}
                 </div>
               </SectionCard>
             ) : (
