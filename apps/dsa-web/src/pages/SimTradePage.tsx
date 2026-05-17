@@ -642,8 +642,10 @@ const AutoTradeTab: React.FC<{
           <p className="font-medium">AI 自动交易</p>
           <p className="text-sm text-secondary-text mt-0.5">
             {account.auto_trade_enabled
-              ? `运行中 · ${MODE_LABEL[account.auto_trade_mode]} 模式`
-              : '已关闭 · 开启后将自动监控自选股并下单'}
+              ? marketClosed
+                ? `Waiting for market open · ${MODE_LABEL[account.auto_trade_mode]} mode`
+                : `Active · ${MODE_LABEL[account.auto_trade_mode]} mode`
+              : 'Stopped · enable to auto-monitor watchlist and place orders'}
           </p>
           <MarketStatusBadges status={autoStatus?.market_status} />
         </div>
