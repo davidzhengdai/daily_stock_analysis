@@ -23,6 +23,8 @@ import {
   Loading,
 } from '../components/common';
 import { goldDiggerApi } from '../api/goldDigger';
+import { watchlistApi } from '../api/watchlist';
+import { FavoriteStockButton } from '../components/watchlist/FavoriteStockButton';
 import type { DigReport, GoldPick, DigMeta, InvestmentTheme } from '../types/goldDigger';
 import { getParsedApiError, createParsedApiError } from '../api/error';
 import type { ParsedApiError } from '../api/error';
@@ -133,7 +135,11 @@ const FunnelBar: React.FC<{ report: DigReport }> = ({ report }) => {
   );
 };
 
-const PickCard: React.FC<{ pick: GoldPick }> = ({ pick }) => {
+const PickCard: React.FC<{
+  pick: GoldPick;
+  isWatched: boolean;
+  onToggleWatchlist: (code: string, name: string) => void;
+}> = ({ pick, isWatched, onToggleWatchlist }) => {
   const [expanded, setExpanded] = useState(false);
   const changeColor = pick.priceChange6mPct < 0 ? 'text-danger' : 'text-success';
   const changeSign = pick.priceChange6mPct > 0 ? '+' : '';
@@ -176,6 +182,10 @@ const PickCard: React.FC<{ pick: GoldPick }> = ({ pick }) => {
           <span className="text-lg font-bold text-primary">{pick.compositeScore.toFixed(0)}</span>
           <span className="text-[10px] text-secondary-text">AI置信度 {pick.llmConfidence}%</span>
         </div>
+        <FavoriteStockButton
+          isWatched={isWatched}
+          onToggle={() => onToggleWatchlist(pick.ticker, pick.name || pick.ticker)}
+        />
         {expanded ? (
           <ChevronUp className="h-4 w-4 shrink-0 text-secondary-text" />
         ) : (
@@ -322,6 +332,7 @@ const GoldDiggerPage: React.FC = () => {
   const [topN, setTopN] = useState(10);
   const [maxTier5PerMarket, setMaxTier5PerMarket] = useState(15);
   const [chinaPolicyWeight, setChinaPolicyWeight] = useState(0.25);
+  const [watchedCodes, setWatchedCodes] = useState<Set<string>>(new Set());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadHistory = useCallback(async () => {
@@ -351,10 +362,44 @@ const GoldDiggerPage: React.FC = () => {
     }
   }, []);
 
+  const loadWatchlist = useCallback(async () => {
+    try {
+      const res = await watchlistApi.listAll();
+      setWatchedCodes(new Set(res.items.map((item) => item.code.toUpperCase())));
+    } catch {
+      // Watchlist state is non-critical for gold pick rendering.
+    }
+  }, []);
+
   useEffect(() => {
     void loadHistory();
     void loadResult().catch(() => {});
-  }, [loadHistory, loadResult]);
+    void loadWatchlist();
+  }, [loadHistory, loadResult, loadWatchlist]);
+
+  const handleToggleWatchlist = useCallback((code: string, name: string) => {
+    const normalizedCode = code.trim().toUpperCase();
+    if (!normalizedCode) return;
+
+    if (watchedCodes.has(normalizedCode)) {
+      watchlistApi.remove(normalizedCode).then(() => {
+        setWatchedCodes((prev) => {
+          const next = new Set(prev);
+          next.delete(normalizedCode);
+          return next;
+        });
+      }).catch(() => {
+        // Keep current UI state when the watchlist update fails.
+      });
+      return;
+    }
+
+    watchlistApi.add(normalizedCode, name).then(() => {
+      setWatchedCodes((prev) => new Set([...prev, normalizedCode]));
+    }).catch(() => {
+      // Keep current UI state when the watchlist update fails.
+    });
+  }, [watchedCodes]);
 
   const startPoll = useCallback((runId: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -558,7 +603,12 @@ const GoldDiggerPage: React.FC = () => {
               <SectionCard title="金股推荐">
                 <div className="space-y-3">
                   {report.goldPicks.map((pick) => (
-                    <PickCard key={pick.ticker} pick={pick} />
+                    <PickCard
+                      key={pick.ticker}
+                      pick={pick}
+                      isWatched={watchedCodes.has(pick.ticker.toUpperCase())}
+                      onToggleWatchlist={handleToggleWatchlist}
+                    />
                   ))}
                 </div>
               </SectionCard>
