@@ -161,6 +161,9 @@ class AccountSettingsRequest(BaseModel):
     take_profit_pct: Optional[float] = Field(None, ge=1, le=200)
     min_signal_confidence: Optional[float] = Field(None, ge=0, le=1)
     auto_start_on_market_open: Optional[bool] = None
+    clear_on_market_close: Optional[bool] = None
+    clear_before_close_minutes: Optional[int] = Field(None, ge=1, le=60)
+    scan_interval_minutes: Optional[int] = Field(None, ge=0, le=60, description="0 或 null 表示使用全局默认值")
 
 
 class AutoTradeToggleRequest(BaseModel):

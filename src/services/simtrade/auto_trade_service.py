@@ -62,6 +62,40 @@ def get_market_status() -> Dict[str, bool]:
     return {'cn_open': _is_cn_market_open(), 'us_open': _is_us_market_open()}
 
 
+def _minutes_to_close(markets: set) -> Optional[int]:
+    """Return the minimum minutes remaining before the next session close across relevant markets.
+
+    Returns None when no relevant market is currently open.
+    """
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+
+    mins: list[int] = []
+
+    if 'CN' in markets:
+        now_cn = datetime.now(ZoneInfo('Asia/Shanghai'))
+        if now_cn.weekday() < 5:
+            t = now_cn.time()
+            if dtime(9, 30) <= t < dtime(11, 30):
+                close = now_cn.replace(hour=11, minute=30, second=0, microsecond=0)
+                mins.append(int((close - now_cn).total_seconds() / 60))
+            elif dtime(13, 0) <= t < dtime(15, 0):
+                close = now_cn.replace(hour=15, minute=0, second=0, microsecond=0)
+                mins.append(int((close - now_cn).total_seconds() / 60))
+
+    if 'US' in markets:
+        now_us = datetime.now(ZoneInfo('America/New_York'))
+        if now_us.weekday() < 5:
+            t = now_us.time()
+            if dtime(9, 30) <= t < dtime(16, 0):
+                close = now_us.replace(hour=16, minute=0, second=0, microsecond=0)
+                mins.append(int((close - now_us).total_seconds() / 60))
+
+    return min(mins) if mins else None
+
+
 class AutoTradeService:
     """AI 自动交易调度服务（单例）。"""
 
@@ -118,13 +152,17 @@ class AutoTradeService:
 
     def _scheduler_loop(self) -> None:
         while not self._stop_event.is_set():
+            interval = self._interval_seconds
             try:
                 acct = self.repo.get_or_create_account()
+                # Per-account interval overrides the global env-var default
+                if acct.get('scan_interval_minutes'):
+                    interval = int(acct['scan_interval_minutes']) * 60
                 if acct.get('auto_trade_enabled') and acct.get('status') == 'active':
                     self._run_cycle(acct)
             except Exception as exc:
                 logger.error("[AutoTrade] 调度循环异常: %s", exc, exc_info=True)
-            self._stop_event.wait(timeout=self._interval_seconds)
+            self._stop_event.wait(timeout=interval)
 
     # -------------------------------------------------------
     # 单次周期
@@ -184,8 +222,8 @@ class AutoTradeService:
             return result
 
         # ---- 市场交易时段检查 ----
+        markets = {SignalService._infer_market(item['code']) for item in watchlist}
         if self._market_hours_only:
-            markets = {SignalService._infer_market(item['code']) for item in watchlist}
             cn_open = _is_cn_market_open()
             us_open = _is_us_market_open()
             any_open = ('CN' in markets and cn_open) or ('US' in markets and us_open)
@@ -195,6 +233,24 @@ class AutoTradeService:
                     "[AutoTrade] 跳过：非交易时段（关注市场 %s，CN=%s US=%s）",
                     markets, cn_open, us_open,
                 )
+                self._last_run_result = result
+                return result
+
+        # ---- 空仓过夜：临近收盘时强制清仓 ----
+        if acct.get('clear_on_market_close'):
+            threshold = int(acct.get('clear_before_close_minutes') or 15)
+            mins_left = _minutes_to_close(markets)
+            if mins_left is not None and mins_left <= threshold:
+                order_svc_eod = OrderService(repo=self.repo)
+                liquidated = order_svc_eod.liquidate_all_positions(account_id)
+                result['stop_loss_triggered'] = liquidated
+                result['skipped_reason'] = f'空仓过夜：距收盘 {mins_left} 分钟，已清仓 {len(liquidated)} 只'
+                logger.info("[AutoTrade] 空仓过夜触发，清仓 %s", liquidated)
+                try:
+                    order_svc_eod.take_daily_snapshot(account_id)
+                except Exception:
+                    pass
+                result['finished_at'] = datetime.now().isoformat()
                 self._last_run_result = result
                 return result
 

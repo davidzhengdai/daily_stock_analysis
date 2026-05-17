@@ -24,6 +24,9 @@ export interface SimAccount {
   auto_trade_enabled: boolean;
   auto_trade_mode: 'conservative' | 'balanced' | 'aggressive';
   auto_start_on_market_open: boolean;
+  clear_on_market_close: boolean;
+  clear_before_close_minutes: number;
+  scan_interval_minutes: number | null;
   max_position_pct: number;
   max_drawdown_pct: number;
   stop_loss_pct: number;
@@ -182,6 +185,9 @@ export interface OrderRequest {
 export interface AccountSettingsRequest {
   auto_trade_mode?: 'conservative' | 'balanced' | 'aggressive';
   auto_start_on_market_open?: boolean;
+  clear_on_market_close?: boolean;
+  clear_before_close_minutes?: number;
+  scan_interval_minutes?: number | null;
   max_position_pct?: number;
   max_drawdown_pct?: number;
   stop_loss_pct?: number;

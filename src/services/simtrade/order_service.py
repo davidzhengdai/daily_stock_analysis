@@ -347,6 +347,31 @@ class OrderService:
                     logger.warning("[SimTrade] 止损/止盈下单失败 %s: %s", pos['code'], exc)
         return triggered
 
+    def liquidate_all_positions(self, account_id: int) -> List[str]:
+        """以市价卖出所有持仓，返回已提交清仓委托的股票代码列表。"""
+        liquidated = []
+        positions = self.repo.list_positions(account_id)
+        for pos in positions:
+            if pos['qty'] <= 0:
+                continue
+            current_price = self._get_latest_price(pos['code'])
+            try:
+                self.place_order(
+                    code=pos['code'],
+                    market=pos['market'],
+                    side='sell',
+                    order_type='market',
+                    qty=pos['qty'],
+                    name=pos.get('name', ''),
+                    source='auto',
+                    current_price=current_price,
+                )
+                liquidated.append(pos['code'])
+                logger.info("[SimTrade] 空仓过夜清仓: %s × %d", pos['code'], pos['qty'])
+            except Exception as exc:
+                logger.warning("[SimTrade] 空仓过夜清仓失败 %s: %s", pos['code'], exc)
+        return liquidated
+
     # -------------------------------------------------------
     # 持仓刷新
     # -------------------------------------------------------

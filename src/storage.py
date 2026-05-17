@@ -664,6 +664,9 @@ class SimulatedAccount(Base):
     auto_trade_enabled = Column(Boolean, nullable=False, default=False)
     auto_trade_mode = Column(String(16), nullable=False, default='conservative')
     auto_start_on_market_open = Column(Boolean, nullable=False, server_default='0', default=False)
+    clear_on_market_close = Column(Boolean, nullable=False, server_default='0', default=False)
+    clear_before_close_minutes = Column(Integer, nullable=False, server_default='15', default=15)
+    scan_interval_minutes = Column(Integer, nullable=True, default=None)
     max_position_pct = Column(Float, nullable=False, default=20.0)
     max_drawdown_pct = Column(Float, nullable=False, default=20.0)
     stop_loss_pct = Column(Float, nullable=False, default=5.0)
@@ -687,6 +690,9 @@ class SimulatedAccount(Base):
             'auto_trade_enabled': self.auto_trade_enabled,
             'auto_trade_mode': self.auto_trade_mode,
             'auto_start_on_market_open': bool(self.auto_start_on_market_open),
+            'clear_on_market_close': bool(self.clear_on_market_close),
+            'clear_before_close_minutes': self.clear_before_close_minutes,
+            'scan_interval_minutes': self.scan_interval_minutes,
             'max_position_pct': self.max_position_pct,
             'max_drawdown_pct': self.max_drawdown_pct,
             'stop_loss_pct': self.stop_loss_pct,
@@ -999,6 +1005,9 @@ class DatabaseManager:
             # 迁移：补充新列（幂等，列已存在时静默跳过）
             _migrations = [
                 "ALTER TABLE simulated_accounts ADD COLUMN auto_start_on_market_open BOOLEAN NOT NULL DEFAULT 0",
+                "ALTER TABLE simulated_accounts ADD COLUMN clear_on_market_close BOOLEAN NOT NULL DEFAULT 0",
+                "ALTER TABLE simulated_accounts ADD COLUMN clear_before_close_minutes INTEGER NOT NULL DEFAULT 15",
+                "ALTER TABLE simulated_accounts ADD COLUMN scan_interval_minutes INTEGER",
             ]
             for stmt in _migrations:
                 try:

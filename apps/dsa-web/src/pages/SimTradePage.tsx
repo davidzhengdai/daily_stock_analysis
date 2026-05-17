@@ -523,6 +523,9 @@ const AutoTradeTab: React.FC<{
   const [settings, setSettings] = useState<AccountSettingsRequest>({
     auto_trade_mode: account.auto_trade_mode,
     auto_start_on_market_open: account.auto_start_on_market_open,
+    clear_on_market_close: account.clear_on_market_close,
+    clear_before_close_minutes: account.clear_before_close_minutes,
+    scan_interval_minutes: account.scan_interval_minutes,
     max_position_pct: account.max_position_pct,
     max_drawdown_pct: account.max_drawdown_pct,
     stop_loss_pct: account.stop_loss_pct,
@@ -761,9 +764,57 @@ const AutoTradeTab: React.FC<{
               className="h-4 w-4 rounded border-border accent-primary"
             />
             <span className="text-sm">
-              Auto-start when market opens / stop when market closes
+              开盘自动启动 / 收盘自动停止
             </span>
           </label>
+
+          {/* 空仓过夜 */}
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={!!settings.clear_on_market_close}
+              onChange={(e) => setSettings((s) => ({ ...s, clear_on_market_close: e.target.checked }))}
+              className="h-4 w-4 rounded border-border accent-primary"
+            />
+            <span className="text-sm font-medium">
+              空仓过夜（收盘前自动清仓）
+            </span>
+          </label>
+
+          {/* clear_before_close_minutes — only visible when 空仓过夜 is enabled */}
+          {settings.clear_on_market_close && (
+            <div className="flex items-center gap-3 pl-7">
+              <label className="w-48 text-xs text-secondary-text shrink-0">收盘前 N 分钟清仓</label>
+              <input
+                type="number"
+                min={1}
+                max={60}
+                step={1}
+                value={settings.clear_before_close_minutes ?? 15}
+                onChange={(e) => setSettings((s) => ({ ...s, clear_before_close_minutes: Number(e.target.value) }))}
+                className="w-24 rounded-lg border border-border bg-base px-3 py-1.5 text-sm tabular-nums"
+              />
+              <span className="text-xs text-secondary-text">分钟</span>
+            </div>
+          )}
+
+          {/* Scan interval */}
+          <div className="flex items-center gap-3">
+            <label className="w-48 text-xs text-secondary-text shrink-0">AI 扫描间隔（分钟）</label>
+            <input
+              type="number"
+              min={1}
+              max={60}
+              step={1}
+              value={settings.scan_interval_minutes ?? ''}
+              placeholder="默认 5"
+              onChange={(e) => {
+                const v = e.target.value === '' ? null : Number(e.target.value);
+                setSettings((s) => ({ ...s, scan_interval_minutes: v }));
+              }}
+              className="w-24 rounded-lg border border-border bg-base px-3 py-1.5 text-sm tabular-nums"
+            />
+          </div>
 
           <div className="flex items-center gap-3">
             <button
