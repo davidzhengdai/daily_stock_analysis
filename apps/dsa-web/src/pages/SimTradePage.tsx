@@ -1216,7 +1216,7 @@ const AutoTradeTab: React.FC<{
               className="h-4 w-4 rounded border-border accent-primary"
             />
             <span className="text-sm">
-              开盘自动启动 / 收盘自动停止
+              Auto-start when market opens / stop when market closes
             </span>
           </label>
 

@@ -176,6 +176,8 @@ async def app_lifespan(app: FastAPI):
     from src.services.simtrade.auto_trade_service import get_auto_trade_service
     get_auto_trade_service().start_market_watcher()
     _schedule_stock_index_background_refresh(app, "startup")
+    from src.services.simtrade.auto_trade_service import get_auto_trade_service
+    get_auto_trade_service().start_market_watcher()
     try:
         yield
     finally:
