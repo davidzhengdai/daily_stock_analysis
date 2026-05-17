@@ -208,7 +208,6 @@ class AutoTradeService:
                 return result
 
         # ---- 生成信号并执行 ----
-        from src.services.simtrade.signal_service import SignalService
         signal_svc = SignalService(repo=self.repo)
         order_svc = OrderService(repo=self.repo)
 
