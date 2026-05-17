@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [新功能] 美股全市场扫描器：5层漏斗筛选 NYSE+NASDAQ 全量股票，推荐中线投资 Top10，含财务历史/行业资讯/全球行业状态分析；新增 `/api/v1/scanner/` REST API 及后台扫描任务；结果同步推送通知渠道与本地 Markdown 报告。
 - [新功能] 沙里淘金：扫描美股小盘股（$50M–$1B 市值）与 A 股，四维筛选（超跌+低估+低覆盖+低 PE），LLM 匹配宏观主题并深度分析，输出带完整投资论点的金股推荐；新增 `/api/v1/gold-digger/` REST API 及侧边栏入口。
 - [修复] 修复 Scanner / 沙里淘金使用 NASDAQ 股票池时因接口参数返回空 rows 导致扫描无结果的问题，并为沙里淘金美股价格下载增加分批处理。
+- [修复] 修复 Scanner 同时扫描美股和 A股时全局 TopN 与行业分散截断可能让美股挤出全部 A股候选的问题，技术筛选、基本面筛选、行业分散和最终 Top Picks 改为跨市场保留有效候选名额。
+- [改进] Scanner 与沙里淘金新增深度分析前 AI 预选，先由轻量 LLM 从规则候选池中挑选进入完整分析的股票，并在 LLM 失败时自动回退到原规则排序。
+- [修复] 修复 Scanner / 沙里淘金 A 股候选池可能混入指数且在技术筛选阶段因单一 Akshare 接口失败被整批剔除的问题，A 股行情改为复用统一数据源 fallback。
+- [测试] 补充 A 股股票池过滤、Scanner A 股技术筛选 fallback 与沙里淘金 A 股价格筛选 fallback 的回归测试。
 - [改进] Scanner / 沙里淘金 Web 页面补齐中文展示，包含页面标题、配置、进度、历史记录、筛选漏斗与结果指标文案。
 - [改进] Scanner / 沙里淘金支持按美股和 A 股市场配置扫描范围，并为 A 股候选增加中国政策与国家热点主题权重。
 - [改进] Scanner / 沙里淘金新增 CLI 一次性运行入口，并补充中英文使用文档、API 示例和市场配置说明。
@@ -53,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] News Sentinel 情报搜索新增 `/stock-news/stream` 流式 HTTP 端点：主服务发起分析时优先向 Sentinel 请求股票/行业/政策相关缓存；缓存未命中则由 Sentinel 即时抓取并周期发送 heartbeat，主服务 3 秒内未收到 heartbeat 即回退到在线搜索。
 - [修复] 修复自选股增删改未同步 News Sentinel 关注股票列表的问题，避免情报中心关注股票数量与自选股页面不一致。
 - [改进] Scanner 与沙里淘金结果卡片新增自选股星标按钮，可直接将推荐股票加入或移出自选股。
+- [改进] Scanner 与沙里淘金结果按美股/A股分组展示，Scanner 结果卡片新增行业标签。
 - [改进] 报告完整性校验对可本地占位的 dashboard 字段跳过 LLM 补全重试，并新增 `REPORT_INTEGRITY_RETRY_MAX_TOKENS` 限制补全输出，降低本地 Ollama 模型分析耗时。
 - [改进] 新增 Docker 构建并启动脚本 `scripts/docker-build-launch.sh`，支持先 build 再启动 server、analyzer 或全部服务。
 - [改进] Moomoo 数据源优先使用市场快照补充美股估值/股本/盘前盘后字段，并支持通过 Moomoo 拉取美股日 K。

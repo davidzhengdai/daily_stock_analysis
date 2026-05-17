@@ -339,6 +339,13 @@ class BaostockFetcher(BaseFetcher):
                     
                     if data_list:
                         df = pd.DataFrame(data_list, columns=rs.fields)
+
+                        # Baostock returns indices and other instruments in the same endpoint.
+                        # Keep active common stocks for scanner-style equity universes.
+                        if 'type' in df.columns:
+                            df = df[df['type'].astype(str) == '1']
+                        if 'status' in df.columns:
+                            df = df[df['status'].astype(str) == '1']
                         
                         # 转换代码格式（去除 sh. 或 sz. 前缀）
                         df['code'] = df['code'].apply(lambda x: x.split('.')[1] if '.' in x else x)

@@ -21,9 +21,8 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date as _date, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.config import get_config
 from src.schemas.gold_digger import (
@@ -246,26 +245,22 @@ def _fetch_cn_garbage_stocks(
     cfg: DigConfig,
     stock_list: List[Dict[str, str]],
 ) -> List[GarbageStockInfo]:
-    """Fetch A-share garbage stocks with price history via akshare fallback."""
+    """Fetch A-share garbage stocks with price history via configured data-source fallback."""
     try:
-        import akshare as ak
-    except ImportError:
-        logger.warning("akshare not installed; skipping CN garbage stock scan")
+        from src.services.cn_daily_data import build_cn_screening_data_manager
+        data_manager = build_cn_screening_data_manager()
+    except Exception as exc:
+        logger.warning("DataFetcherManager unavailable; skipping CN garbage stock scan: %s", exc)
         return []
 
     results: List[GarbageStockInfo] = []
+    source_counts: Dict[str, int] = {}
+    failures = 0
 
-    def _get_cn_stock(row: Dict[str, str]) -> Optional[GarbageStockInfo]:
+    def _get_cn_stock(row: Dict[str, str]) -> Optional[Tuple[GarbageStockInfo, str]]:
         code = row["code"]
         try:
-            # Get price history
-            df = ak.stock_zh_a_hist(
-                symbol=code,
-                period="daily",
-                start_date=(_date.today() - timedelta(days=200)).strftime("%Y%m%d"),
-                end_date=_date.today().strftime("%Y%m%d"),
-                adjust="qfq",
-            )
+            df, source = data_manager.get_daily_data(code, days=200)
             if df is None or df.empty or len(df) < 10:
                 return None
 
@@ -289,7 +284,7 @@ def _fetch_cn_garbage_stocks(
             if pct_6m > -cfg.min_price_decline_6m_pct:
                 return None
 
-            return GarbageStockInfo(
+            stock = GarbageStockInfo(
                 ticker=code,
                 name=row.get("name", code),
                 market="cn",
@@ -306,6 +301,7 @@ def _fetch_cn_garbage_stocks(
                 held_by_institutions_pct=None,
                 short_ratio=None,
             )
+            return stock, source
         except Exception:
             return None
 
@@ -313,10 +309,19 @@ def _fetch_cn_garbage_stocks(
     sample = stock_list[:500]
     with ThreadPoolExecutor(max_workers=5) as pool:
         for result in pool.map(_get_cn_stock, sample):
-            if result is not None:
-                results.append(result)
+            if result is None:
+                failures += 1
+                continue
+            stock, source = result
+            results.append(stock)
+            source_counts[source] = source_counts.get(source, 0) + 1
 
-    logger.info("CN garbage (price filter): %d stocks", len(results))
+    logger.info(
+        "CN garbage (price filter): %d stocks, source_counts=%s, failures=%d",
+        len(results),
+        source_counts,
+        failures,
+    )
     return results
 
 
@@ -700,11 +705,18 @@ class GoldDigger:
         report.theme_matched = len(themed)
         logger.info("Theme-matched candidates: %d", len(themed))
 
-        # Sort and take top per market for LLM analysis
+        # Sort and take top per market for AI preselection, then deep LLM analysis
         themed.sort(key=lambda c: c.composite_score, reverse=True)
-
-        tier5_us = [c for c in themed if c.market == "us"][:cfg.max_tier5_per_market]
-        tier5_cn = [c for c in themed if c.market == "cn"][:cfg.max_tier5_per_market]
+        tier5_us = self._ai_preselect_market_candidates(
+            [c for c in themed if c.market == "us"],
+            cfg.max_tier5_per_market,
+            analyzer,
+        )
+        tier5_cn = self._ai_preselect_market_candidates(
+            [c for c in themed if c.market == "cn"],
+            cfg.max_tier5_per_market,
+            analyzer,
+        )
         tier5 = tier5_us + tier5_cn
         report.deep_analyzed = len(tier5)
         logger.info("Tier 5 candidates for LLM: %d", len(tier5))
@@ -753,6 +765,44 @@ class GoldDigger:
             self._send_notification(report)
         except Exception as exc:
             logger.warning("Notification failed: %s", exc)
+
+    def _ai_preselect_market_candidates(
+        self,
+        candidates: List[GoldCandidate],
+        target_count: int,
+        analyzer,
+    ) -> List[GoldCandidate]:
+        target = min(target_count, len(candidates))
+        if target <= 0:
+            return []
+        if len(candidates) <= target:
+            return candidates
+
+        pool_size = min(len(candidates), max(target, target * 2))
+        pool = candidates[:pool_size]
+        if not getattr(self.config, "gold_digger_ai_preselect_enabled", True):
+            return pool[:target]
+
+        try:
+            from src.services.ai_preselector import ai_preselect_gold_candidates
+
+            selected = ai_preselect_gold_candidates(
+                pool,
+                target,
+                analyzer,
+                model=getattr(self.config, "gold_digger_model", "") or None,
+            )
+            market = pool[0].market if pool else "unknown"
+            logger.info(
+                "GoldDigger AI preselection [%s]: %d → %d",
+                market,
+                len(pool),
+                len(selected),
+            )
+            return selected
+        except Exception as exc:
+            logger.warning("GoldDigger AI preselection failed; using rule-ranked candidates: %s", exc)
+            return pool[:target]
 
     def _llm_analyze(
         self,

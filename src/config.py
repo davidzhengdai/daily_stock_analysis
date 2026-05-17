@@ -1005,6 +1005,8 @@ class Config:
     scanner_max_cn_stocks: int = 800
     scanner_china_policy_weight: float = 0.25
     scanner_universe_cache_hours: int = 24
+    scanner_ai_preselect_enabled: bool = True
+    gold_digger_ai_preselect_enabled: bool = True
 
     # === 配置校验模式 ===
     # CONFIG_VALIDATE_MODE=warn (default): log all issues but always continue startup
@@ -1828,6 +1830,12 @@ class Config:
             scanner_universe_cache_hours=parse_env_int(
                 os.getenv('SCANNER_UNIVERSE_CACHE_HOURS'), 24,
                 field_name='SCANNER_UNIVERSE_CACHE_HOURS', minimum=1,
+            ),
+            scanner_ai_preselect_enabled=parse_env_bool(
+                os.getenv('SCANNER_AI_PRESELECT_ENABLED'), default=True,
+            ),
+            gold_digger_ai_preselect_enabled=parse_env_bool(
+                os.getenv('GOLD_DIGGER_AI_PRESELECT_ENABLED'), default=True,
             ),
         )
     

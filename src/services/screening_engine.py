@@ -11,7 +11,6 @@ Tier 4 — sector diversity filter   (ensures multi-sector representation)
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta
 from typing import Callable, Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -40,6 +39,64 @@ def _make_progress(cb: Optional[Callable[[int, str], None]], pct: int, msg: str)
             pass
 
 
+def _configured_markets(config: ScanConfig) -> List[str]:
+    markets: List[str] = []
+    for market in config.markets or []:
+        normalized = str(market).strip().lower()
+        if normalized and normalized not in markets:
+            markets.append(normalized)
+    return markets
+
+
+def _select_market_balanced(items: List, limit: int, markets: List[str], market_getter: Callable) -> List:
+    """Select a score-sorted list while reserving room for each requested market."""
+    if limit <= 0:
+        return []
+    if len(items) <= limit:
+        return items
+
+    buckets: Dict[str, List] = {}
+    for item in items:
+        market = str(market_getter(item) or "").lower()
+        buckets.setdefault(market, []).append(item)
+
+    active_markets = [market for market in markets if buckets.get(market)]
+    if len(active_markets) <= 1:
+        return items[:limit]
+
+    selected: List = []
+    selected_ids = set()
+    base_quota = max(1, limit // len(active_markets))
+
+    for market in active_markets:
+        for item in buckets[market][:base_quota]:
+            if len(selected) >= limit:
+                break
+            selected.append(item)
+            selected_ids.add(id(item))
+
+    if len(selected) < limit:
+        for item in items:
+            if id(item) in selected_ids:
+                continue
+            selected.append(item)
+            selected_ids.add(id(item))
+            if len(selected) >= limit:
+                break
+
+    order = {id(item): index for index, item in enumerate(items)}
+    selected.sort(key=lambda item: order[id(item)])
+    return selected
+
+
+def _market_counts(items: List, market_getter: Callable) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for item in items:
+        market = str(market_getter(item) or "unknown").lower()
+        counts[market] = counts.get(market, 0) + 1
+    return counts
+
+
 class ScreeningEngine:
     """Implements the four pre-LLM screening tiers."""
 
@@ -64,7 +121,12 @@ class ScreeningEngine:
             if s.price > 0 and (s.price < config.min_price or s.price > config.max_price):
                 continue
             passed.append(s)
-        logger.info("Tier 1: %d → %d stocks", len(stocks), len(passed))
+        logger.info(
+            "Tier 1: %d → %d stocks, market_counts=%s",
+            len(stocks),
+            len(passed),
+            _market_counts(passed, lambda item: item.market),
+        )
         return passed
 
     # ------------------------------------------------------------------
@@ -87,8 +149,20 @@ class ScreeningEngine:
             results.extend(self._tier2_cn_technical_screen(cn_stocks, config, progress_cb))
 
         results.sort(key=lambda x: x.signal_score, reverse=True)
-        top = results[: config.max_tier2_candidates]
-        logger.info("Tier 2: %d → %d candidates (top by signal_score)", len(results), len(top))
+        top = _select_market_balanced(
+            results,
+            config.max_tier2_candidates,
+            _configured_markets(config),
+            lambda item: item.stock.market,
+        )
+        logger.info(
+            "Tier 2: %d → %d candidates (market-balanced by signal_score), "
+            "all_market_counts=%s, selected_market_counts=%s",
+            len(results),
+            len(top),
+            _market_counts(results, lambda item: item.stock.market),
+            _market_counts(top, lambda item: item.stock.market),
+        )
         return top
 
     def _tier2_us_technical_screen(
@@ -152,15 +226,16 @@ class ScreeningEngine:
         config: ScanConfig,
         progress_cb: Optional[Callable[[int, str], None]] = None,
     ) -> List[TechScore]:
+        results: List[TechScore] = []
         try:
-            import akshare as ak
-        except ImportError:
-            logger.error("akshare not installed; cannot run China Tier 2 screen")
+            from src.services.cn_daily_data import build_cn_screening_data_manager
+            data_manager = build_cn_screening_data_manager()
+        except Exception as exc:
+            logger.error("DataFetcherManager unavailable; cannot run China Tier 2 screen: %s", exc)
             return []
 
-        results: List[TechScore] = []
-        start_date = (date.today() - timedelta(days=140)).strftime("%Y%m%d")
-        end_date = date.today().strftime("%Y%m%d")
+        source_counts: Dict[str, int] = {}
+        failures = 0
         total = len(stocks)
 
         for idx, stock in enumerate(stocks, start=1):
@@ -168,16 +243,12 @@ class ScreeningEngine:
                 pct = 10 + int((idx / max(total, 1)) * 30)
                 _make_progress(progress_cb, pct, f"China technical screen {idx}/{total}")
             try:
-                raw = ak.stock_zh_a_hist(
-                    symbol=stock.ticker,
-                    period="daily",
-                    start_date=start_date,
-                    end_date=end_date,
-                    adjust="qfq",
-                )
+                raw, source = data_manager.get_daily_data(stock.ticker, days=140)
                 df = self._normalise_cn_history(raw)
                 if df is None or len(df) < 20:
+                    failures += 1
                     continue
+                source_counts[source] = source_counts.get(source, 0) + 1
                 trend = self._analyzer.analyze(df, stock.ticker)
                 last = df.iloc[-1]
                 stock.price = float(last.get("close") or stock.price or 0)
@@ -192,8 +263,16 @@ class ScreeningEngine:
                     volume_status=trend.volume_status.value,
                 ))
             except Exception as exc:
+                failures += 1
                 logger.debug("China technical analysis failed for %s: %s", stock.ticker, exc)
 
+        logger.info(
+            "China Tier 2 technical screen: %d input → %d scored, source_counts=%s, failures=%d",
+            total,
+            len(results),
+            source_counts,
+            failures,
+        )
         return results
 
     @staticmethod
@@ -335,8 +414,20 @@ class ScreeningEngine:
             fs.composite_score = round(composite, 2)
 
         fund_scores.sort(key=lambda x: x.composite_score, reverse=True)
-        top = fund_scores[: config.max_tier3_candidates]
-        logger.info("Tier 3: %d → %d candidates (top by composite_score)", len(fund_scores), len(top))
+        top = _select_market_balanced(
+            fund_scores,
+            config.max_tier3_candidates,
+            _configured_markets(config),
+            lambda item: item.tech.stock.market,
+        )
+        logger.info(
+            "Tier 3: %d → %d candidates (market-balanced by composite_score), "
+            "all_market_counts=%s, selected_market_counts=%s",
+            len(fund_scores),
+            len(top),
+            _market_counts(fund_scores, lambda item: item.tech.stock.market),
+            _market_counts(top, lambda item: item.tech.stock.market),
+        )
         return top
 
     @staticmethod
@@ -412,11 +503,69 @@ class ScreeningEngine:
     ) -> List[CandidateStock]:
         _make_progress(progress_cb, 65, "Applying sector diversity filter…")
         max_candidates = config.max_tier5_stocks
+        selected = self._select_sector_diverse_funds(candidates, max_candidates, config)
 
+        # Assign sector ranks
+        sector_rank_counter: Dict[str, int] = {}
+        result: List[CandidateStock] = []
+        for fs in selected:
+            sector_rank_counter[fs.sector] = sector_rank_counter.get(fs.sector, 0) + 1
+            result.append(CandidateStock(fund=fs, sector_rank=sector_rank_counter[fs.sector]))
+
+        logger.info(
+            "Tier 4: %d → %d diverse candidates, input_market_counts=%s, selected_market_counts=%s",
+            len(candidates),
+            len(result),
+            _market_counts(candidates, lambda item: item.tech.stock.market),
+            _market_counts(result, lambda item: item.fund.tech.stock.market),
+        )
+        return result
+
+    def _select_sector_diverse_funds(
+        self,
+        candidates: List[FundScore],
+        max_candidates: int,
+        config: ScanConfig,
+    ) -> List[FundScore]:
+        markets = _configured_markets(config)
+        market_buckets: Dict[str, List[FundScore]] = {}
+        for fs in candidates:
+            market_buckets.setdefault(str(fs.tech.stock.market or "").lower(), []).append(fs)
+
+        active_markets = [market for market in markets if market_buckets.get(market)]
+        if len(active_markets) <= 1:
+            return self._sector_round_robin(candidates, max_candidates)
+
+        selected: List[FundScore] = []
+        selected_ids = set()
+        base_quota = max(1, max_candidates // len(active_markets))
+
+        for market in active_markets:
+            market_selected = self._sector_round_robin(market_buckets[market], base_quota)
+            for fs in market_selected:
+                selected.append(fs)
+                selected_ids.add(id(fs))
+
+        if len(selected) < max_candidates:
+            for fs in self._sector_round_robin(candidates, max_candidates):
+                if id(fs) in selected_ids:
+                    continue
+                selected.append(fs)
+                selected_ids.add(id(fs))
+                if len(selected) >= max_candidates:
+                    break
+
+        selected.sort(key=lambda fs: fs.composite_score, reverse=True)
+        return selected[:max_candidates]
+
+    @staticmethod
+    def _sector_round_robin(candidates: List[FundScore], max_candidates: int) -> List[FundScore]:
         # Group by sector, sorted by composite_score
         sector_buckets: Dict[str, List[FundScore]] = {}
         for fs in candidates:
             sector_buckets.setdefault(fs.sector, []).append(fs)
+        for bucket in sector_buckets.values():
+            bucket.sort(key=lambda item: item.composite_score, reverse=True)
 
         selected: List[FundScore] = []
         selected_tickers = set()
@@ -442,12 +591,4 @@ class ScreeningEngine:
             if not added_this_round:
                 break
 
-        # Assign sector ranks
-        sector_rank_counter: Dict[str, int] = {}
-        result: List[CandidateStock] = []
-        for fs in selected:
-            sector_rank_counter[fs.sector] = sector_rank_counter.get(fs.sector, 0) + 1
-            result.append(CandidateStock(fund=fs, sector_rank=sector_rank_counter[fs.sector]))
-
-        logger.info("Tier 4: %d → %d diverse candidates", len(candidates), len(result))
-        return result
+        return selected

@@ -101,6 +101,18 @@ function translateScanMessage(message: string): string {
   return message;
 }
 
+function isChinaMarket(market?: string): boolean {
+  const normalized = (market || '').trim().toLowerCase();
+  return normalized === 'cn' || normalized === 'a' || normalized === 'ashare' || normalized === 'a-share';
+}
+
+function splitPicksByMarket(picks: StockPick[]) {
+  return {
+    us: picks.filter((pick) => !isChinaMarket(pick.market)),
+    cn: picks.filter((pick) => isChinaMarket(pick.market)),
+  };
+}
+
 // ─── Funnel Bar ─────────────────────────────────────────────────────────────
 
 const FunnelBar: React.FC<{ label: string; value: number; max: number; color?: string }> = ({
@@ -199,9 +211,10 @@ const PickCard: React.FC<{
         {/* Badges */}
         <div className="flex flex-wrap items-center gap-2 ml-auto">
           {decisionBadge(pick.llmDecision, pick.buySignal)}
-          <Badge variant="default">{pick.sector}</Badge>
-          <Badge variant={pick.market === 'cn' ? 'warning' : 'default'}>
-            {pick.market === 'cn' ? 'A股' : '美股'}
+          {pick.sector ? <Badge variant="default">{pick.sector}</Badge> : null}
+          {pick.industry ? <Badge variant="default">行业：{pick.industry}</Badge> : null}
+          <Badge variant={isChinaMarket(pick.market) ? 'warning' : 'default'}>
+            {isChinaMarket(pick.market) ? 'A股' : '美股'}
           </Badge>
           <FavoriteStockButton
             isWatched={isWatched}
@@ -329,65 +342,84 @@ const ScanResults: React.FC<{
   report: ScanReport;
   watchedCodes: Set<string>;
   onToggleWatchlist: (code: string, name: string) => void;
-}> = ({ report, watchedCodes, onToggleWatchlist }) => (
-  <div className="space-y-4 animate-fade-in">
-    {/* Summary banner */}
-    <Card padding="md" className="flex flex-wrap gap-4 items-center">
-      <div>
-        <span className="label-uppercase">扫描完成</span>
-        <p className="text-sm text-secondary-text mt-0.5">{formatTimestamp(report.timestamp)}</p>
-      </div>
-      <div className="ml-auto flex flex-wrap gap-6">
-        <div className="text-center">
-          <p className="text-xs text-muted-text">股票池</p>
-          <p className="font-mono font-bold text-foreground">{report.funnel.universe.toLocaleString()}</p>
+}> = ({ report, watchedCodes, onToggleWatchlist }) => {
+  const groupedPicks = splitPicksByMarket(report.topPicks);
+  const renderPickGroup = (title: string, picks: StockPick[]) => {
+    if (picks.length === 0) return null;
+    return (
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="label-uppercase">
+            {title} Top {picks.length}（1–6个月）
+          </h2>
+          <Badge variant="default" size="sm">{picks.length} 只</Badge>
         </div>
-        <div className="text-center">
-          <p className="text-xs text-muted-text">深度分析</p>
-          <p className="font-mono font-bold text-foreground">{report.funnel.tier5Analyzed}</p>
+        <div className="space-y-3">
+          {picks.map(pick => (
+            <PickCard
+              key={pick.ticker}
+              pick={pick}
+              isWatched={watchedCodes.has(pick.ticker.toUpperCase())}
+              onToggleWatchlist={onToggleWatchlist}
+            />
+          ))}
         </div>
-        <div className="text-center">
-          <p className="text-xs text-muted-text">推荐</p>
-          <p className="font-mono font-bold text-cyan">{report.funnel.finalPicks}</p>
-        </div>
-        <div className="text-center">
-          <p className="text-xs text-muted-text">耗时</p>
-          <p className="font-mono font-bold text-foreground">{formatDuration(report.durationS)}</p>
-        </div>
-      </div>
-    </Card>
+      </section>
+    );
+  };
 
-    {/* Funnel */}
-    <Card padding="md">
-      <span className="label-uppercase mb-3 block">筛选漏斗</span>
-      <div className="space-y-2">
-        <FunnelBar label="全部股票" value={report.funnel.universe} max={report.funnel.universe} color="bg-border/60" />
-        <FunnelBar label="基础筛选后" value={report.funnel.tier1} max={report.funnel.universe} color="bg-purple/70" />
-        <FunnelBar label="技术面筛选" value={report.funnel.tier2} max={report.funnel.universe} color="bg-cyan/70" />
-        <FunnelBar label="基本面筛选" value={report.funnel.tier3} max={report.funnel.universe} color="bg-success/70" />
-        <FunnelBar label="AI分析" value={report.funnel.tier5Analyzed} max={report.funnel.universe} color="bg-warning/70" />
-        <FunnelBar label="最终推荐" value={report.funnel.finalPicks} max={report.funnel.universe} color="bg-primary-gradient" />
-      </div>
-    </Card>
+  return (
+    <div className="space-y-4 animate-fade-in">
+      {/* Summary banner */}
+      <Card padding="md" className="flex flex-wrap gap-4 items-center">
+        <div>
+          <span className="label-uppercase">扫描完成</span>
+          <p className="text-sm text-secondary-text mt-0.5">{formatTimestamp(report.timestamp)}</p>
+        </div>
+        <div className="ml-auto flex flex-wrap gap-6">
+          <div className="text-center">
+            <p className="text-xs text-muted-text">股票池</p>
+            <p className="font-mono font-bold text-foreground">{report.funnel.universe.toLocaleString()}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted-text">深度分析</p>
+            <p className="font-mono font-bold text-foreground">{report.funnel.tier5Analyzed}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted-text">推荐</p>
+            <p className="font-mono font-bold text-cyan">{report.funnel.finalPicks}</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted-text">耗时</p>
+            <p className="font-mono font-bold text-foreground">{formatDuration(report.durationS)}</p>
+          </div>
+        </div>
+      </Card>
 
-    {/* Picks */}
-    <div>
-      <h2 className="label-uppercase mb-3">
-        中期投资机会 Top {report.topPicks.length}（1–6个月）
-      </h2>
-      <div className="space-y-3">
-        {report.topPicks.map(pick => (
-          <PickCard
-            key={pick.ticker}
-            pick={pick}
-            isWatched={watchedCodes.has(pick.ticker.toUpperCase())}
-            onToggleWatchlist={onToggleWatchlist}
-          />
-        ))}
+      {/* Funnel */}
+      <Card padding="md">
+        <span className="label-uppercase mb-3 block">筛选漏斗</span>
+        <div className="space-y-2">
+          <FunnelBar label="全部股票" value={report.funnel.universe} max={report.funnel.universe} color="bg-border/60" />
+          <FunnelBar label="基础筛选后" value={report.funnel.tier1} max={report.funnel.universe} color="bg-purple/70" />
+          <FunnelBar label="技术面筛选" value={report.funnel.tier2} max={report.funnel.universe} color="bg-cyan/70" />
+          <FunnelBar label="基本面筛选" value={report.funnel.tier3} max={report.funnel.universe} color="bg-success/70" />
+          <FunnelBar label="AI分析" value={report.funnel.tier5Analyzed} max={report.funnel.universe} color="bg-warning/70" />
+          <FunnelBar label="最终推荐" value={report.funnel.finalPicks} max={report.funnel.universe} color="bg-primary-gradient" />
+        </div>
+      </Card>
+
+      {/* Picks */}
+      <div className="space-y-5">
+        <h2 className="label-uppercase">
+          中期投资机会 Top {report.topPicks.length}
+        </h2>
+        {renderPickGroup('美股推荐', groupedPicks.us)}
+        {renderPickGroup('A股推荐', groupedPicks.cn)}
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 // ─── History List ─────────────────────────────────────────────────────────────
 

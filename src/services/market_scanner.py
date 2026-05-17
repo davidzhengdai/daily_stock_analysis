@@ -19,6 +19,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -33,7 +34,7 @@ from src.schemas.scanner import (
     ScanReport,
     StockRecommendation,
 )
-from src.services.screening_engine import ScreeningEngine
+from src.services.screening_engine import ScreeningEngine, _configured_markets, _select_market_balanced
 from src.services.stock_universe import CNStockUniverse, USStockUniverse
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,22 @@ def _make_progress(cb: Optional[Callable[[int, str], None]], pct: int, msg: str)
             cb(pct, msg)
         except Exception:
             pass
+
+
+def _candidate_market_counts(candidates: List[CandidateStock]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for candidate in candidates:
+        market = str(candidate.fund.tech.stock.market or "unknown").lower()
+        counts[market] = counts.get(market, 0) + 1
+    return counts
+
+
+def _analysis_market_counts(items: List[tuple]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for candidate, _result in items:
+        market = str(candidate.fund.tech.stock.market or "unknown").lower()
+        counts[market] = counts.get(market, 0) + 1
+    return counts
 
 
 def _build_investment_thesis(result: Any, candidate: CandidateStock) -> InvestmentThesis:
@@ -356,8 +373,9 @@ class MarketScanner:
         _cb(65, f"Tier 3 → {len(tier3)} candidates. Applying sector filter…")
 
         # ── Tier 4 ──────────────────────────────────────────────────────
-        tier4 = self._engine.tier4_sector_filter(tier3, cfg, progress_cb=_cb)
-        _cb(70, f"Tier 4 → {len(tier4)} diverse candidates. Running LLM analysis…")
+        tier4_pool = self._build_tier4_preselection_pool(tier3, cfg, _cb)
+        tier4 = self._ai_preselect_tier5_candidates(tier4_pool, cfg, _cb)
+        _cb(70, f"Tier 4 → {len(tier4)} AI-preselected candidates. Running LLM analysis…")
 
         # ── Tier 5 ──────────────────────────────────────────────────────
         top_picks = self._tier5_llm_analysis(tier4, cfg, _cb)
@@ -464,6 +482,71 @@ class MarketScanner:
             best = max(best, score)
         return best
 
+    def _build_tier4_preselection_pool(
+        self,
+        tier3: List[FundScore],
+        cfg: ScanConfig,
+        progress_cb: Callable[[int, str], None],
+    ) -> List[CandidateStock]:
+        """Build a broader sector-diverse pool before AI chooses Tier-5 candidates."""
+        if getattr(self.config, "scanner_ai_preselect_enabled", True):
+            pool_size = min(
+                len(tier3),
+                max(cfg.max_tier5_stocks, cfg.max_tier5_stocks * 2),
+            )
+        else:
+            pool_size = cfg.max_tier5_stocks
+        pool_cfg = replace(cfg, max_tier5_stocks=pool_size)
+        return self._engine.tier4_sector_filter(tier3, pool_cfg, progress_cb=progress_cb)
+
+    def _ai_preselect_tier5_candidates(
+        self,
+        candidates: List[CandidateStock],
+        cfg: ScanConfig,
+        progress_cb: Callable[[int, str], None],
+    ) -> List[CandidateStock]:
+        target = min(cfg.max_tier5_stocks, len(candidates))
+        if target <= 0 or len(candidates) <= target:
+            return candidates
+        if not getattr(self.config, "scanner_ai_preselect_enabled", True):
+            return candidates[:target]
+
+        progress_cb(68, f"AI preselecting {target} candidates from {len(candidates)} screened stocks…")
+        try:
+            from src.analyzer import GeminiAnalyzer
+            from src.services.ai_preselector import ai_preselect_scanner_candidates
+
+            analyzer = GeminiAnalyzer()
+            markets = _configured_markets(cfg)
+            selected = ai_preselect_scanner_candidates(
+                candidates,
+                target,
+                analyzer,
+                model=getattr(self.config, "scanner_model", "") or None,
+                market_balancer=lambda items, limit: _select_market_balanced(
+                    items,
+                    limit,
+                    markets,
+                    lambda item: item.fund.tech.stock.market,
+                ),
+            )
+            logger.info(
+                "Scanner AI preselection: %d → %d, input_market_counts=%s, selected_market_counts=%s",
+                len(candidates),
+                len(selected),
+                _candidate_market_counts(candidates),
+                _candidate_market_counts(selected),
+            )
+            return selected
+        except Exception as exc:
+            logger.warning("Scanner AI preselection failed; using rule-ranked candidates: %s", exc)
+            return _select_market_balanced(
+                candidates,
+                target,
+                _configured_markets(cfg),
+                lambda item: item.fund.tech.stock.market,
+            )
+
     def _tier5_llm_analysis(
         self,
         candidates: List[CandidateStock],
@@ -528,10 +611,28 @@ class MarketScanner:
 
         raw_results = [r for r in raw_results if r[1] is not None and r[1].success]
         raw_results.sort(key=_rank_key, reverse=True)
+        logger.info(
+            "Tier 5 successful analyses: %d/%d, market_counts=%s",
+            len(raw_results),
+            total,
+            _analysis_market_counts(raw_results),
+        )
 
         top_n = min(cfg.top_n, len(raw_results))
+        selected_results = _select_market_balanced(
+            raw_results,
+            top_n,
+            _configured_markets(cfg),
+            lambda item: item[0].fund.tech.stock.market,
+        )
+        logger.info(
+            "Top Picks market-balanced selection: %d → %d, selected_market_counts=%s",
+            len(raw_results),
+            len(selected_results),
+            _analysis_market_counts(selected_results),
+        )
         picks = []
-        for rank, (candidate, result) in enumerate(raw_results[:top_n], start=1):
+        for rank, (candidate, result) in enumerate(selected_results, start=1):
             picks.append(_build_recommendation(rank, candidate, result))
         return picks
 

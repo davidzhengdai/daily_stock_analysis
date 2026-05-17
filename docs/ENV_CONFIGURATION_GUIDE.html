@@ -266,6 +266,10 @@ MARKET_REVIEW_MODEL=deepseek/deepseek-v4-flash</code></pre>
 <div class="callout callout-warning">
 <strong>注意事项</strong>：使用本地模型（Ollama）时，若 JSON 格式输出不稳定，系统会自动回退到默认值并记录 WARNING 日志。可通过 <code>grep "JSON parse failed" logs/*.log</code> 监控。若失败率超过 20%，建议切换回云模型。
 </div>
+
+<div class="callout callout-info">
+<strong>Scanner / 沙里淘金 AI 预选</strong>：<code>SCANNER_AI_PRESELECT_ENABLED</code> 和 <code>GOLD_DIGGER_AI_PRESELECT_ENABLED</code> 默认为 <code>true</code>。启用后系统会先用轻量 LLM 从规则候选池中挑选进入深度分析的股票；LLM 不可用或返回格式异常时，自动回退到原规则排序。预选复用 <code>SCANNER_MODEL</code> 与 <code>GOLD_DIGGER_MODEL</code>。
+</div>
 </div>
 
 <div class="step">
