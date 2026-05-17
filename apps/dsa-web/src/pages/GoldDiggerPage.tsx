@@ -34,6 +34,36 @@ import { cn } from '../utils/cn';
 // Sub-components
 // ---------------------------------------------------------------------------
 
+const ACTIVE_GOLD_DIGGER_RUN_STORAGE_KEY = 'dsa.goldDigger.activeRunId';
+
+function readStoredId(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const value = window.localStorage.getItem(key);
+    return value && value.trim() ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredId(key: string, value: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Storage is an enhancement; backend dig still runs without it.
+  }
+}
+
+function removeStoredId(key: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 function translateDigMessage(message: string): string {
   if (!message) return '';
 
@@ -329,6 +359,7 @@ const MARKET_OPTIONS = [
 
 const GoldDiggerPage: React.FC = () => {
   const [isRunning, setIsRunning] = useState(false);
+  const [runningRunId, setRunningRunId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressMsg, setProgressMsg] = useState('');
   const [report, setReport] = useState<DigReport | null>(null);
@@ -411,6 +442,7 @@ const GoldDiggerPage: React.FC = () => {
 
   const startPoll = useCallback((runId: string) => {
     if (pollRef.current) clearInterval(pollRef.current);
+    setRunningRunId(runId);
     pollRef.current = setInterval(async () => {
       try {
         const s = await goldDiggerApi.getStatus(runId);
@@ -420,23 +452,57 @@ const GoldDiggerPage: React.FC = () => {
           clearInterval(pollRef.current!);
           pollRef.current = null;
           setIsRunning(false);
+          setRunningRunId(null);
+          removeStoredId(ACTIVE_GOLD_DIGGER_RUN_STORAGE_KEY);
           await loadResult(runId);
           await loadHistory();
         } else if (s.status === 'error') {
           clearInterval(pollRef.current!);
           pollRef.current = null;
           setIsRunning(false);
+          setRunningRunId(null);
+          removeStoredId(ACTIVE_GOLD_DIGGER_RUN_STORAGE_KEY);
           setError(
             createParsedApiError({ title: '扫描失败', message: s.message ?? '未知错误', status: 500 }),
           );
         }
-      } catch {
-        // transient poll error, keep polling
+      } catch (err) {
+        const parsed = getParsedApiError(err);
+        if (parsed.status !== 404) {
+          // transient poll error, keep polling
+          return;
+        }
+
+        try {
+          await loadResult(runId);
+          await loadHistory();
+        } catch {
+          setError(createParsedApiError({
+            title: '扫描状态已失效',
+            message: '后端没有找到正在运行的淘金任务，请重新启动扫描。',
+            status: 404,
+          }));
+        } finally {
+          if (pollRef.current) clearInterval(pollRef.current);
+          pollRef.current = null;
+          setIsRunning(false);
+          setRunningRunId(null);
+          removeStoredId(ACTIVE_GOLD_DIGGER_RUN_STORAGE_KEY);
+        }
       }
     }, 5000);
   }, [loadResult, loadHistory]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+
+  useEffect(() => {
+    const storedRunId = readStoredId(ACTIVE_GOLD_DIGGER_RUN_STORAGE_KEY);
+    if (!storedRunId) return;
+    setIsRunning(true);
+    setProgress(0);
+    setProgressMsg('恢复扫描进度…');
+    startPoll(storedRunId);
+  }, [startPoll]);
 
   const handleStartDig = async () => {
     setError(null);
@@ -450,9 +516,11 @@ const GoldDiggerPage: React.FC = () => {
         maxTier5PerMarket,
         chinaPolicyWeight,
       });
+      writeStoredId(ACTIVE_GOLD_DIGGER_RUN_STORAGE_KEY, res.runId);
       startPoll(res.runId);
     } catch (err) {
       setIsRunning(false);
+      setRunningRunId(null);
       setError(getParsedApiError(err));
     }
   };
@@ -516,7 +584,9 @@ const GoldDiggerPage: React.FC = () => {
               {isRunning ? '扫描中…' : '开始淘金'}
             </Button>
             <div className="text-sm text-secondary-text">
-              扫描所选市场，匹配宏观主题，AI深度分析找出隐藏金股
+              {runningRunId
+                ? `后台任务 ${runningRunId} 正在运行，可切换页面后返回继续查看`
+                : '扫描所选市场，匹配宏观主题，AI深度分析找出隐藏金股'}
             </div>
           </div>
           <div className="mt-4 grid gap-3 border-t border-border/40 pt-4 sm:grid-cols-2 lg:grid-cols-4">
