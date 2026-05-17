@@ -115,6 +115,9 @@ def update_settings(request: AccountSettingsRequest):
             take_profit_pct=request.take_profit_pct,
             min_signal_confidence=request.min_signal_confidence,
             auto_start_on_market_open=request.auto_start_on_market_open,
+            clear_on_market_close=request.clear_on_market_close,
+            clear_before_close_minutes=request.clear_before_close_minutes,
+            scan_interval_minutes=request.scan_interval_minutes,
         )
         return AccountResponse(**data)
     except ValueError as exc:

@@ -173,6 +173,9 @@ class AccountService:
         take_profit_pct: Optional[float] = None,
         min_signal_confidence: Optional[float] = None,
         auto_start_on_market_open: Optional[bool] = None,
+        clear_on_market_close: Optional[bool] = None,
+        clear_before_close_minutes: Optional[int] = None,
+        scan_interval_minutes: Optional[int] = None,
     ) -> Dict[str, Any]:
         """更新自动交易策略参数。"""
         acct = self.get_account()
@@ -195,6 +198,13 @@ class AccountService:
             updates['min_signal_confidence'] = max(0.0, min(1.0, min_signal_confidence))
         if auto_start_on_market_open is not None:
             updates['auto_start_on_market_open'] = bool(auto_start_on_market_open)
+        if clear_on_market_close is not None:
+            updates['clear_on_market_close'] = bool(clear_on_market_close)
+        if clear_before_close_minutes is not None:
+            updates['clear_before_close_minutes'] = max(1, min(60, int(clear_before_close_minutes)))
+        if scan_interval_minutes is not None:
+            # None / 0 means "use global default"
+            updates['scan_interval_minutes'] = max(1, min(60, int(scan_interval_minutes))) if scan_interval_minutes > 0 else None
 
         if not updates:
             return acct
