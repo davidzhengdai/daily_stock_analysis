@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [改进] News Sentinel 缓存未命中时从"仅注册关注列表"升级为"立即触发后台抓取"：`SentinelCacheClient.fetch_for_stock_async()` 在 daemon 线程中执行完整的 fetch → dedup → classify 流程，确保下次分析调用时缓存已预热；美股 ticker 同时从 StockAnalysis 和 Finviz 补充文章。
 - [改进] News Sentinel Docker 部署改为通过 `server_sentinel.py` 暴露 HTTP API；主服务新增 `SENTINEL_SERVER_URL`，情报中心、关注股票注入、即时预取与搜索缓存优先通过 HTTP 访问 Sentinel，SQLite 直读仅作为本地回退。
 - [改进] News Sentinel 情报搜索新增 `/stock-news/stream` 流式 HTTP 端点：主服务发起分析时优先向 Sentinel 请求股票/行业/政策相关缓存；缓存未命中则由 Sentinel 即时抓取并周期发送 heartbeat，主服务 3 秒内未收到 heartbeat 即回退到在线搜索。
+- [修复] 修复自选股增删改未同步 News Sentinel 关注股票列表的问题，避免情报中心关注股票数量与自选股页面不一致。
+- [改进] Scanner 与沙里淘金结果卡片新增自选股星标按钮，可直接将推荐股票加入或移出自选股。
 - [改进] 报告完整性校验对可本地占位的 dashboard 字段跳过 LLM 补全重试，并新增 `REPORT_INTEGRITY_RETRY_MAX_TOKENS` 限制补全输出，降低本地 Ollama 模型分析耗时。
 - [改进] 新增 Docker 构建并启动脚本 `scripts/docker-build-launch.sh`，支持先 build 再启动 server、analyzer 或全部服务。
 - [改进] Moomoo 数据源优先使用市场快照补充美股估值/股本/盘前盘后字段，并支持通过 Moomoo 拉取美股日 K。

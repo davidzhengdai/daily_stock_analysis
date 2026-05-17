@@ -29,11 +29,16 @@ class WatchlistService:
 
     def add(self, code: str, name: str = "", notes: str = "") -> dict:
         """添加或更新自选股，返回最新记录。"""
-        return self.repo.upsert(code=code, name=name, notes=notes)
+        item = self.repo.upsert(code=code, name=name, notes=notes)
+        self.sync_to_sentinel()
+        return item
 
     def remove(self, code: str) -> bool:
         """删除自选股，返回是否实际删除。"""
-        return self.repo.remove(code)
+        removed = self.repo.remove(code)
+        if removed:
+            self.sync_to_sentinel()
+        return removed
 
     def is_watched(self, code: str) -> bool:
         """判断是否在自选股列表中。"""
@@ -49,16 +54,13 @@ class WatchlistService:
         Returns:
             同步的股票数量；Sentinel 未启用时返回 0。
         """
-        items = self.repo.list_all()
-        if not items:
-            return 0
-
         try:
             from src.services.sentinel.store import NewsStore  # type: ignore
             from src.services.sentinel.config import SentinelConfig  # type: ignore
 
             config = SentinelConfig.from_env()
-            store = NewsStore(config)
+            store = NewsStore(config.db_path)
+            items = self.repo.list_all()
             stocks = [{"code": item["code"], "name": item["name"]} for item in items]
             store.upsert_watched_stocks(stocks)
             return len(stocks)

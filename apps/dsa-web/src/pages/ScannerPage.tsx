@@ -23,6 +23,8 @@ import {
   InlineAlert,
 } from '../components/common';
 import { scannerApi } from '../api/scanner';
+import { watchlistApi } from '../api/watchlist';
+import { FavoriteStockButton } from '../components/watchlist/FavoriteStockButton';
 import type { ScanReport, StockPick, ScanMeta, ScanStatusResponse } from '../types/scanner';
 import { getParsedApiError, createParsedApiError } from '../api/error';
 import type { ParsedApiError } from '../api/error';
@@ -172,7 +174,11 @@ const ThesisSection: React.FC<{
 
 // ─── Pick Card ───────────────────────────────────────────────────────────────
 
-const PickCard: React.FC<{ pick: StockPick }> = ({ pick }) => {
+const PickCard: React.FC<{
+  pick: StockPick;
+  isWatched: boolean;
+  onToggleWatchlist: (code: string, name: string) => void;
+}> = ({ pick, isWatched, onToggleWatchlist }) => {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -197,6 +203,10 @@ const PickCard: React.FC<{ pick: StockPick }> = ({ pick }) => {
           <Badge variant={pick.market === 'cn' ? 'warning' : 'default'}>
             {pick.market === 'cn' ? 'A股' : '美股'}
           </Badge>
+          <FavoriteStockButton
+            isWatched={isWatched}
+            onToggle={() => onToggleWatchlist(pick.ticker, pick.name || pick.ticker)}
+          />
         </div>
       </div>
 
@@ -315,7 +325,11 @@ const PickCard: React.FC<{ pick: StockPick }> = ({ pick }) => {
 
 // ─── Results View ─────────────────────────────────────────────────────────────
 
-const ScanResults: React.FC<{ report: ScanReport }> = ({ report }) => (
+const ScanResults: React.FC<{
+  report: ScanReport;
+  watchedCodes: Set<string>;
+  onToggleWatchlist: (code: string, name: string) => void;
+}> = ({ report, watchedCodes, onToggleWatchlist }) => (
   <div className="space-y-4 animate-fade-in">
     {/* Summary banner */}
     <Card padding="md" className="flex flex-wrap gap-4 items-center">
@@ -363,7 +377,12 @@ const ScanResults: React.FC<{ report: ScanReport }> = ({ report }) => (
       </h2>
       <div className="space-y-3">
         {report.topPicks.map(pick => (
-          <PickCard key={pick.ticker} pick={pick} />
+          <PickCard
+            key={pick.ticker}
+            pick={pick}
+            isWatched={watchedCodes.has(pick.ticker.toUpperCase())}
+            onToggleWatchlist={onToggleWatchlist}
+          />
         ))}
       </div>
     </div>
@@ -490,6 +509,7 @@ const ScannerPage: React.FC = () => {
   const [error, setError] = useState<ParsedApiError | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [watchedCodes, setWatchedCodes] = useState<Set<string>>(new Set());
 
   // Config state
   const [topN, setTopN] = useState(10);
@@ -527,11 +547,45 @@ const ScannerPage: React.FC = () => {
     }
   }, []);
 
+  const loadWatchlist = useCallback(async () => {
+    try {
+      const res = await watchlistApi.listAll();
+      setWatchedCodes(new Set(res.items.map((item) => item.code.toUpperCase())));
+    } catch {
+      // Watchlist state is non-critical for scan results.
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     void loadLatest();
     void loadHistory();
-  }, [loadLatest, loadHistory]);
+    void loadWatchlist();
+  }, [loadLatest, loadHistory, loadWatchlist]);
+
+  const handleToggleWatchlist = useCallback((code: string, name: string) => {
+    const normalizedCode = code.trim().toUpperCase();
+    if (!normalizedCode) return;
+
+    if (watchedCodes.has(normalizedCode)) {
+      watchlistApi.remove(normalizedCode).then(() => {
+        setWatchedCodes((prev) => {
+          const next = new Set(prev);
+          next.delete(normalizedCode);
+          return next;
+        });
+      }).catch(() => {
+        // Keep current UI state when the watchlist update fails.
+      });
+      return;
+    }
+
+    watchlistApi.add(normalizedCode, name).then(() => {
+      setWatchedCodes((prev) => new Set([...prev, normalizedCode]));
+    }).catch(() => {
+      // Keep current UI state when the watchlist update fails.
+    });
+  }, [watchedCodes]);
 
   // Poll scan status when running
   useEffect(() => {
@@ -696,7 +750,11 @@ const ScannerPage: React.FC = () => {
 
           {/* Results */}
           {!isRunning && !isLoading && report && report.topPicks.length > 0 && (
-            <ScanResults report={report} />
+            <ScanResults
+              report={report}
+              watchedCodes={watchedCodes}
+              onToggleWatchlist={handleToggleWatchlist}
+            />
           )}
 
           {/* Empty state */}
