@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修复 Scanner 同时扫描美股和 A股时全局 TopN 与行业分散截断可能让美股挤出全部 A股候选的问题，技术筛选、基本面筛选、行业分散和最终 Top Picks 改为跨市场保留有效候选名额。
 - [改进] Scanner 与沙里淘金新增深度分析前 AI 预选，先由轻量 LLM 从规则候选池中挑选进入完整分析的股票，并在 LLM 失败时自动回退到原规则排序。
 - [修复] 修复 Scanner / 沙里淘金 A 股候选池可能混入指数且在技术筛选阶段因单一 Akshare 接口失败被整批剔除的问题，A 股行情改为复用统一数据源 fallback。
+- [修复] 修复 Scanner / 沙里淘金 Web 页面切换路由后丢失后台任务进度的问题，启动后持久化任务 ID 并在返回页面时自动恢复轮询。
 - [测试] 补充 A 股股票池过滤、Scanner A 股技术筛选 fallback 与沙里淘金 A 股价格筛选 fallback 的回归测试。
 - [改进] Scanner / 沙里淘金 Web 页面补齐中文展示，包含页面标题、配置、进度、历史记录、筛选漏斗与结果指标文案。
 - [改进] Scanner / 沙里淘金支持按美股和 A 股市场配置扫描范围，并为 A 股候选增加中国政策与国家热点主题权重。

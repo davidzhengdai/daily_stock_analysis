@@ -31,6 +31,36 @@ import type { ParsedApiError } from '../api/error';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+const ACTIVE_SCAN_STORAGE_KEY = 'dsa.scanner.activeScanId';
+
+function readStoredId(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const value = window.localStorage.getItem(key);
+    return value && value.trim() ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredId(key: string, value: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(key, value);
+  } catch {
+    // Storage is an enhancement; backend scan still runs without it.
+  }
+}
+
+function removeStoredId(key: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 function scoreColor(score: number): string {
   if (score >= 75) return 'text-success';
   if (score >= 55) return 'text-cyan';
@@ -595,6 +625,21 @@ const ScannerPage: React.FC = () => {
     void loadWatchlist();
   }, [loadLatest, loadHistory, loadWatchlist]);
 
+  useEffect(() => {
+    const storedScanId = readStoredId(ACTIVE_SCAN_STORAGE_KEY);
+    if (!storedScanId) return;
+    setRunningScanId(storedScanId);
+    setScanStatus({
+      scanId: storedScanId,
+      status: 'running',
+      progress: 0,
+      message: '恢复扫描进度…',
+      startedAt: null,
+      completedAt: null,
+      error: null,
+    });
+  }, []);
+
   const handleToggleWatchlist = useCallback((code: string, name: string) => {
     const normalizedCode = code.trim().toUpperCase();
     if (!normalizedCode) return;
@@ -624,16 +669,18 @@ const ScannerPage: React.FC = () => {
     if (!runningScanId) return;
 
     const poll = async () => {
+      const scanId = runningScanId;
       try {
-        const s = await scannerApi.getStatus(runningScanId);
+        const s = await scannerApi.getStatus(scanId);
         setScanStatus(s);
         if (s.status === 'completed') {
           stopPoll();
           setRunningScanId(null);
           setScanStatus(null);
+          removeStoredId(ACTIVE_SCAN_STORAGE_KEY);
           // Load the finished result
           try {
-            const r = await scannerApi.getResult(runningScanId);
+            const r = await scannerApi.getResult(scanId);
             setReport(r);
             setActiveScanId(r.scanId);
           } catch {
@@ -643,10 +690,33 @@ const ScannerPage: React.FC = () => {
         } else if (s.status === 'failed') {
           stopPoll();
           setRunningScanId(null);
+          removeStoredId(ACTIVE_SCAN_STORAGE_KEY);
           setError(createParsedApiError({ title: '扫描失败', message: s.error ?? '扫描失败', status: 500 }));
         }
-      } catch {
-        // network glitch — keep polling
+      } catch (err) {
+        const parsed = getParsedApiError(err);
+        if (parsed.status !== 404) {
+          // network glitch — keep polling
+          return;
+        }
+
+        try {
+          const r = await scannerApi.getResult(scanId);
+          setReport(r);
+          setActiveScanId(r.scanId);
+          void loadHistory();
+        } catch {
+          setError(createParsedApiError({
+            title: '扫描状态已失效',
+            message: '后端没有找到正在运行的扫描任务，请重新启动扫描。',
+            status: 404,
+          }));
+        } finally {
+          stopPoll();
+          setRunningScanId(null);
+          setScanStatus(null);
+          removeStoredId(ACTIVE_SCAN_STORAGE_KEY);
+        }
       }
     };
 
@@ -667,6 +737,7 @@ const ScannerPage: React.FC = () => {
         maxCnStocks,
         chinaPolicyWeight,
       });
+      writeStoredId(ACTIVE_SCAN_STORAGE_KEY, res.scanId);
       setRunningScanId(res.scanId);
       setScanStatus({ scanId: res.scanId, status: 'running', progress: 0, message: 'Starting…', startedAt: null, completedAt: null, error: null });
     } catch (e) {
