@@ -172,6 +172,7 @@ class AccountService:
         stop_loss_pct: Optional[float] = None,
         take_profit_pct: Optional[float] = None,
         min_signal_confidence: Optional[float] = None,
+        auto_start_on_market_open: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """更新自动交易策略参数。"""
         acct = self.get_account()
@@ -192,6 +193,8 @@ class AccountService:
             updates['take_profit_pct'] = max(1.0, min(200.0, take_profit_pct))
         if min_signal_confidence is not None:
             updates['min_signal_confidence'] = max(0.0, min(1.0, min_signal_confidence))
+        if auto_start_on_market_open is not None:
+            updates['auto_start_on_market_open'] = bool(auto_start_on_market_open)
 
         if not updates:
             return acct

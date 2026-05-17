@@ -146,6 +146,7 @@ class AccountResponse(BaseModel):
     stop_loss_pct: float
     take_profit_pct: float
     min_signal_confidence: float
+    auto_start_on_market_open: bool = False
     status: str
     created_at: Optional[str]
     updated_at: Optional[str]
@@ -156,9 +157,10 @@ class AccountSettingsRequest(BaseModel):
     auto_trade_mode: Optional[str] = Field(None, description="conservative / balanced / aggressive")
     max_position_pct: Optional[float] = Field(None, ge=1, le=100)
     max_drawdown_pct: Optional[float] = Field(None, ge=1, le=100)
-    stop_loss_pct: Optional[float] = Field(None, ge=0.5, le=50)
+    stop_loss_pct: Optional[float] = Field(None, ge=0.5, le=100)
     take_profit_pct: Optional[float] = Field(None, ge=1, le=200)
     min_signal_confidence: Optional[float] = Field(None, ge=0, le=1)
+    auto_start_on_market_open: Optional[bool] = None
 
 
 class AutoTradeToggleRequest(BaseModel):
