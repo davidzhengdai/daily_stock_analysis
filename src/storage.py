@@ -43,6 +43,7 @@ from sqlalchemy import (
     desc,
     event,
     func,
+    text,
 )
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import (
@@ -662,6 +663,7 @@ class SimulatedAccount(Base):
     total_withdrawn_usd = Column(Float, nullable=False, default=0.0)
     auto_trade_enabled = Column(Boolean, nullable=False, default=False)
     auto_trade_mode = Column(String(16), nullable=False, default='conservative')
+    auto_start_on_market_open = Column(Boolean, nullable=False, server_default='0', default=False)
     max_position_pct = Column(Float, nullable=False, default=20.0)
     max_drawdown_pct = Column(Float, nullable=False, default=20.0)
     stop_loss_pct = Column(Float, nullable=False, default=5.0)
@@ -684,6 +686,7 @@ class SimulatedAccount(Base):
             'total_withdrawn_usd': self.total_withdrawn_usd,
             'auto_trade_enabled': self.auto_trade_enabled,
             'auto_trade_mode': self.auto_trade_mode,
+            'auto_start_on_market_open': bool(self.auto_start_on_market_open),
             'max_position_pct': self.max_position_pct,
             'max_drawdown_pct': self.max_drawdown_pct,
             'stop_loss_pct': self.stop_loss_pct,
@@ -992,6 +995,18 @@ class DatabaseManager:
 
             # 创建所有表
             Base.metadata.create_all(self._engine)
+
+            # 迁移：补充新列（幂等，列已存在时静默跳过）
+            _migrations = [
+                "ALTER TABLE simulated_accounts ADD COLUMN auto_start_on_market_open BOOLEAN NOT NULL DEFAULT 0",
+            ]
+            for stmt in _migrations:
+                try:
+                    with self._engine.connect() as conn:
+                        conn.execute(text(stmt))
+                        conn.commit()
+                except Exception:
+                    pass
 
             self._initialized = True
             logger.info(f"数据库初始化完成: {db_url}")

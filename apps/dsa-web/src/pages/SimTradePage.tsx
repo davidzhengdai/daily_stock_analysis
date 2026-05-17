@@ -522,6 +522,7 @@ const AutoTradeTab: React.FC<{
   const [runResult, setRunResult] = useState<AutoRunResult | null>(null);
   const [settings, setSettings] = useState<AccountSettingsRequest>({
     auto_trade_mode: account.auto_trade_mode,
+    auto_start_on_market_open: account.auto_start_on_market_open,
     max_position_pct: account.max_position_pct,
     max_drawdown_pct: account.max_drawdown_pct,
     stop_loss_pct: account.stop_loss_pct,
@@ -748,6 +749,19 @@ const AutoTradeTab: React.FC<{
               />
             </div>
           ))}
+
+          {/* Auto-start on market open */}
+          <label className="flex items-center gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={!!settings.auto_start_on_market_open}
+              onChange={(e) => setSettings((s) => ({ ...s, auto_start_on_market_open: e.target.checked }))}
+              className="h-4 w-4 rounded border-border accent-primary"
+            />
+            <span className="text-sm">
+              Auto-start when market opens / stop when market closes
+            </span>
+          </label>
 
           <div className="flex items-center gap-3">
             <button

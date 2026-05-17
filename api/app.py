@@ -119,6 +119,8 @@ from src.services.system_config_service import SystemConfigService
 async def app_lifespan(app: FastAPI):
     """Initialize and release shared services for the app lifecycle."""
     app.state.system_config_service = SystemConfigService()
+    from src.services.simtrade.auto_trade_service import get_auto_trade_service
+    get_auto_trade_service().start_market_watcher()
     try:
         yield
     finally:

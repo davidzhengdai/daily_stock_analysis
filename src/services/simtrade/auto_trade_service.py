@@ -79,6 +79,8 @@ class AutoTradeService:
         ) * 60
         self._last_run_result: Dict[str, Any] = {}
         self._jobs: Dict[str, Dict[str, Any]] = {}
+        self._watcher_thread: Optional[threading.Thread] = None
+        self._watcher_stop: threading.Event = threading.Event()
         self._market_hours_only: bool = os.getenv(
             'SIMTRADE_MARKET_HOURS_ONLY', 'true'
         ).lower() not in ('false', '0', 'no')
@@ -300,6 +302,57 @@ class AutoTradeService:
             'us_open': _is_us_market_open(),
             'market_hours_only': self._market_hours_only,
         }
+
+    # -------------------------------------------------------
+    # Market watcher — auto-start / auto-stop
+    # -------------------------------------------------------
+
+    def start_market_watcher(self) -> None:
+        """Start the background market-hours watcher (idempotent)."""
+        if self._watcher_thread and self._watcher_thread.is_alive():
+            return
+        self._watcher_stop.clear()
+        self._watcher_thread = threading.Thread(
+            target=self._market_watcher_loop,
+            name='simtrade-market-watcher',
+            daemon=True,
+        )
+        self._watcher_thread.start()
+        logger.info("[AutoTrade] 市场监控线程已启动")
+
+    def _market_watcher_loop(self) -> None:
+        """Detect market open/close transitions; auto-start or stop when configured."""
+        prev_any_open: Optional[bool] = None
+
+        while not self._watcher_stop.is_set():
+            try:
+                cn_open = _is_cn_market_open()
+                us_open = _is_us_market_open()
+                any_open = cn_open or us_open
+
+                acct = self.repo.get_or_create_account()
+                if acct.get('auto_start_on_market_open'):
+                    just_opened = any_open and prev_any_open is not None and not prev_any_open
+                    just_closed = not any_open and prev_any_open
+                    # Also handle server starting mid-session
+                    server_start_open = prev_any_open is None and any_open
+
+                    if just_opened or server_start_open:
+                        from src.services.watchlist_service import WatchlistService
+                        if WatchlistService().list_all():
+                            logger.info("[AutoTrade] 市场开盘，自动启动交易")
+                            self.repo.update_account(acct['id'], auto_trade_enabled=True, status='active')
+                            self.start()
+                    elif just_closed:
+                        logger.info("[AutoTrade] 市场收盘，自动停止交易")
+                        self.repo.update_account(acct['id'], auto_trade_enabled=False)
+                        self.stop()
+
+                prev_any_open = any_open
+            except Exception as exc:
+                logger.error("[AutoTrade] 市场监控异常: %s", exc)
+
+            self._watcher_stop.wait(timeout=60)
 
 
 def get_auto_trade_service() -> AutoTradeService:
