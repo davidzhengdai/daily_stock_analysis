@@ -21,6 +21,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date as _date
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -35,6 +36,7 @@ from src.schemas.gold_digger import (
     InvestmentTheme,
     ThemeMatch,
 )
+from src.services.screening_engine import _market_counts, _select_market_balanced
 
 logger = logging.getLogger(__name__)
 
@@ -452,6 +454,38 @@ def _build_candidate(
     )
 
 
+def _apply_cn_theme_fallback(candidate: GoldCandidate, cfg: DigConfig) -> None:
+    """
+    Keep valid A-share garbage candidates eligible when detected themes omit
+    cn/global market regions. Theme detection is news-driven and can skew US-only,
+    but GoldDigger should still inspect A-share value/reversal candidates when
+    the user requested the CN market.
+    """
+    if candidate.market != "cn" or candidate.top_theme_score >= 30:
+        return
+
+    fallback_score = 50.0
+    if cfg.china_policy_weight > 0:
+        fallback_score += min(20.0, cfg.china_policy_weight * 40.0)
+
+    candidate.theme_matches = [ThemeMatch(
+        theme_name="A-share policy/value rebound",
+        relevance_score=round(fallback_score, 1),
+        match_reason="CN market requested; fallback keeps beaten-down A-share candidates eligible when detected themes are not CN-tagged.",
+    )]
+    candidate.top_theme_score = round(fallback_score, 1)
+    policy_weight = max(0.0, min(1.0, cfg.china_policy_weight))
+    composite = (
+        candidate.value_score * 0.30
+        + candidate.momentum_reversal_score * 0.25
+        + candidate.top_theme_score * 0.30
+        + candidate.institutional_score * 0.15
+    )
+    if policy_weight > 0:
+        composite = composite * (1 - policy_weight) + candidate.top_theme_score * policy_weight
+    candidate.composite_score = round(composite, 1)
+
+
 # ---------------------------------------------------------------------------
 # LLM analysis helpers
 # ---------------------------------------------------------------------------
@@ -604,25 +638,41 @@ class GoldDigger:
 
     def _run(self, run_id: str, cfg: DigConfig) -> None:
         start = time.time()
-        timestamp = _date.today().isoformat()
-        report = DigReport(
-            run_id=run_id,
-            timestamp=timestamp,
-            config=cfg.to_dict(),
-            detected_themes=[],
-            us_universe_size=0,
-            cn_universe_size=0,
-            garbage_filtered=0,
-            theme_matched=0,
-            deep_analyzed=0,
-            gold_picks=[],
-            duration_s=0.0,
-            status="running",
-        )
+        report: Optional[DigReport] = None
         try:
+            timestamp = _date.today().isoformat()
+            report = DigReport(
+                run_id=run_id,
+                timestamp=timestamp,
+                config=cfg.to_dict(),
+                detected_themes=[],
+                us_universe_size=0,
+                cn_universe_size=0,
+                garbage_filtered=0,
+                theme_matched=0,
+                deep_analyzed=0,
+                gold_picks=[],
+                duration_s=0.0,
+                status="running",
+            )
             self._do_run(run_id, cfg, report, start)
         except Exception as exc:
             logger.exception("Gold dig run %s failed: %s", run_id, exc)
+            if report is None:
+                report = DigReport(
+                    run_id=run_id,
+                    timestamp=_date.today().isoformat(),
+                    config=cfg.to_dict(),
+                    detected_themes=[],
+                    us_universe_size=0,
+                    cn_universe_size=0,
+                    garbage_filtered=0,
+                    theme_matched=0,
+                    deep_analyzed=0,
+                    gold_picks=[],
+                    duration_s=0.0,
+                    status="error",
+                )
             report.status = "error"
             report.error = str(exc)
             report.duration_s = time.time() - start
@@ -699,11 +749,39 @@ class GoldDigger:
 
         # Step 4 — Score all candidates
         candidates = [_build_candidate(gs, themes, cfg) for gs in all_garbage]
+        if "cn" in cfg.markets:
+            cn_candidates = [c for c in candidates if c.market == "cn"]
+            cn_themed = [c for c in cn_candidates if c.top_theme_score >= 30]
+            cn_needed = max(
+                0,
+                min(cfg.max_tier5_per_market, len(cn_candidates)) - len(cn_themed),
+            )
+            if cn_needed > 0:
+                cn_fallback_pool = sorted(
+                    [c for c in cn_candidates if c.top_theme_score < 30],
+                    key=lambda c: (
+                        c.value_score * 0.35
+                        + c.momentum_reversal_score * 0.35
+                        + c.institutional_score * 0.30
+                    ),
+                    reverse=True,
+                )
+                for candidate in cn_fallback_pool[:cn_needed]:
+                    _apply_cn_theme_fallback(candidate, cfg)
+                if cn_fallback_pool:
+                    logger.info(
+                        "CN theme fallback kept %d A-share candidates for GoldDigger deep analysis",
+                        min(cn_needed, len(cn_fallback_pool)),
+                    )
 
         # Keep only candidates with at least one theme match
         themed = [c for c in candidates if c.top_theme_score >= 30]
         report.theme_matched = len(themed)
-        logger.info("Theme-matched candidates: %d", len(themed))
+        logger.info(
+            "Theme-matched candidates: %d, market_counts=%s",
+            len(themed),
+            _market_counts(themed, lambda c: c.market),
+        )
 
         # Sort and take top per market for AI preselection, then deep LLM analysis
         themed.sort(key=lambda c: c.composite_score, reverse=True)
@@ -728,8 +806,20 @@ class GoldDigger:
 
         # Step 6 — Rank and pick top_n
         llm_results.sort(key=lambda x: x[1].get("llm_confidence", 0) * 0.6 + x[0].composite_score * 0.4, reverse=True)
+        selected_results = _select_market_balanced(
+            llm_results,
+            cfg.top_n,
+            cfg.markets,
+            lambda item: item[0].market,
+        )
+        logger.info(
+            "GoldDigger Top Picks market-balanced selection: %d → %d, selected_market_counts=%s",
+            len(llm_results),
+            len(selected_results),
+            _market_counts(selected_results, lambda item: item[0].market),
+        )
         picks: List[GoldPick] = []
-        for rank, (candidate, llm_data) in enumerate(llm_results[:cfg.top_n], start=1):
+        for rank, (candidate, llm_data) in enumerate(selected_results, start=1):
             gs = candidate.stock
             picks.append(GoldPick(
                 rank=rank,

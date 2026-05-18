@@ -164,8 +164,8 @@
 <ul>
   <li><code>code</code> 主键大小写敏感（SQLite 默认）— 写入路径统一 <code>.upper()</code> 规范化。</li>
   <li>分析任务通过任务队列异步提交（202），自选股页面仅展示"已提交 N 个任务"，不等待结果。</li>
-  <li><code>last_analyzed_at</code> 当前由后端在 <code>/analyze</code> 端点提交时更新；
-      分析完成事件尚无回调写入，可作后续优化。</li>
+  <li><code>last_analyzed_at</code> 由后端在查询自选股列表时从仍存在的
+      <code>analysis_history</code> 最新记录计算；删除 Analyze List 历史后会同步回落为未分析。</li>
   <li>自选股列表与持仓（Portfolio）相互独立，用途不同，不合并。</li>
 </ul>
 

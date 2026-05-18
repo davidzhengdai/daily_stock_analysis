@@ -180,6 +180,8 @@ class SignalService:
         try:
             analyzer = self._get_analyzer()
             raw = analyzer.generate_text(prompt, max_tokens=1024, temperature=0.2)
+            if not isinstance(raw, str) or not raw.strip():
+                raise ValueError("LLM returned empty response")
             parsed = self._parse_llm_response(raw)
         except Exception as exc:
             logger.warning("[SignalService] LLM 调用失败 %s: %s", code, exc)
@@ -361,8 +363,11 @@ class SignalService:
         return 'CN' if re.match(r'^\d+$', code) else 'US'
 
     @staticmethod
-    def _parse_llm_response(raw: str) -> Dict[str, Any]:
+    def _parse_llm_response(raw: Optional[str]) -> Dict[str, Any]:
         """从 LLM 输出中提取 JSON。"""
+        if not isinstance(raw, str) or not raw.strip():
+            return {}
+
         # 去除 markdown 代码块
         text = re.sub(r'```[a-z]*\n?', '', raw).strip()
         # 尝试直接解析

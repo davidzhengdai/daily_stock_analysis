@@ -1696,6 +1696,34 @@ class GeminiAnalyzer:
 - 只有在接近支撑确认或有效突破压力，且资金流/量价配合时，才能给出买入；接近压力且资金流出时不得追买。
 - 只有在跌破关键支撑、主力资金持续流出或风险显著放大时，才能给出卖出/减仓。"""
 
+    JSON_OUTPUT_GUARD_ZH = """
+
+## 结构化输出硬约束（最高优先级）
+
+- 只能输出一个合法 JSON object。
+- 响应第一个非空字符必须是 `{`，最后一个非空字符必须是 `}`。
+- 禁止输出 Markdown 代码块、XML/HTML 标签、`<analysis>`、解释文字、前言、后记或任何 JSON 外文本。
+- JSON 内字符串可以包含分析文字，但所有文字都必须放在 JSON 字段值里。
+"""
+
+    JSON_OUTPUT_GUARD_EN = """
+
+## Structured Output Hard Constraints (highest priority)
+
+- Return exactly one valid JSON object.
+- The first non-whitespace character must be `{` and the last non-whitespace character must be `}`.
+- Do not output Markdown fences, XML/HTML tags, `<analysis>`, explanations, prefaces, afterwords, or any text outside JSON.
+- Narrative analysis is allowed only as JSON string values.
+"""
+
+    JSON_REPAIR_SYSTEM_PROMPT = """你是严格的 JSON 修复器。
+
+- 你的任务是把上一次股票分析输出转换为一个合法 JSON object。
+- 只能输出 JSON，禁止 Markdown、代码块、XML/HTML 标签、解释文字或 JSON 外文本。
+- 第一个非空字符必须是 `{`，最后一个非空字符必须是 `}`。
+- 不要新增用户未提供的事实；缺失数据用 "N/A" 或“数据缺失，无法判断”。
+"""
+
     TEXT_SYSTEM_PROMPT = """你是一位专业的股票分析助手。
 
 - 回答必须基于用户提供的数据与上下文
@@ -1798,7 +1826,7 @@ class GeminiAnalyzer:
                 .replace("{skills_section}", skills_section)
             )
         if lang == "en":
-            return base_prompt + """
+            return base_prompt + self.JSON_OUTPUT_GUARD_EN + """
 
 ## Output Language (highest priority)
 
@@ -1808,7 +1836,7 @@ class GeminiAnalyzer:
 - Use the common English company name when you are confident; otherwise keep the original listed company name instead of inventing one.
 - This includes `stock_name`, `trend_prediction`, `operation_advice`, `confidence_level`, nested dashboard text, checklist items, and all narrative summaries.
 """
-        return base_prompt + """
+        return base_prompt + self.JSON_OUTPUT_GUARD_ZH + """
 
 ## 输出语言（最高优先级）
 
@@ -2064,6 +2092,8 @@ class GeminiAnalyzer:
         effective_system_prompt = system_prompt or self.TEXT_SYSTEM_PROMPT
         router_model_names = set(get_configured_llm_models(config.llm_model_list))
         for model in models_to_try:
+            model_call_start = time.time()
+            logger.info("[LLM调用] 模型请求开始: %s", model)
             try:
                 model_short = model.split("/")[-1] if "/" in model else model
                 extra = get_thinking_extra_body(model_short)
@@ -2128,6 +2158,12 @@ class GeminiAnalyzer:
                     last_usage = _stream_usage
                     if response_validator is not None:
                         response_validator(_stream_text)
+                    logger.info(
+                        "[LLM调用] 模型请求结束: %s, status=success, elapsed=%.2fs, chars=%d, mode=stream",
+                        model,
+                        time.time() - model_call_start,
+                        len(_stream_text),
+                    )
                     return _stream_text, model, _stream_usage
 
                 response = self._dispatch_litellm_completion(
@@ -2146,10 +2182,22 @@ class GeminiAnalyzer:
                     last_usage = usage
                     if response_validator is not None:
                         response_validator(content)
+                    logger.info(
+                        "[LLM调用] 模型请求结束: %s, status=success, elapsed=%.2fs, chars=%d, mode=non-stream",
+                        model,
+                        time.time() - model_call_start,
+                        len(content),
+                    )
                     return (content, model, usage)
                 raise ValueError("LLM returned empty response")
 
             except Exception as e:
+                logger.warning(
+                    "[LLM调用] 模型请求结束: %s, status=failed, elapsed=%.2fs, error=%s",
+                    model,
+                    time.time() - model_call_start,
+                    e,
+                )
                 logger.warning(f"[LiteLLM] {model} failed: {e}")
                 last_error = e
                 continue
@@ -2345,13 +2393,27 @@ class GeminiAnalyzer:
                         break
                     if exc.last_response_text is not None:
                         logger.warning(
-                            "[LLM JSON] %s(%s): all models returned invalid JSON, using text fallback",
+                            "[LLM JSON] %s(%s): all models returned invalid JSON, attempting JSON repair",
                             name,
                             code,
                         )
-                        response_text = exc.last_response_text
-                        model_used = exc.last_model
-                        llm_usage = exc.last_usage
+                        repair_payload = self._try_repair_json_response(
+                            original_prompt=prompt,
+                            invalid_response=exc.last_response_text,
+                            report_language=report_language,
+                            model=model,
+                        )
+                        if repair_payload is not None:
+                            response_text, model_used, llm_usage = repair_payload
+                        else:
+                            logger.warning(
+                                "[LLM JSON] %s(%s): JSON repair failed, using text fallback",
+                                name,
+                                code,
+                            )
+                            response_text = exc.last_response_text
+                            model_used = exc.last_model
+                            llm_usage = exc.last_usage
                     else:
                         raise
                 elapsed = time.time() - start_time
@@ -2863,6 +2925,78 @@ class GeminiAnalyzer:
 """
         
         return prompt
+
+    def _build_json_repair_prompt(
+        self,
+        *,
+        original_prompt: str,
+        invalid_response: str,
+        report_language: str,
+    ) -> str:
+        """Build a compact prompt that asks the model to convert prose into schema JSON."""
+        if report_language == "en":
+            language_rule = "Write all human-readable JSON values in English. Keep JSON keys unchanged."
+            missing_rule = "For missing data, use \"N/A\" or explain that the data is unavailable."
+        else:
+            language_rule = "所有面向用户的人类可读 JSON 字段值必须使用中文，JSON 键名保持不变。"
+            missing_rule = "缺失数据使用 \"N/A\" 或“数据缺失，无法判断”。"
+
+        return f"""# JSON repair request
+
+The previous stock analysis response was not valid JSON. Convert it into the required decision-dashboard JSON schema.
+
+Rules:
+- Output exactly one valid JSON object.
+- Do not output markdown fences, XML/HTML tags, explanations, or any text outside JSON.
+- Preserve the stock code, stock name, scores, recommendation, risks, and rationale from the previous response when present.
+- {language_rule}
+- {missing_rule}
+- If a required dashboard field cannot be derived, fill it conservatively with "N/A" or a low-confidence risk-aware statement.
+
+## Original analysis request
+```
+{original_prompt[:6000]}
+```
+
+## Previous invalid response
+```
+{invalid_response[:6000]}
+```
+"""
+
+    def _try_repair_json_response(
+        self,
+        *,
+        original_prompt: str,
+        invalid_response: str,
+        report_language: str,
+        model: Optional[str] = None,
+    ) -> Optional[Tuple[str, Optional[str], Dict[str, Any]]]:
+        """Ask the configured LLM once to convert non-JSON analysis prose into JSON."""
+        repair_prompt = self._build_json_repair_prompt(
+            original_prompt=original_prompt,
+            invalid_response=invalid_response,
+            report_language=report_language,
+        )
+        try:
+            response_text, model_used, usage = self._call_litellm(
+                repair_prompt,
+                generation_config={"max_output_tokens": 4096, "temperature": 0},
+                system_prompt=self.JSON_REPAIR_SYSTEM_PROMPT,
+                stream=False,
+                response_validator=self._validate_json_response,
+                model=model,
+            )
+        except Exception as exc:
+            logger.warning("[LLM JSON] repair call failed: %s", exc)
+            return None
+
+        logger.info(
+            "[LLM JSON] repair succeeded: model=%s, chars=%d",
+            model_used,
+            len(response_text),
+        )
+        return response_text, model_used, usage
     
     def _format_volume(self, volume: Optional[float]) -> str:
         """格式化成交量显示"""
@@ -3534,8 +3668,8 @@ class GeminiAnalyzer:
             key_points='JSON parsing failed; treat this as best-effort output.' if report_language == "en" else 'JSON解析失败，仅供参考',
             risk_warning='The result may be inaccurate. Cross-check with other information.' if report_language == "en" else '分析结果可能不准确，建议结合其他信息判断',
             raw_response=response_text,
-            success=False,
-            error_message='LLM response is not valid JSON; analysis result will not be persisted',
+            success=True,
+            error_message='LLM response was not valid JSON; saved degraded fallback analysis' if report_language == "en" else 'LLM 返回不是有效 JSON，已保存降级兜底分析',
             report_language=report_language,
         )
     

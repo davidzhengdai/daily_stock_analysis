@@ -374,20 +374,20 @@ class TestAnalyzerGenerateText:
         assert "补全重试" in progress_updates[2][1]
         assert "解析 JSON" in progress_updates[3][1]
 
-    def test_parse_response_non_json_returns_failure(self):
-        """_parse_response must return success=False when LLM output is not valid JSON."""
+    def test_parse_response_non_json_returns_degraded_success(self):
+        """_parse_response returns a persisted degraded result for non-JSON output."""
         analyzer = self._make_analyzer()
         analyzer._config_override = SimpleNamespace(report_language="zh")
 
         from src.analyzer import GeminiAnalyzer
 
         result = GeminiAnalyzer._parse_response(analyzer, "这是一段纯文本分析，没有 JSON。", "600519", "贵州茅台")
-        assert result.success is False
+        assert result.success is True
         assert result.error_message is not None
         assert result.code == "600519"
 
-    def test_parse_response_malformed_json_returns_failure(self):
-        """_parse_response must return success=False when JSON extraction fails."""
+    def test_parse_response_malformed_json_returns_degraded_success(self):
+        """_parse_response returns a persisted degraded result when JSON extraction fails."""
         analyzer = self._make_analyzer()
         analyzer._config_override = SimpleNamespace(report_language="zh")
 
@@ -395,7 +395,7 @@ class TestAnalyzerGenerateText:
 
         malformed = "Here is the analysis: {broken json content without closing"
         result = GeminiAnalyzer._parse_response(analyzer, malformed, "AAPL", "Apple")
-        assert result.success is False
+        assert result.success is True
         assert result.error_message is not None
 
     def test_parse_response_valid_json_returns_success(self):
@@ -480,14 +480,8 @@ class TestAnalyzerGenerateText:
 
         assert exc_info.value.last_response_text == "这不是 JSON 格式的响应"
 
-    def test_analyze_all_models_invalid_json_goes_through_post_processing(self):
-        """When all models return non-JSON, analyze() must still run integrity
-        checks, placeholder fill, and persist_llm_usage — no early return.
-
-        Dashboard-only misses are placeholder-filled without another LLM call,
-        so invalid text fallback still goes through post-processing without
-        paying for an expensive retry.
-        """
+    def test_analyze_all_models_invalid_json_repair_failure_goes_through_post_processing(self):
+        """If JSON repair also fails, analyze() still persists the degraded fallback."""
         from src.analyzer import AnalysisResult, _AllModelsFailedError
 
         analyzer = self._make_analyzer()
@@ -510,8 +504,8 @@ class TestAnalyzerGenerateText:
             trend_prediction="震荡",
             operation_advice="持有",
             analysis_summary="部分文本摘要",
-            success=False,
-            error_message="LLM response is not valid JSON; analysis result will not be persisted",
+            success=True,
+            error_message="LLM 返回不是有效 JSON，已保存降级兜底分析",
         )
 
         all_models_error = _AllModelsFailedError(
@@ -541,8 +535,8 @@ class TestAnalyzerGenerateText:
                 news_context="some news",
             )
 
-        # _call_litellm called once; dashboard-only integrity gaps are local fill.
-        assert mock_call.call_count == 1
+        # First call is the analysis attempt; second call is the JSON repair attempt.
+        assert mock_call.call_count == 2
 
         # _parse_response called once for the initial text fallback.
         assert mock_parse.call_count == 1
@@ -560,10 +554,68 @@ class TestAnalyzerGenerateText:
         assert usage_args[1]["call_type"] == "analysis"
         assert usage_args[1]["stock_code"] == "600519"
 
-        # Result is success=False (text fallback), but all fields exist
-        assert result.success is False
+        # Result is degraded success so the analysis can be persisted.
+        assert result.success is True
         assert result.code == "600519"
         assert result.search_performed is True
+
+    def test_analyze_all_models_invalid_json_uses_repaired_json(self):
+        """When primary analysis is prose, a successful repair response is parsed instead."""
+        from src.analyzer import AnalysisResult, _AllModelsFailedError
+
+        analyzer = self._make_analyzer()
+        analyzer._config_override = SimpleNamespace(
+            gemini_request_delay=0,
+            report_language="zh",
+            litellm_model="provider/primary-model",
+            litellm_fallback_models=[],
+            llm_temperature=0.7,
+            llm_model_list=[],
+            report_integrity_enabled=True,
+            report_integrity_retry=1,
+        )
+
+        all_models_error = _AllModelsFailedError(
+            "all failed",
+            last_response_text="<analysis>纯文本分析</analysis>",
+            last_model="provider/primary-model",
+            last_usage={"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        )
+        repaired_json = '{"sentiment_score": 48, "trend_prediction": "震荡", "operation_advice": "持有"}'
+        repaired_result = AnalysisResult(
+            code="600519",
+            name="贵州茅台",
+            sentiment_score=48,
+            trend_prediction="震荡",
+            operation_advice="持有",
+            analysis_summary="修复后的 JSON",
+            success=True,
+        )
+
+        with patch.object(analyzer, "is_available", return_value=True), \
+             patch.object(analyzer, "_get_analysis_system_prompt", return_value="system"), \
+             patch.object(analyzer, "_format_prompt", return_value="prompt"), \
+             patch.object(
+                 analyzer,
+                 "_call_litellm",
+                 side_effect=[
+                     all_models_error,
+                     (repaired_json, "provider/primary-model", {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5}),
+                 ],
+             ) as mock_call, \
+             patch.object(analyzer, "_parse_response", return_value=repaired_result) as mock_parse, \
+             patch.object(analyzer, "_build_market_snapshot", return_value={}), \
+             patch.object(analyzer, "_check_content_integrity", return_value=(True, [])), \
+             patch("src.analyzer.persist_llm_usage") as mock_usage:
+
+            result = analyzer.analyze({"code": "600519", "stock_name": "贵州茅台"})
+
+        assert mock_call.call_count == 2
+        mock_parse.assert_called_once_with(repaired_json, "600519", "贵州茅台")
+        mock_usage.assert_called_once()
+        assert mock_usage.call_args[0][0] == {"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5}
+        assert result.success is True
+        assert result.sentiment_score == 48
 
     def test_dashboard_integrity_gap_uses_placeholder_without_retry(self):
         """Dashboard-only integrity gaps should not trigger another LLM call."""
