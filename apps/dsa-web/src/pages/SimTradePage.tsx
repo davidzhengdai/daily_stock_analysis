@@ -539,6 +539,20 @@ const AutoTradeTab: React.FC<{
   const ms = autoStatus?.market_status;
   const marketClosed = !!ms?.market_hours_only && !ms.cn_open && !ms.us_open;
   const executing = running || !!autoStatus?.run_in_progress;
+  const autoStateLabel = executing
+    ? '执行中'
+    : account.auto_trade_enabled
+      ? marketClosed
+        ? '等待开市'
+        : autoStatus?.scheduler_running
+          ? '自动监控中'
+          : '已开启'
+      : '已停止';
+  const autoStateClass = executing
+    ? 'border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400'
+    : account.auto_trade_enabled && !marketClosed
+      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+      : 'border-border bg-muted text-secondary-text';
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -643,7 +657,12 @@ const AutoTradeTab: React.FC<{
       {/* Toggle & status */}
       <div className="flex items-center justify-between rounded-xl border border-border bg-card p-4">
         <div>
-          <p className="font-medium">AI 自动交易</p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium">AI 自动交易</p>
+            <span className={cn('rounded-full border px-2 py-0.5 text-xs font-medium', autoStateClass)}>
+              {autoStateLabel}
+            </span>
+          </div>
           <p className="text-sm text-secondary-text mt-0.5">
             {account.auto_trade_enabled
               ? marketClosed
@@ -1062,12 +1081,32 @@ const SimTradePage: React.FC = () => {
     }
   }, []);
 
+  const refreshLivePositions = useCallback(async () => {
+    try {
+      const [pos, acct, ats] = await Promise.all([
+        api.getPositions({ refresh: true }),
+        api.getAccount(),
+        api.getAutoTradeStatus(),
+      ]);
+      setPositions(pos.items);
+      setAccount(acct);
+      setAutoStatus(ats);
+    } catch {
+      // Keep the current table visible if a short-interval refresh misses.
+    }
+  }, []);
+
   useEffect(() => {
     void fetchAll();
     // Poll every 60s when auto-trading is active
     const id = setInterval(() => void fetchAll(), 60_000);
     return () => clearInterval(id);
   }, [fetchAll]);
+
+  useEffect(() => {
+    const id = setInterval(() => void refreshLivePositions(), 10_000);
+    return () => clearInterval(id);
+  }, [refreshLivePositions]);
 
   return (
     <div className="flex flex-col gap-6 p-4 sm:p-6 max-w-5xl mx-auto">

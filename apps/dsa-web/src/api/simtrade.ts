@@ -68,8 +68,10 @@ export const cancelOrder = (orderId: number) =>
   request<{ message: string }>(`/orders/${orderId}`, { method: 'DELETE' });
 
 // Positions
-export const getPositions = () =>
-  request<{ items: SimPosition[]; total: number }>('/positions');
+export const getPositions = (options?: { refresh?: boolean }) =>
+  request<{ items: SimPosition[]; total: number }>(
+    `/positions${options?.refresh ? '?refresh=true' : ''}`
+  );
 
 // AI Signals
 export const getSignals = (limit = 30) =>

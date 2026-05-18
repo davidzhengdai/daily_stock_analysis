@@ -214,9 +214,12 @@ def cancel_order(order_id: int):
 # ============================================================
 
 @router.get("/positions", response_model=PositionListResponse, summary="持仓列表")
-def list_positions():
+def list_positions(refresh: bool = Query(False, description="返回前刷新持仓实时价格")):
     svc = OrderService()
     try:
+        if refresh:
+            acct = AccountService().get_account()
+            svc.refresh_position_prices(acct['id'])
         items = svc.list_positions()
         return PositionListResponse(items=[PositionItem(**i) for i in items], total=len(items))
     except Exception as exc:
