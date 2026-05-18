@@ -196,7 +196,7 @@ class AutoTradeService:
     def run_once(self) -> Dict[str, Any]:
         """手动触发一次自动交易周期（同步，保留供内部调用）。"""
         acct = self.repo.get_or_create_account()
-        return self._run_cycle(acct)
+        return self._run_cycle(acct, triggered_by='manual')
 
     def run_once_async(self) -> str:
         """在后台线程触发一次周期，立即返回 job_id 供轮询。"""
@@ -209,7 +209,7 @@ class AutoTradeService:
         def _worker() -> None:
             try:
                 acct = self.repo.get_or_create_account()
-                result = self._run_cycle(acct)
+                result = self._run_cycle(acct, triggered_by='manual')
                 self._jobs[job_id] = {'status': 'done', **result}
             except Exception as exc:
                 self._jobs[job_id] = {
@@ -224,14 +224,31 @@ class AutoTradeService:
     def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
         return self._jobs.get(job_id)
 
-    def _run_cycle(self, acct: Dict[str, Any]) -> Dict[str, Any]:
+    def _run_cycle(self, acct: Dict[str, Any], triggered_by: str = 'scheduler') -> Dict[str, Any]:
         with self._active_run_lock:
             self._run_in_progress = True
         try:
-            return self._run_cycle_impl(acct)
+            result = self._run_cycle_impl(acct)
         finally:
             with self._active_run_lock:
                 self._run_in_progress = False
+
+        try:
+            self.repo.create_auto_trade_run(
+                account_id=result['account_id'],
+                triggered_by=triggered_by,
+                started_at=datetime.fromisoformat(result['started_at']),
+                finished_at=datetime.fromisoformat(result['finished_at']) if result.get('finished_at') else datetime.now(),
+                skipped_reason=result.get('skipped_reason'),
+                signals_generated=result.get('signals_generated', 0),
+                orders_placed=result.get('orders_placed', 0),
+                stop_loss_triggered=result.get('stop_loss_triggered', []),
+                errors=result.get('errors', []),
+            )
+        except Exception as exc:
+            logger.debug("[AutoTrade] 历史记录保存失败: %s", exc)
+
+        return result
 
     def _run_cycle_impl(self, acct: Dict[str, Any]) -> Dict[str, Any]:
         account_id = acct['id']

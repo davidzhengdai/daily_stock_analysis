@@ -2,6 +2,7 @@
 
 import type {
   AccountSettingsRequest,
+  AutoTradeRun,
   AutoTradeStatus,
   FundItem,
   FundRequest,
@@ -92,6 +93,9 @@ export const getRunJob = (jobId: string) =>
 
 export const getAutoTradeStatus = () =>
   request<AutoTradeStatus>('/auto-trade/status');
+
+export const getAutoTradeHistory = (limit = 50) =>
+  request<{ items: AutoTradeRun[]; total: number }>(`/auto-trade/history?limit=${limit}`);
 
 // Snapshots
 export const getSnapshotHistory = (limit = 90) =>

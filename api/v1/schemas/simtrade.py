@@ -213,3 +213,21 @@ class RunJobStatus(BaseModel):
     status: str  # "running" | "done" | "error"
     result: Optional[AutoRunResult] = None
     error: Optional[str] = None
+
+
+class AutoTradeRunItem(BaseModel):
+    id: int
+    account_id: int
+    triggered_by: str
+    started_at: Optional[str]
+    finished_at: Optional[str]
+    skipped_reason: Optional[str]
+    signals_generated: int
+    orders_placed: int
+    stop_loss_triggered: List[str]
+    errors: List[str]
+
+
+class AutoTradeRunListResponse(BaseModel):
+    items: List[AutoTradeRunItem]
+    total: int

@@ -14,6 +14,7 @@ import * as api from '../api/simtrade';
 import type {
   AccountSettingsRequest,
   AutoRunResult,
+  AutoTradeRun,
   AutoTradeStatus,
   FundItem,
   FundRequest,
@@ -59,6 +60,122 @@ const MODE_LABEL: Record<string, string> = {
   conservative: '保守',
   balanced: '均衡',
   aggressive: '激进',
+};
+
+// ─── Sortable positions table ─────────────────────────────────────────────
+
+type PositionSortKey =
+  | 'code' | 'name' | 'market' | 'qty'
+  | 'avg_cost' | 'last_price' | 'unrealized_pnl_pct'
+  | 'stop_loss_price' | 'take_profit_price';
+
+type SortDir = 'asc' | 'desc';
+
+function sortPositions(rows: SimPosition[], key: PositionSortKey, dir: SortDir): SimPosition[] {
+  return [...rows].sort((a, b) => {
+    const av = a[key], bv = b[key];
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = typeof av === 'string'
+      ? (av as string).localeCompare(bv as string)
+      : (av as number) - (bv as number);
+    return dir === 'asc' ? cmp : -cmp;
+  });
+}
+
+type ColDef = { label: string; key: PositionSortKey };
+
+const OVERVIEW_COLS: ColDef[] = [
+  { label: '代码', key: 'code' },
+  { label: '名称', key: 'name' },
+  { label: '数量', key: 'qty' },
+  { label: '成本价', key: 'avg_cost' },
+  { label: '现价', key: 'last_price' },
+  { label: '浮动盈亏', key: 'unrealized_pnl_pct' },
+  { label: '止损', key: 'stop_loss_price' },
+  { label: '止盈', key: 'take_profit_price' },
+];
+
+const MANUAL_COLS: ColDef[] = [
+  { label: '代码', key: 'code' },
+  { label: '市场', key: 'market' },
+  { label: '数量', key: 'qty' },
+  { label: '成本', key: 'avg_cost' },
+  { label: '现价', key: 'last_price' },
+  { label: '浮动 P&L', key: 'unrealized_pnl_pct' },
+  { label: '止损', key: 'stop_loss_price' },
+  { label: '止盈', key: 'take_profit_price' },
+];
+
+const SortIndicator: React.FC<{ active: boolean; dir: SortDir }> = ({ active, dir }) => (
+  <span className={cn('ml-0.5 inline-block text-[10px]', active ? 'opacity-100' : 'opacity-30')}>
+    {active ? (dir === 'asc' ? '↑' : '↓') : '⇅'}
+  </span>
+);
+
+const PositionsTable: React.FC<{ positions: SimPosition[]; variant: 'overview' | 'manual' }> = ({
+  positions,
+  variant,
+}) => {
+  const [sortKey, setSortKey] = useState<PositionSortKey>('code');
+  const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+  const handleSort = (key: PositionSortKey) => {
+    if (key === sortKey) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  };
+
+  const cols = variant === 'overview' ? OVERVIEW_COLS : MANUAL_COLS;
+  const sorted = sortPositions(positions, sortKey, sortDir);
+
+  return (
+    <div className="rounded-xl border border-border bg-card overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border text-secondary-text text-xs">
+            {cols.map(({ label, key }) => (
+              <th
+                key={key}
+                onClick={() => handleSort(key)}
+                className="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+              >
+                {label}
+                <SortIndicator active={sortKey === key} dir={sortDir} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map((p) => (
+            <tr key={p.id} className="border-b border-border/50 hover:bg-hover/50">
+              <td className="px-3 py-2 font-mono font-medium">{p.code}</td>
+              {variant === 'overview'
+                ? <td className="px-3 py-2 text-secondary-text">{p.name ?? '—'}</td>
+                : <td className="px-3 py-2 text-secondary-text text-xs">{p.market}</td>
+              }
+              <td className="px-3 py-2 tabular-nums">{p.qty}</td>
+              <td className="px-3 py-2 tabular-nums">{fmt(p.avg_cost, 3)}</td>
+              <td className="px-3 py-2 tabular-nums">{fmt(p.last_price, 3)}</td>
+              <td className={cn('px-3 py-2 tabular-nums font-medium', pnlColor(p.unrealized_pnl))}>
+                {fmtPct(p.unrealized_pnl_pct)}
+              </td>
+              <td className={cn('px-3 py-2 tabular-nums text-xs', variant === 'manual' ? '' : '', 'text-red-400')}>
+                {p.stop_loss_price ? fmt(p.stop_loss_price, 3) : '—'}
+              </td>
+              <td className={cn('px-3 py-2 tabular-nums text-xs', 'text-emerald-400')}>
+                {p.take_profit_price ? fmt(p.take_profit_price, 3) : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 };
 
 // ─── sub-components ───────────────────────────────────────────────────────
@@ -129,23 +246,44 @@ const OverviewTab: React.FC<{
   // Simple ASCII equity curve using last 10 snapshots
   const recentSnaps = snapshots.slice(-10);
 
+  const cnPnl = positions.filter(p => p.currency === 'CNY').reduce((s, p) => s + p.unrealized_pnl, 0);
+  const usPnl = positions.filter(p => p.currency === 'USD').reduce((s, p) => s + p.unrealized_pnl, 0);
+  const hasCn = positions.some(p => p.currency === 'CNY');
+  const hasUs = positions.some(p => p.currency === 'USD');
+
   return (
     <div className="space-y-6">
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <StatCard
           label="账户总权益 (CNY)"
           value={eq ? `¥${fmt(eq.total_equity_cny)}` : '—'}
           sub={account.status === 'paused' ? '⏸ 已暂停' : account.auto_trade_enabled ? '🤖 自动交易中' : '手动模式'}
         />
-        <StatCard
-          label="浮动盈亏"
-          value={eq ? fmtPct(eq.total_return_pct) : '—'}
-          color={eq ? pnlColor(eq.total_return_pct) : undefined}
-          sub={eq ? `未实现 ¥${fmt(eq.unrealized_pnl)}` : undefined}
-        />
         <StatCard label="可用 CNY" value={`¥${fmt(account.cash_cny)}`} />
         <StatCard label="可用 USD" value={`$${fmt(account.cash_usd)}`} sub={`≈ ¥${fmt(account.cash_usd * (eq?.fx_rate_usd_cny ?? 7.25))}`} />
+        {hasCn && (
+          <StatCard
+            label="浮动盈亏 (A 股 CNY)"
+            value={`¥${fmt(cnPnl)}`}
+            color={pnlColor(cnPnl)}
+          />
+        )}
+        {hasUs && (
+          <StatCard
+            label="浮动盈亏 (美股 USD)"
+            value={`$${fmt(usPnl)}`}
+            color={pnlColor(usPnl)}
+          />
+        )}
+        {eq && (
+          <StatCard
+            label="总回报"
+            value={fmtPct(eq.total_return_pct)}
+            color={pnlColor(eq.total_return_pct)}
+            sub={`未实现 ¥${fmt(eq.unrealized_pnl)}`}
+          />
+        )}
       </div>
 
       {/* Equity curve (mini) */}
@@ -177,33 +315,7 @@ const OverviewTab: React.FC<{
       {positions.length > 0 ? (
         <div>
           <SectionTitle>当前持仓</SectionTitle>
-          <div className="rounded-xl border border-border bg-card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-secondary-text text-xs">
-                  {['代码', '名称', '数量', '成本价', '现价', '浮动盈亏', '止损', '止盈'].map((h) => (
-                    <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((p) => (
-                  <tr key={p.id} className="border-b border-border/50 hover:bg-hover/50">
-                    <td className="px-3 py-2 font-mono font-medium">{p.code}</td>
-                    <td className="px-3 py-2 text-secondary-text">{p.name ?? '—'}</td>
-                    <td className="px-3 py-2 tabular-nums">{p.qty}</td>
-                    <td className="px-3 py-2 tabular-nums">{fmt(p.avg_cost, 3)}</td>
-                    <td className="px-3 py-2 tabular-nums">{fmt(p.last_price, 3)}</td>
-                    <td className={cn('px-3 py-2 tabular-nums font-medium', pnlColor(p.unrealized_pnl))}>
-                      {fmtPct(p.unrealized_pnl_pct)}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums text-red-400">{p.stop_loss_price ? fmt(p.stop_loss_price, 3) : '—'}</td>
-                    <td className="px-3 py-2 tabular-nums text-emerald-400">{p.take_profit_price ? fmt(p.take_profit_price, 3) : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PositionsTable positions={positions} variant="overview" />
         </div>
       ) : (
         <div className="flex flex-col items-center gap-2 py-8 text-secondary-text">
@@ -419,33 +531,7 @@ const ManualTradeTab: React.FC<{
       {positions.length > 0 ? (
         <div>
           <SectionTitle>当前持仓</SectionTitle>
-          <div className="rounded-xl border border-border bg-card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-secondary-text text-xs">
-                  {['代码', '市场', '数量', '成本', '现价', '浮动 P&L', '止损', '止盈'].map((h) => (
-                    <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {positions.map((p) => (
-                  <tr key={p.id} className="border-b border-border/40 hover:bg-hover/50">
-                    <td className="px-3 py-2 font-mono font-medium">{p.code}</td>
-                    <td className="px-3 py-2 text-secondary-text text-xs">{p.market}</td>
-                    <td className="px-3 py-2 tabular-nums">{p.qty}</td>
-                    <td className="px-3 py-2 tabular-nums">{fmt(p.avg_cost, 3)}</td>
-                    <td className="px-3 py-2 tabular-nums">{fmt(p.last_price, 3)}</td>
-                    <td className={cn('px-3 py-2 tabular-nums font-medium', pnlColor(p.unrealized_pnl))}>
-                      {fmtPct(p.unrealized_pnl_pct)}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums text-red-400 text-xs">{p.stop_loss_price ? fmt(p.stop_loss_price, 3) : '—'}</td>
-                    <td className="px-3 py-2 tabular-nums text-emerald-400 text-xs">{p.take_profit_price ? fmt(p.take_profit_price, 3) : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <PositionsTable positions={positions} variant="manual" />
         </div>
       ) : null}
 
@@ -515,8 +601,9 @@ const AutoTradeTab: React.FC<{
   account: SimAccount;
   signals: SimSignal[];
   autoStatus: AutoTradeStatus | null;
+  runHistory: AutoTradeRun[];
   onRefresh: () => void;
-}> = ({ account, signals, autoStatus, onRefresh }) => {
+}> = ({ account, signals, autoStatus, runHistory, onRefresh }) => {
   const [toggling, setToggling] = useState(false);
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<AutoRunResult | null>(null);
@@ -884,6 +971,63 @@ const AutoTradeTab: React.FC<{
           </div>
         )}
       </div>
+
+      {/* Run history */}
+      <div>
+        <SectionTitle>运行历史</SectionTitle>
+        {runHistory.length === 0 ? (
+          <p className="text-sm text-secondary-text py-4 text-center">暂无运行记录</p>
+        ) : (
+          <div className="rounded-xl border border-border bg-card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-secondary-text text-xs">
+                  {['时间', '触发', '信号', '委托', '止损', '结果'].map((h) => (
+                    <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {runHistory.map((r) => {
+                  const skipped = !!r.skipped_reason;
+                  const hasErrors = r.errors.length > 0;
+                  return (
+                    <tr key={r.id} className="border-b border-border/40 hover:bg-hover/50">
+                      <td className="px-3 py-2 text-xs text-secondary-text whitespace-nowrap">
+                        {r.started_at ? new Date(r.started_at).toLocaleString('zh-CN') : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-xs">
+                        <span className={cn(
+                          'inline-block rounded-full px-1.5 py-0.5',
+                          r.triggered_by === 'manual'
+                            ? 'bg-primary/10 text-primary'
+                            : 'bg-secondary/15 text-secondary-text'
+                        )}>
+                          {r.triggered_by === 'manual' ? '手动' : '调度'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 tabular-nums text-xs">{skipped ? '—' : r.signals_generated}</td>
+                      <td className="px-3 py-2 tabular-nums text-xs">{skipped ? '—' : r.orders_placed}</td>
+                      <td className="px-3 py-2 text-xs text-red-400">
+                        {r.stop_loss_triggered.length > 0 ? r.stop_loss_triggered.join(', ') : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-xs max-w-52 truncate" title={r.skipped_reason ?? r.errors[0] ?? ''}>
+                        {skipped ? (
+                          <span className="text-amber-500">{r.skipped_reason}</span>
+                        ) : hasErrors ? (
+                          <span className="text-red-400">{r.errors[0]}{r.errors.length > 1 ? ` (+${r.errors.length - 1})` : ''}</span>
+                        ) : (
+                          <span className="text-emerald-500">完成</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -1053,12 +1197,13 @@ const SimTradePage: React.FC = () => {
   const [snapshots, setSnapshots] = useState<SimSnapshot[]>([]);
   const [fundHistory, setFundHistory] = useState<FundItem[]>([]);
   const [autoStatus, setAutoStatus] = useState<AutoTradeStatus | null>(null);
+  const [runHistory, setRunHistory] = useState<AutoTradeRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const fetchAll = useCallback(async () => {
     try {
-      const [acct, pos, ord, sigs, snaps, fh, ats] = await Promise.all([
+      const [acct, pos, ord, sigs, snaps, fh, ats, runs] = await Promise.all([
         api.getAccount(),
         api.getPositions(),
         api.getOrders({ limit: 30 }),
@@ -1066,6 +1211,7 @@ const SimTradePage: React.FC = () => {
         api.getSnapshotHistory(60),
         api.getFundHistory(50),
         api.getAutoTradeStatus(),
+        api.getAutoTradeHistory(50),
       ]);
       setAccount(acct);
       setPositions(pos.items);
@@ -1074,6 +1220,7 @@ const SimTradePage: React.FC = () => {
       setSnapshots(snaps.items);
       setFundHistory(fh.items);
       setAutoStatus(ats);
+      setRunHistory(runs.items);
       setError('');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '加载失败');
@@ -1174,7 +1321,7 @@ const SimTradePage: React.FC = () => {
             <ManualTradeTab account={account} orders={orders} positions={positions} onRefresh={() => void fetchAll()} />
           ) : null}
           {tab === 'auto' ? (
-            <AutoTradeTab account={account} signals={signals} autoStatus={autoStatus} onRefresh={() => void fetchAll()} />
+            <AutoTradeTab account={account} signals={signals} autoStatus={autoStatus} runHistory={runHistory} onRefresh={() => void fetchAll()} />
           ) : null}
           {tab === 'funding' ? (
             <FundingTab account={account} history={fundHistory} onRefresh={() => void fetchAll()} />

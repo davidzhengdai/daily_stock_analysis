@@ -21,6 +21,7 @@
   POST   /auto-trade/run           — 异步触发一次自动交易循环，返回 job_id
   GET    /auto-trade/run/{job_id}  — 轮询任务状态
   GET    /auto-trade/status        — 自动交易运行状态
+  GET    /auto-trade/history       — 自动交易历史记录
   GET    /snapshot/history         — 权益曲线历史
 """
 
@@ -37,6 +38,8 @@ from api.v1.schemas.simtrade import (
     AccountResponse,
     AccountSettingsRequest,
     AutoRunResult,
+    AutoTradeRunItem,
+    AutoTradeRunListResponse,
     AutoTradeToggleRequest,
     FundHistoryResponse,
     FundItem,
@@ -322,6 +325,21 @@ def auto_trade_status():
 # ============================================================
 # Snapshots
 # ============================================================
+
+@router.get("/auto-trade/history", response_model=AutoTradeRunListResponse, summary="自动交易历史记录")
+def auto_trade_history(limit: int = Query(50, ge=1, le=200)):
+    from src.repositories.simtrade_repo import SimTradeRepo
+    repo = SimTradeRepo()
+    try:
+        acct = repo.get_or_create_account()
+        items = repo.list_auto_trade_runs(acct['id'], limit=limit)
+        return AutoTradeRunListResponse(
+            items=[AutoTradeRunItem(**i) for i in items],
+            total=len(items),
+        )
+    except Exception as exc:
+        raise _err("获取自动交易历史失败", exc)
+
 
 @router.get("/snapshot/history", response_model=SnapshotHistoryResponse, summary="权益曲线历史")
 def snapshot_history(limit: int = Query(90, ge=1, le=365)):

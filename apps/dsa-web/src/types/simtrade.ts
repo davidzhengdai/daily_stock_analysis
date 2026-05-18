@@ -183,6 +183,19 @@ export interface OrderRequest {
   name?: string;
 }
 
+export interface AutoTradeRun {
+  id: number;
+  account_id: number;
+  triggered_by: 'scheduler' | 'manual';
+  started_at: string | null;
+  finished_at: string | null;
+  skipped_reason: string | null;
+  signals_generated: number;
+  orders_placed: number;
+  stop_loss_triggered: string[];
+  errors: string[];
+}
+
 export interface AccountSettingsRequest {
   auto_trade_mode?: 'conservative' | 'balanced' | 'aggressive';
   auto_start_on_market_open?: boolean;
