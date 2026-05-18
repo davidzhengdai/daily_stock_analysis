@@ -152,6 +152,7 @@ export interface AutoTradeStatus {
   auto_trade_enabled: boolean;
   account_status: string;
   scheduler_running: boolean;
+  run_in_progress?: boolean;
   watchlist_count: number;
   last_run: AutoRunResult | null;
   market_status?: MarketStatus;
