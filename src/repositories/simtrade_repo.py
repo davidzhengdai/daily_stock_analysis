@@ -20,6 +20,7 @@ from sqlalchemy import desc, select
 from src.storage import (
     DatabaseManager,
     SimulatedAccount,
+    SimulatedAutoTradeRun,
     SimulatedFundingLedger,
     SimulatedOrder,
     SimulatedPosition,
@@ -345,3 +346,38 @@ class SimTradeRepo:
                 r.status = 'expired'
             session.commit()
             return len(rows)
+
+    # =========================================================
+    # Auto-trade run history
+    # =========================================================
+
+    def create_auto_trade_run(self, account_id: int, **kwargs) -> Dict[str, Any]:
+        """持久化一次自动交易周期的执行结果。"""
+        import json as _json
+
+        def _write(session) -> Dict[str, Any]:
+            stop_loss = kwargs.pop('stop_loss_triggered', [])
+            errors = kwargs.pop('errors', [])
+            row = SimulatedAutoTradeRun(
+                account_id=account_id,
+                stop_loss_triggered=_json.dumps(stop_loss) if stop_loss else None,
+                errors=_json.dumps(errors) if errors else None,
+                **kwargs,
+            )
+            session.add(row)
+            session.flush()
+            session.refresh(row)
+            return row.to_dict()
+
+        return self.db._run_write_transaction('simtrade_create_run', _write)
+
+    def list_auto_trade_runs(self, account_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+        """按时间倒序返回历史运行记录。"""
+        with self.db.get_session() as session:
+            rows = session.execute(
+                select(SimulatedAutoTradeRun)
+                .where(SimulatedAutoTradeRun.account_id == account_id)
+                .order_by(desc(SimulatedAutoTradeRun.started_at))
+                .limit(limit)
+            ).scalars().all()
+            return [r.to_dict() for r in rows]

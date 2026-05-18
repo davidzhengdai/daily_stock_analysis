@@ -21,6 +21,19 @@ from src.repositories.simtrade_repo import SimTradeRepo
 
 logger = logging.getLogger(__name__)
 
+# Module-level singleton so all OrderService instances share one DataFetcherManager
+# (and thus one MoomooFetcher / OpenQuoteContext), preventing connection leaks.
+_shared_fetcher_manager = None
+
+
+def _get_shared_fetcher_manager():
+    global _shared_fetcher_manager
+    if _shared_fetcher_manager is None:
+        from data_provider.base import DataFetcherManager
+        _shared_fetcher_manager = DataFetcherManager()
+    return _shared_fetcher_manager
+
+
 # -------------------------------------------------------
 # 佣金计算
 # -------------------------------------------------------
@@ -59,7 +72,6 @@ class OrderService:
     def __init__(self, repo: Optional[SimTradeRepo] = None, fx_rate: Optional[float] = None):
         self.repo = repo or SimTradeRepo()
         self._fx_rate = fx_rate or float(os.getenv('SIMTRADE_USD_CNY_RATE', '7.25'))
-        self._fetcher_manager = None
 
     # -------------------------------------------------------
     # 下单
@@ -460,10 +472,7 @@ class OrderService:
     def _get_latest_price(self, code: str) -> Optional[float]:
         """优先获取实时价，失败时回落到最近日线收盘价。"""
         try:
-            if self._fetcher_manager is None:
-                from data_provider.base import DataFetcherManager
-                self._fetcher_manager = DataFetcherManager()
-            quote = self._fetcher_manager.get_realtime_quote(code, log_final_failure=False)
+            quote = _get_shared_fetcher_manager().get_realtime_quote(code, log_final_failure=False)
             price = getattr(quote, 'price', None) if quote is not None else None
             if price is not None and float(price) > 0:
                 return float(price)

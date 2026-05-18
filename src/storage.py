@@ -931,6 +931,37 @@ class SimulatedAISignal(Base):
         }
 
 
+class SimulatedAutoTradeRun(Base):
+    """每次自动交易调度周期的执行记录。"""
+
+    __tablename__ = 'simulated_auto_trade_runs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    account_id = Column(Integer, ForeignKey('simulated_accounts.id'), nullable=False, index=True)
+    triggered_by = Column(String(16), default='scheduler')  # scheduler | manual
+    started_at = Column(DateTime, nullable=False, index=True)
+    finished_at = Column(DateTime)
+    skipped_reason = Column(String(256))
+    signals_generated = Column(Integer, default=0)
+    orders_placed = Column(Integer, default=0)
+    stop_loss_triggered = Column(Text)  # JSON list of stock codes
+    errors = Column(Text)             # JSON list of error strings
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'account_id': self.account_id,
+            'triggered_by': self.triggered_by,
+            'started_at': self.started_at.isoformat() if self.started_at else None,
+            'finished_at': self.finished_at.isoformat() if self.finished_at else None,
+            'skipped_reason': self.skipped_reason,
+            'signals_generated': self.signals_generated or 0,
+            'orders_placed': self.orders_placed or 0,
+            'stop_loss_triggered': json.loads(self.stop_loss_triggered) if self.stop_loss_triggered else [],
+            'errors': json.loads(self.errors) if self.errors else [],
+        }
+
+
 class DatabaseManager:
     """
     数据库管理器 - 单例模式
