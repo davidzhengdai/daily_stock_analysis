@@ -539,13 +539,14 @@ const AutoTradeTab: React.FC<{
   const ms = autoStatus?.market_status;
   const marketClosed = !!ms?.market_hours_only && !ms.cn_open && !ms.us_open;
   const executing = running || !!autoStatus?.run_in_progress;
+  const schedulerActive = !!autoStatus?.scheduler_running;
   const autoStateLabel = executing
     ? '执行中'
     : account.auto_trade_enabled
       ? marketClosed
         ? '等待开市'
-        : autoStatus?.scheduler_running
-          ? '自动监控中'
+        : schedulerActive
+          ? '运行中'
           : '已开启'
       : '已停止';
   const autoStateClass = executing
@@ -677,12 +678,12 @@ const AutoTradeTab: React.FC<{
             <button
               type="button"
               onClick={() => void handleRunNow()}
-              disabled={executing || noWatchlist || marketClosed}
+              disabled={executing || schedulerActive || noWatchlist || marketClosed}
               className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm hover:bg-hover disabled:opacity-40"
-              title={marketClosed ? 'Market is closed' : undefined}
+              title={marketClosed ? 'Market is closed' : schedulerActive ? '自动交易运行中，无需手动触发' : undefined}
             >
               <Play className="h-3.5 w-3.5" />
-              {executing ? '执行中…' : '立即运行'}
+              {executing ? '执行中…' : schedulerActive ? '运行中…' : '立即运行'}
             </button>
           ) : null}
           <button
