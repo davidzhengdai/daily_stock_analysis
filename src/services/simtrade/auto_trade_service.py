@@ -62,6 +62,29 @@ def get_market_status() -> Dict[str, bool]:
     return {'cn_open': _is_cn_market_open(), 'us_open': _is_us_market_open()}
 
 
+def _open_markets(*, cn_open: bool, us_open: bool) -> set[str]:
+    markets: set[str] = set()
+    if cn_open:
+        markets.add('CN')
+    if us_open:
+        markets.add('US')
+    return markets
+
+
+def _filter_watchlist_by_open_markets(
+    watchlist: List[Dict[str, Any]],
+    *,
+    cn_open: bool,
+    us_open: bool,
+) -> tuple[List[Dict[str, Any]], int, set[str]]:
+    open_markets = _open_markets(cn_open=cn_open, us_open=us_open)
+    filtered = [
+        item for item in watchlist
+        if SignalService._infer_market(item['code']) in open_markets
+    ]
+    return filtered, len(watchlist) - len(filtered), open_markets
+
+
 def _minutes_to_close(markets: set) -> Optional[int]:
     """Return the minimum minutes remaining before the next session close across relevant markets.
 
@@ -113,6 +136,8 @@ class AutoTradeService:
         ) * 60
         self._last_run_result: Dict[str, Any] = {}
         self._jobs: Dict[str, Dict[str, Any]] = {}
+        self._active_run_lock = threading.Lock()
+        self._run_in_progress = False
         self._watcher_thread: Optional[threading.Thread] = None
         self._watcher_stop: threading.Event = threading.Event()
         self._market_hours_only: bool = os.getenv(
@@ -200,6 +225,15 @@ class AutoTradeService:
         return self._jobs.get(job_id)
 
     def _run_cycle(self, acct: Dict[str, Any]) -> Dict[str, Any]:
+        with self._active_run_lock:
+            self._run_in_progress = True
+        try:
+            return self._run_cycle_impl(acct)
+        finally:
+            with self._active_run_lock:
+                self._run_in_progress = False
+
+    def _run_cycle_impl(self, acct: Dict[str, Any]) -> Dict[str, Any]:
         account_id = acct['id']
         started_at = datetime.now().isoformat()
         result: Dict[str, Any] = {
@@ -235,6 +269,21 @@ class AutoTradeService:
                 )
                 self._last_run_result = result
                 return result
+            watchlist, skipped_closed_market, active_markets = _filter_watchlist_by_open_markets(
+                watchlist,
+                cn_open=cn_open,
+                us_open=us_open,
+            )
+            markets = active_markets
+            if skipped_closed_market:
+                logger.info(
+                    "[AutoTrade] 已过滤非开市市场股票 %d 只（CN=%s US=%s，执行市场=%s）",
+                    skipped_closed_market,
+                    cn_open,
+                    us_open,
+                    sorted(markets),
+                )
+            result['skipped_closed_market'] = skipped_closed_market
 
         # ---- 空仓过夜：临近收盘时强制清仓 ----
         if acct.get('clear_on_market_close'):
@@ -351,6 +400,10 @@ class AutoTradeService:
 
     def is_running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
+
+    def is_run_in_progress(self) -> bool:
+        with self._active_run_lock:
+            return self._run_in_progress
 
     def get_market_status(self) -> Dict[str, Any]:
         return {

@@ -307,6 +307,7 @@ def auto_trade_status():
             "auto_trade_enabled": acct.get('auto_trade_enabled', False),
             "account_status": acct.get('status', 'active'),
             "scheduler_running": auto_svc.is_running(),
+            "run_in_progress": auto_svc.is_run_in_progress(),
             "watchlist_count": watchlist_count,
             "last_run": auto_svc.get_last_run_result(),
             "market_status": auto_svc.get_market_status(),

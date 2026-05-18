@@ -538,6 +538,7 @@ const AutoTradeTab: React.FC<{
   const noWatchlist = (autoStatus?.watchlist_count ?? 0) === 0;
   const ms = autoStatus?.market_status;
   const marketClosed = !!ms?.market_hours_only && !ms.cn_open && !ms.us_open;
+  const executing = running || !!autoStatus?.run_in_progress;
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -657,12 +658,12 @@ const AutoTradeTab: React.FC<{
             <button
               type="button"
               onClick={() => void handleRunNow()}
-              disabled={running || noWatchlist || marketClosed}
+              disabled={executing || noWatchlist || marketClosed}
               className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm hover:bg-hover disabled:opacity-40"
               title={marketClosed ? 'Market is closed' : undefined}
             >
               <Play className="h-3.5 w-3.5" />
-              {running ? '执行中…' : '立即运行'}
+              {executing ? '执行中…' : '立即运行'}
             </button>
           ) : null}
           <button
