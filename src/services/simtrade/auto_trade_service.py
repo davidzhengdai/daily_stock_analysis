@@ -349,13 +349,12 @@ class AutoTradeService:
                             code=code,
                             market=market,
                             side=signal['signal'],
-                            order_type='limit' if signal.get('suggested_price') else 'market',
+                            order_type='limit' if signal.get('suggested_price') is not None else 'market',
                             qty=signal['suggested_qty'],
                             limit_price=signal.get('suggested_price'),
                             name=name,
                             source='auto',
                             ai_signal_id=signal['id'],
-                            current_price=signal.get('price_at_signal'),
                         )
                         # 标记信号已执行
                         self.repo.update_signal(signal['id'], status='executed', order_id=order['id'])

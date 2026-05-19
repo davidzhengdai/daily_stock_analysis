@@ -198,6 +198,181 @@ class SimTradeRepo:
             rows = session.execute(q).scalars().all()
             return [r.to_dict() for r in rows]
 
+    def list_trade_history(self, account_id: int, limit: int = 50) -> List[Dict[str, Any]]:
+        """Return round-trip trade history with account and AI signal context."""
+        account = self.get_account(account_id) or {}
+        with self.db.get_session() as session:
+            rows = session.execute(
+                select(SimulatedOrder, SimulatedAISignal)
+                .outerjoin(
+                    SimulatedAISignal,
+                    SimulatedOrder.ai_signal_id == SimulatedAISignal.id,
+                )
+                .where(SimulatedOrder.account_id == account_id)
+                .order_by(SimulatedOrder.created_at, SimulatedOrder.id)
+            ).all()
+
+        raw_items: List[Dict[str, Any]] = []
+        cost_basis: Dict[str, Dict[str, float]] = {}
+        for order, signal in rows:
+            item = order.to_dict()
+            code = item["code"]
+            filled_qty = item.get("fill_qty") or 0
+            fill_price = item.get("fill_price")
+            realized_pnl = item.get("realized_pnl")
+            basis = cost_basis.setdefault(code, {"qty": 0.0, "avg_cost": 0.0})
+
+            if item.get("status") == "filled" and filled_qty > 0 and fill_price is not None:
+                if item["side"] == "buy":
+                    old_qty = basis["qty"]
+                    new_qty = old_qty + filled_qty
+                    basis["avg_cost"] = (
+                        ((basis["avg_cost"] * old_qty) + (fill_price * filled_qty)) / new_qty
+                    ) if new_qty > 0 else 0.0
+                    basis["qty"] = new_qty
+                elif item["side"] == "sell":
+                    avg_cost_before_sell = basis["avg_cost"]
+                    if realized_pnl is None and basis["avg_cost"] > 0:
+                        realized_pnl = round((fill_price - basis["avg_cost"]) * filled_qty, 2)
+                        item["realized_pnl"] = realized_pnl
+                    if (
+                        item.get("source") == "auto"
+                        and not item.get("ai_signal_id")
+                        and not item.get("rejection_reason")
+                        and avg_cost_before_sell > 0
+                    ):
+                        if fill_price < avg_cost_before_sell:
+                            item["rejection_reason"] = "自动风控卖出（历史记录未保存具体原因；按成本回放推断为止损）"
+                        else:
+                            item["rejection_reason"] = "自动风控卖出（历史记录未保存具体原因；可能为止盈或收盘清仓）"
+                    basis["qty"] = max(0.0, basis["qty"] - filled_qty)
+                    if basis["qty"] == 0:
+                        basis["avg_cost"] = 0.0
+
+            item["account_name"] = account.get("name")
+            item["ai_reasoning"] = signal.reasoning if signal else None
+            item["ai_confidence"] = signal.confidence if signal else None
+            raw_items.append(item)
+        return self._build_trade_round_trips(raw_items, limit)
+
+    def _build_trade_round_trips(self, orders: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+        lots_by_code: Dict[str, List[Dict[str, Any]]] = {}
+        trades: List[Dict[str, Any]] = []
+
+        for order in orders:
+            if order.get("status") != "filled":
+                continue
+            qty = int(order.get("fill_qty") or 0)
+            price = order.get("fill_price")
+            if qty <= 0 or price is None:
+                continue
+
+            code = order["code"]
+            lots = lots_by_code.setdefault(code, [])
+            if order["side"] == "buy":
+                merge_target = lots[-1] if lots else None
+                if (
+                    merge_target
+                    and merge_target["source"] == order["source"]
+                    and merge_target["buy_price"] == price
+                    and not merge_target.get("sell_price")
+                ):
+                    total_qty = merge_target["qty"] + qty
+                    merge_target["buy_price"] = (
+                        (merge_target["buy_price"] * merge_target["qty"]) + (price * qty)
+                    ) / total_qty
+                    merge_target["qty"] = total_qty
+                    merge_target["order_ids"].append(order["id"])
+                    if not merge_target.get("ai_reasoning"):
+                        merge_target["ai_reasoning"] = order.get("ai_reasoning")
+                else:
+                    lots.append({
+                        "id": f"open-{order['id']}",
+                        "account_id": order["account_id"],
+                        "account_name": order.get("account_name"),
+                        "code": code,
+                        "name": order.get("name"),
+                        "market": order["market"],
+                        "currency": order["currency"],
+                        "status": "open",
+                        "source": order["source"],
+                        "qty": qty,
+                        "buy_price": price,
+                        "sell_price": None,
+                        "realized_pnl": None,
+                        "opened_at": order.get("filled_at") or order.get("created_at"),
+                        "closed_at": None,
+                        "ai_reasoning": order.get("ai_reasoning"),
+                        "sell_reason": None,
+                        "order_ids": [order["id"]],
+                    })
+                continue
+
+            remaining = qty
+            weighted_buy_value = 0.0
+            matched_qty = 0
+            matched_lots: List[Dict[str, Any]] = []
+            while remaining > 0 and lots:
+                lot = lots[0]
+                use_qty = min(remaining, lot["qty"])
+                weighted_buy_value += lot["buy_price"] * use_qty
+                matched_qty += use_qty
+                remaining -= use_qty
+                lot["qty"] -= use_qty
+                matched_lots.append(lot)
+                if lot["qty"] == 0:
+                    lots.pop(0)
+
+            if matched_qty <= 0:
+                continue
+
+            avg_buy_price = weighted_buy_value / matched_qty
+            sell_reason = order.get("ai_reasoning") or order.get("rejection_reason")
+            buy_reason = next((lot.get("ai_reasoning") for lot in matched_lots if lot.get("ai_reasoning")), None)
+            trade = {
+                "id": f"trade-{order['id']}",
+                "account_id": order["account_id"],
+                "account_name": order.get("account_name"),
+                "code": code,
+                "name": order.get("name"),
+                "market": order["market"],
+                "currency": order["currency"],
+                "status": "closed",
+                "source": "auto" if order["source"] == "auto" or any(lot["source"] == "auto" for lot in matched_lots) else "manual",
+                "qty": matched_qty,
+                "buy_price": round(avg_buy_price, 4),
+                "sell_price": price,
+                "realized_pnl": order.get("realized_pnl") if order.get("realized_pnl") is not None else round((price - avg_buy_price) * matched_qty, 2),
+                "opened_at": matched_lots[0].get("opened_at"),
+                "closed_at": order.get("filled_at") or order.get("created_at"),
+                "ai_reasoning": buy_reason,
+                "sell_reason": sell_reason,
+                "order_ids": [oid for lot in matched_lots for oid in lot["order_ids"]] + [order["id"]],
+            }
+
+            previous = trades[-1] if trades else None
+            if (
+                previous
+                and previous["status"] == "closed"
+                and previous["code"] == trade["code"]
+                and previous["source"] == trade["source"]
+                and previous["buy_price"] == trade["buy_price"]
+                and previous["sell_price"] == trade["sell_price"]
+                and previous.get("sell_reason") == trade.get("sell_reason")
+            ):
+                total_qty = previous["qty"] + trade["qty"]
+                previous["realized_pnl"] = round((previous.get("realized_pnl") or 0) + (trade.get("realized_pnl") or 0), 2)
+                previous["qty"] = total_qty
+                previous["closed_at"] = trade["closed_at"]
+                previous["order_ids"].extend(trade["order_ids"])
+            else:
+                trades.append(trade)
+
+        for lots in lots_by_code.values():
+            trades.extend(lots)
+
+        return list(reversed(trades))[:limit]
+
     def list_pending_orders(self, account_id: int) -> List[Dict[str, Any]]:
         return self.list_orders(account_id, status='pending', limit=200)
 

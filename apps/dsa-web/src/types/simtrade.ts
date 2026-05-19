@@ -62,12 +62,34 @@ export interface SimOrder {
   fill_price: number | null;
   fill_qty: number;
   commission: number;
+  realized_pnl: number | null;
   status: 'pending' | 'filled' | 'partial' | 'cancelled';
   source: 'manual' | 'auto';
   ai_signal_id: number | null;
   rejection_reason: string | null;
   created_at: string | null;
   filled_at: string | null;
+}
+
+export interface TradeHistoryItem {
+  id: string;
+  account_id: number;
+  account_name: string | null;
+  code: string;
+  name: string | null;
+  market: 'CN' | 'US';
+  currency: 'CNY' | 'USD';
+  status: 'open' | 'closed';
+  source: 'manual' | 'auto';
+  qty: number;
+  buy_price: number | null;
+  sell_price: number | null;
+  realized_pnl: number | null;
+  opened_at: string | null;
+  closed_at: string | null;
+  ai_reasoning: string | null;
+  sell_reason: string | null;
+  order_ids: number[];
 }
 
 export interface SimPosition {

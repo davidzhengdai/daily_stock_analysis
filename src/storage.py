@@ -747,6 +747,7 @@ class SimulatedOrder(Base):
     fill_price = Column(Float)
     fill_qty = Column(Integer, default=0)
     commission = Column(Float, default=0.0)
+    realized_pnl = Column(Float)
     status = Column(String(16), default='pending')  # pending/filled/partial/cancelled
     source = Column(String(16), default='manual')   # manual / auto
     ai_signal_id = Column(Integer)
@@ -773,6 +774,7 @@ class SimulatedOrder(Base):
             'fill_price': self.fill_price,
             'fill_qty': self.fill_qty,
             'commission': self.commission,
+            'realized_pnl': self.realized_pnl,
             'status': self.status,
             'source': self.source,
             'ai_signal_id': self.ai_signal_id,
@@ -1039,6 +1041,7 @@ class DatabaseManager:
                 "ALTER TABLE simulated_accounts ADD COLUMN clear_on_market_close BOOLEAN NOT NULL DEFAULT 0",
                 "ALTER TABLE simulated_accounts ADD COLUMN clear_before_close_minutes INTEGER NOT NULL DEFAULT 15",
                 "ALTER TABLE simulated_accounts ADD COLUMN scan_interval_minutes INTEGER",
+                "ALTER TABLE simulated_orders ADD COLUMN realized_pnl FLOAT",
             ]
             for stmt in _migrations:
                 try:

@@ -14,6 +14,7 @@
   GET    /fund/history             — 资金流水
   GET    /positions                — 持仓列表
   GET    /orders                   — 委托列表
+  GET    /trade/history            — 通用交易历史
   POST   /orders                   — 手动下单
   DELETE /orders/{order_id}        — 撤单
   GET    /signals                  — AI 信号列表
@@ -55,6 +56,8 @@ from api.v1.schemas.simtrade import (
     SignalListResponse,
     SnapshotHistoryResponse,
     SnapshotItem,
+    TradeHistoryItem,
+    TradeHistoryResponse,
 )
 from src.services.simtrade.account_service import AccountService
 from src.services.simtrade.order_service import OrderService
@@ -177,6 +180,21 @@ def list_orders(
         return OrderListResponse(items=[OrderItem(**i) for i in items], total=len(items))
     except Exception as exc:
         raise _err("获取委托列表失败", exc)
+
+
+@router.get("/trade/history", response_model=TradeHistoryResponse, summary="通用交易历史")
+def trade_history(limit: int = Query(50, ge=1, le=200)):
+    from src.repositories.simtrade_repo import SimTradeRepo
+    repo = SimTradeRepo()
+    try:
+        acct = repo.get_or_create_account()
+        items = repo.list_trade_history(acct['id'], limit=limit)
+        return TradeHistoryResponse(
+            items=[TradeHistoryItem(**i) for i in items],
+            total=len(items),
+        )
+    except Exception as exc:
+        raise _err("获取交易历史失败", exc)
 
 
 @router.post("/orders", response_model=OrderItem, status_code=201, summary="手动下单")

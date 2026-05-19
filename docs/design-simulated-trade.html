@@ -633,6 +633,12 @@
       <td><code>OrderList</code></td>
     </tr>
     <tr>
+      <td><code>GET</code></td>
+      <td><code>/trade/history</code></td>
+      <td>通用交易历史；按开仓/平仓聚合买卖订单，并补充账户名称、单笔已实现盈亏和 AI/风控原因</td>
+      <td><code>TradeHistoryList</code></td>
+    </tr>
+    <tr>
       <td><code>POST</code></td>
       <td><code>/orders</code></td>
       <td>手动下单；自动交易开启时拒绝（返回 409）</td>
@@ -1079,8 +1085,9 @@ while True:
   <ul>
     <li><strong>权益卡片</strong>：总资产（CNY）、当日盈亏、总收益率（%），三列布局</li>
     <li><strong>权益折线图</strong>：最近 30 个快照的 <code>total_equity_cny</code> 趋势（使用现有图表组件）</li>
-    <li><strong>持仓汇总表</strong>：代码、名称、持仓量、均价、现价、浮盈浮亏（%）——实时刷新（30s polling）</li>
+    <li><strong>持仓汇总表</strong>：代码、名称、持仓量、均价、现价、当前总价、浮盈浮亏（%）——实时刷新（30s polling）</li>
     <li><strong>AI 信号动态</strong>：最近 10 条信号，显示代码、信号方向（颜色标签）、置信度、reasoning</li>
+    <li><strong>交易历史</strong>：基于 <code>GET /trade/history</code> 按开仓/平仓聚合展示状态、成交数量、买入价、卖出价、单笔盈亏、账户、手动/自动来源，以及自动交易关联 AI 信号或风控卖出的执行原因</li>
     <li><strong>自动交易状态徽标</strong>：ON（绿色）/ OFF（灰色）/ PAUSED（橙色）</li>
   </ul>
 </details>
