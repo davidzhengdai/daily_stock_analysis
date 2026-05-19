@@ -89,6 +89,7 @@ class OrderService:
         source: str = 'manual',
         ai_signal_id: Optional[int] = None,
         current_price: Optional[float] = None,
+        reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         提交一笔模拟委托。
@@ -171,6 +172,7 @@ class OrderService:
             status='pending',
             source=source,
             ai_signal_id=ai_signal_id,
+            rejection_reason=reason,
         )
 
         # 若可以即时成交则立刻执行
@@ -261,6 +263,7 @@ class OrderService:
             realized = (fill_price - pos['avg_cost']) * fill_qty
             new_realized = pos['realized_pnl'] + realized
             if new_qty <= 0:
+                self.repo.update_order(order['id'], realized_pnl=round(realized, 2))
                 self.repo.upsert_position(
                     account_id, code,
                     name=name, market=market, currency=currency,
@@ -270,6 +273,7 @@ class OrderService:
                     stop_loss_price=None, take_profit_price=None,
                 )
             else:
+                self.repo.update_order(order['id'], realized_pnl=round(realized, 2))
                 new_total_cost = pos['avg_cost'] * new_qty
                 unrealized = (fill_price - pos['avg_cost']) * new_qty
                 self.repo.upsert_position(
@@ -353,6 +357,7 @@ class OrderService:
                         name=pos.get('name', ''),
                         source='auto',
                         current_price=current_price,
+                        reason=reason,
                     )
                     logger.info("[SimTrade] %s %s", pos['code'], reason)
                     triggered.append(pos['code'])
@@ -378,6 +383,7 @@ class OrderService:
                     name=pos.get('name', ''),
                     source='auto',
                     current_price=current_price,
+                    reason='空仓过夜：收盘前自动清仓',
                 )
                 liquidated.append(pos['code'])
                 logger.info("[SimTrade] 空仓过夜清仓: %s × %d", pos['code'], pos['qty'])

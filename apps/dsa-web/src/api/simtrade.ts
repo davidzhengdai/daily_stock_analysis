@@ -13,6 +13,7 @@ import type {
   SimSignal,
   SimSnapshot,
   OrderRequest,
+  TradeHistoryItem,
 } from '../types/simtrade';
 
 const BASE = '/api/v1/sim-trade';
@@ -61,6 +62,9 @@ export const getOrders = (params?: {
   if (params?.limit) q.set('limit', String(params.limit));
   return request<{ items: SimOrder[]; total: number }>(`/orders?${q.toString()}`);
 };
+
+export const getTradeHistory = (limit = 50) =>
+  request<{ items: TradeHistoryItem[]; total: number }>(`/trade/history?limit=${limit}`);
 
 export const placeOrder = (data: OrderRequest) =>
   request<SimOrder>('/orders', { method: 'POST', body: JSON.stringify(data) });

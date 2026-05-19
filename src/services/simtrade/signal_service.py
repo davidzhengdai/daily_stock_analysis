@@ -236,7 +236,7 @@ class SignalService:
             risk_score=round(float(parsed.get('risk_score', 0.5) or 0.5), 3),
             position_size_pct=round(pos_size_pct, 1),
             suggested_qty=suggested_qty,
-            suggested_price=parsed.get('suggested_price') or current_price,
+            suggested_price=parsed.get('suggested_price'),
             stop_loss=parsed.get('stop_loss'),
             take_profit=parsed.get('take_profit'),
             reasoning=str(parsed.get('reasoning', ''))[:300],

@@ -14,7 +14,6 @@ import * as api from '../api/simtrade';
 import type {
   AccountSettingsRequest,
   AutoRunResult,
-  AutoTradeRun,
   AutoTradeStatus,
   FundItem,
   FundRequest,
@@ -26,6 +25,7 @@ import type {
   SimPosition,
   SimSignal,
   SimSnapshot,
+  TradeHistoryItem,
 } from '../types/simtrade';
 import { cn } from '../utils/cn';
 
@@ -62,18 +62,29 @@ const MODE_LABEL: Record<string, string> = {
   aggressive: '激进',
 };
 
+const formatDateTime = (value: string | null) =>
+  value ? new Date(value).toLocaleString('zh-CN') : '—';
+
 // ─── Sortable positions table ─────────────────────────────────────────────
 
 type PositionSortKey =
   | 'code' | 'name' | 'market' | 'qty'
-  | 'avg_cost' | 'last_price' | 'unrealized_pnl_pct'
+  | 'avg_cost' | 'last_price' | 'market_value' | 'unrealized_pnl_pct'
   | 'stop_loss_price' | 'take_profit_price';
 
 type SortDir = 'asc' | 'desc';
 
+function getPositionSortValue(row: SimPosition, key: PositionSortKey): string | number | null {
+  if (key === 'market_value') {
+    return row.last_price * row.qty;
+  }
+  return row[key];
+}
+
 function sortPositions(rows: SimPosition[], key: PositionSortKey, dir: SortDir): SimPosition[] {
   return [...rows].sort((a, b) => {
-    const av = a[key], bv = b[key];
+    const av = getPositionSortValue(a, key);
+    const bv = getPositionSortValue(b, key);
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
     if (bv == null) return -1;
@@ -85,6 +96,9 @@ function sortPositions(rows: SimPosition[], key: PositionSortKey, dir: SortDir):
 }
 
 type ColDef = { label: string; key: PositionSortKey };
+type TradeSortKey =
+  | 'time' | 'stock' | 'status' | 'qty' | 'buy_price'
+  | 'sell_price' | 'realized_pnl' | 'account' | 'source' | 'reason';
 
 const OVERVIEW_COLS: ColDef[] = [
   { label: '代码', key: 'code' },
@@ -92,6 +106,7 @@ const OVERVIEW_COLS: ColDef[] = [
   { label: '数量', key: 'qty' },
   { label: '成本价', key: 'avg_cost' },
   { label: '现价', key: 'last_price' },
+  { label: '当前总价', key: 'market_value' },
   { label: '浮动盈亏', key: 'unrealized_pnl_pct' },
   { label: '止损', key: 'stop_loss_price' },
   { label: '止盈', key: 'take_profit_price' },
@@ -103,9 +118,23 @@ const MANUAL_COLS: ColDef[] = [
   { label: '数量', key: 'qty' },
   { label: '成本', key: 'avg_cost' },
   { label: '现价', key: 'last_price' },
+  { label: '当前总价', key: 'market_value' },
   { label: '浮动 P&L', key: 'unrealized_pnl_pct' },
   { label: '止损', key: 'stop_loss_price' },
   { label: '止盈', key: 'take_profit_price' },
+];
+
+const TRADE_HISTORY_COLS: { label: string; key: TradeSortKey }[] = [
+  { label: '时间', key: 'time' },
+  { label: '股票', key: 'stock' },
+  { label: '状态', key: 'status' },
+  { label: '数量', key: 'qty' },
+  { label: '买入价', key: 'buy_price' },
+  { label: '卖出价', key: 'sell_price' },
+  { label: '盈亏', key: 'realized_pnl' },
+  { label: '账户', key: 'account' },
+  { label: '来源', key: 'source' },
+  { label: '原因', key: 'reason' },
 ];
 
 const SortIndicator: React.FC<{ active: boolean; dir: SortDir }> = ({ active, dir }) => (
@@ -113,6 +142,56 @@ const SortIndicator: React.FC<{ active: boolean; dir: SortDir }> = ({ active, di
     {active ? (dir === 'asc' ? '↑' : '↓') : '⇅'}
   </span>
 );
+
+function tradeTime(item: TradeHistoryItem): number {
+  const value = item.closed_at ?? item.opened_at;
+  return value ? new Date(value).getTime() : 0;
+}
+
+function tradeReason(item: TradeHistoryItem): string {
+  return item.sell_reason ?? item.ai_reasoning ?? '';
+}
+
+function getTradeSortValue(item: TradeHistoryItem, key: TradeSortKey): string | number | null {
+  switch (key) {
+    case 'time':
+      return tradeTime(item);
+    case 'stock':
+      return `${item.code} ${item.name ?? ''}`;
+    case 'status':
+      return item.status;
+    case 'qty':
+      return item.qty;
+    case 'buy_price':
+      return item.buy_price;
+    case 'sell_price':
+      return item.sell_price;
+    case 'realized_pnl':
+      return item.realized_pnl;
+    case 'account':
+      return item.account_name ?? `#${item.account_id}`;
+    case 'source':
+      return item.source;
+    case 'reason':
+      return tradeReason(item);
+    default:
+      return null;
+  }
+}
+
+function sortTradeHistory(rows: TradeHistoryItem[], key: TradeSortKey, dir: SortDir): TradeHistoryItem[] {
+  return [...rows].sort((a, b) => {
+    const av = getTradeSortValue(a, key);
+    const bv = getTradeSortValue(b, key);
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = typeof av === 'string'
+      ? av.localeCompare(String(bv), 'zh-CN')
+      : av - Number(bv);
+    return dir === 'asc' ? cmp : -cmp;
+  });
+}
 
 const PositionsTable: React.FC<{ positions: SimPosition[]; variant: 'overview' | 'manual' }> = ({
   positions,
@@ -161,6 +240,9 @@ const PositionsTable: React.FC<{ positions: SimPosition[]; variant: 'overview' |
               <td className="px-3 py-2 tabular-nums">{p.qty}</td>
               <td className="px-3 py-2 tabular-nums">{fmt(p.avg_cost, 3)}</td>
               <td className="px-3 py-2 tabular-nums">{fmt(p.last_price, 3)}</td>
+              <td className="px-3 py-2 tabular-nums whitespace-nowrap">
+                {p.currency} {fmt(p.last_price * p.qty)}
+              </td>
               <td className={cn('px-3 py-2 tabular-nums font-medium', pnlColor(p.unrealized_pnl))}>
                 {fmtPct(p.unrealized_pnl_pct)}
               </td>
@@ -235,9 +317,21 @@ const OverviewTab: React.FC<{
   positions: SimPosition[];
   signals: SimSignal[];
   snapshots: SimSnapshot[];
+  tradeHistory: TradeHistoryItem[];
   loading: boolean;
-}> = ({ account, positions, signals, snapshots, loading }) => {
+}> = ({ account, positions, signals, snapshots, tradeHistory, loading }) => {
   const eq = account.equity_summary;
+  const [tradeSortKey, setTradeSortKey] = useState<TradeSortKey>('time');
+  const [tradeSortDir, setTradeSortDir] = useState<SortDir>('desc');
+
+  const handleTradeSort = (key: TradeSortKey) => {
+    if (key === tradeSortKey) {
+      setTradeSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setTradeSortKey(key);
+      setTradeSortDir(key === 'time' ? 'desc' : 'asc');
+    }
+  };
 
   if (loading) {
     return <div className="flex justify-center py-12 text-secondary-text">加载中…</div>;
@@ -250,6 +344,7 @@ const OverviewTab: React.FC<{
   const usPnl = positions.filter(p => p.currency === 'USD').reduce((s, p) => s + p.unrealized_pnl, 0);
   const hasCn = positions.some(p => p.currency === 'CNY');
   const hasUs = positions.some(p => p.currency === 'USD');
+  const sortedTradeHistory = sortTradeHistory(tradeHistory, tradeSortKey, tradeSortDir);
 
   return (
     <div className="space-y-6">
@@ -346,6 +441,84 @@ const OverviewTab: React.FC<{
           </div>
         </div>
       ) : null}
+
+      <div>
+        <SectionTitle>交易历史</SectionTitle>
+        {tradeHistory.length === 0 ? (
+          <p className="text-sm text-secondary-text py-4 text-center">暂无交易记录</p>
+        ) : (
+          <div className="rounded-xl border border-border bg-card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-secondary-text text-xs">
+                  {TRADE_HISTORY_COLS.map(({ label, key }) => (
+                    <th
+                      key={key}
+                      onClick={() => handleTradeSort(key)}
+                      className="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+                    >
+                      {label}
+                      <SortIndicator active={tradeSortKey === key} dir={tradeSortDir} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedTradeHistory.map((item) => {
+                  const pnl = item.realized_pnl;
+                  const isAuto = item.source === 'auto';
+                  const reason = item.sell_reason ?? item.ai_reasoning;
+                  return (
+                    <tr key={item.id} className="border-b border-border/40 hover:bg-hover/50">
+                      <td className="px-3 py-2 text-xs text-secondary-text whitespace-nowrap">
+                        {formatDateTime(item.closed_at ?? item.opened_at)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <div className="font-mono font-medium">{item.code}</div>
+                        {item.name ? <div className="text-[10px] text-secondary-text truncate max-w-28">{item.name}</div> : null}
+                      </td>
+                      <td className="px-3 py-2 text-xs whitespace-nowrap">
+                        <span className={cn(
+                          'inline-flex items-center rounded-full px-2 py-0.5',
+                          item.status === 'closed' ? 'bg-secondary/15 text-secondary-text' : 'bg-emerald-500/15 text-emerald-500'
+                        )}>
+                          {item.status === 'closed' ? '已平仓' : '持仓中'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 tabular-nums whitespace-nowrap">
+                        {item.qty}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums whitespace-nowrap">
+                        {item.buy_price ? `${item.currency} ${fmt(item.buy_price, 3)}` : '—'}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums whitespace-nowrap">
+                        {item.sell_price ? `${item.currency} ${fmt(item.sell_price, 3)}` : '—'}
+                      </td>
+                      <td className={cn('px-3 py-2 tabular-nums whitespace-nowrap', pnl == null ? 'text-secondary-text' : pnlColor(pnl))}>
+                        {pnl == null ? '—' : `${pnl >= 0 ? '+' : ''}${fmt(pnl)}`}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-secondary-text whitespace-nowrap">
+                        {item.account_name ?? `#${item.account_id}`}
+                      </td>
+                      <td className="px-3 py-2 text-xs whitespace-nowrap">
+                        <span className={cn(
+                          'inline-flex items-center rounded-full px-2 py-0.5',
+                          isAuto ? 'bg-primary/10 text-primary' : 'bg-secondary/15 text-secondary-text'
+                        )}>
+                          {isAuto ? 'AI 自动' : '手动'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-secondary-text max-w-64 truncate" title={reason ?? ''}>
+                        {isAuto ? reason ?? '—' : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -601,9 +774,8 @@ const AutoTradeTab: React.FC<{
   account: SimAccount;
   signals: SimSignal[];
   autoStatus: AutoTradeStatus | null;
-  runHistory: AutoTradeRun[];
   onRefresh: () => void;
-}> = ({ account, signals, autoStatus, runHistory, onRefresh }) => {
+}> = ({ account, signals, autoStatus, onRefresh }) => {
   const [toggling, setToggling] = useState(false);
   const [running, setRunning] = useState(false);
   const [runResult, setRunResult] = useState<AutoRunResult | null>(null);
@@ -971,63 +1143,6 @@ const AutoTradeTab: React.FC<{
           </div>
         )}
       </div>
-
-      {/* Run history */}
-      <div>
-        <SectionTitle>运行历史</SectionTitle>
-        {runHistory.length === 0 ? (
-          <p className="text-sm text-secondary-text py-4 text-center">暂无运行记录</p>
-        ) : (
-          <div className="rounded-xl border border-border bg-card overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-secondary-text text-xs">
-                  {['时间', '触发', '信号', '委托', '止损', '结果'].map((h) => (
-                    <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {runHistory.map((r) => {
-                  const skipped = !!r.skipped_reason;
-                  const hasErrors = r.errors.length > 0;
-                  return (
-                    <tr key={r.id} className="border-b border-border/40 hover:bg-hover/50">
-                      <td className="px-3 py-2 text-xs text-secondary-text whitespace-nowrap">
-                        {r.started_at ? new Date(r.started_at).toLocaleString('zh-CN') : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-xs">
-                        <span className={cn(
-                          'inline-block rounded-full px-1.5 py-0.5',
-                          r.triggered_by === 'manual'
-                            ? 'bg-primary/10 text-primary'
-                            : 'bg-secondary/15 text-secondary-text'
-                        )}>
-                          {r.triggered_by === 'manual' ? '手动' : '调度'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 tabular-nums text-xs">{skipped ? '—' : r.signals_generated}</td>
-                      <td className="px-3 py-2 tabular-nums text-xs">{skipped ? '—' : r.orders_placed}</td>
-                      <td className="px-3 py-2 text-xs text-red-400">
-                        {r.stop_loss_triggered.length > 0 ? r.stop_loss_triggered.join(', ') : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-xs max-w-52 truncate" title={r.skipped_reason ?? r.errors[0] ?? ''}>
-                        {skipped ? (
-                          <span className="text-amber-500">{r.skipped_reason}</span>
-                        ) : hasErrors ? (
-                          <span className="text-red-400">{r.errors[0]}{r.errors.length > 1 ? ` (+${r.errors.length - 1})` : ''}</span>
-                        ) : (
-                          <span className="text-emerald-500">完成</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
 };
@@ -1197,13 +1312,13 @@ const SimTradePage: React.FC = () => {
   const [snapshots, setSnapshots] = useState<SimSnapshot[]>([]);
   const [fundHistory, setFundHistory] = useState<FundItem[]>([]);
   const [autoStatus, setAutoStatus] = useState<AutoTradeStatus | null>(null);
-  const [runHistory, setRunHistory] = useState<AutoTradeRun[]>([]);
+  const [tradeHistory, setTradeHistory] = useState<TradeHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   const fetchAll = useCallback(async () => {
     try {
-      const [acct, pos, ord, sigs, snaps, fh, ats, runs] = await Promise.all([
+      const [acct, pos, ord, sigs, snaps, fh, ats, trades] = await Promise.all([
         api.getAccount(),
         api.getPositions(),
         api.getOrders({ limit: 30 }),
@@ -1211,7 +1326,7 @@ const SimTradePage: React.FC = () => {
         api.getSnapshotHistory(60),
         api.getFundHistory(50),
         api.getAutoTradeStatus(),
-        api.getAutoTradeHistory(50),
+        api.getTradeHistory(50),
       ]);
       setAccount(acct);
       setPositions(pos.items);
@@ -1220,7 +1335,7 @@ const SimTradePage: React.FC = () => {
       setSnapshots(snaps.items);
       setFundHistory(fh.items);
       setAutoStatus(ats);
-      setRunHistory(runs.items);
+      setTradeHistory(trades.items);
       setError('');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : '加载失败');
@@ -1315,13 +1430,20 @@ const SimTradePage: React.FC = () => {
       ) : !account ? null : (
         <>
           {tab === 'overview' ? (
-            <OverviewTab account={account} positions={positions} signals={signals} snapshots={snapshots} loading={loading} />
+            <OverviewTab
+              account={account}
+              positions={positions}
+              signals={signals}
+              snapshots={snapshots}
+              tradeHistory={tradeHistory}
+              loading={loading}
+            />
           ) : null}
           {tab === 'manual' ? (
             <ManualTradeTab account={account} orders={orders} positions={positions} onRefresh={() => void fetchAll()} />
           ) : null}
           {tab === 'auto' ? (
-            <AutoTradeTab account={account} signals={signals} autoStatus={autoStatus} runHistory={runHistory} onRefresh={() => void fetchAll()} />
+            <AutoTradeTab account={account} signals={signals} autoStatus={autoStatus} onRefresh={() => void fetchAll()} />
           ) : null}
           {tab === 'funding' ? (
             <FundingTab account={account} history={fundHistory} onRefresh={() => void fetchAll()} />

@@ -51,6 +51,7 @@ class OrderItem(BaseModel):
     fill_price: Optional[float]
     fill_qty: int
     commission: float
+    realized_pnl: Optional[float] = None
     status: str
     source: str
     ai_signal_id: Optional[int]
@@ -61,6 +62,32 @@ class OrderItem(BaseModel):
 
 class OrderListResponse(BaseModel):
     items: List[OrderItem]
+    total: int
+
+
+class TradeHistoryItem(BaseModel):
+    id: str
+    account_id: int
+    account_name: Optional[str] = None
+    code: str
+    name: Optional[str]
+    market: str
+    currency: str
+    status: str
+    source: str
+    qty: int
+    buy_price: Optional[float] = None
+    sell_price: Optional[float] = None
+    realized_pnl: Optional[float] = None
+    opened_at: Optional[str]
+    closed_at: Optional[str] = None
+    ai_reasoning: Optional[str] = None
+    sell_reason: Optional[str] = None
+    order_ids: List[int]
+
+
+class TradeHistoryResponse(BaseModel):
+    items: List[TradeHistoryItem]
     total: int
 
 
