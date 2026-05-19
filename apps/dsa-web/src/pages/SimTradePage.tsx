@@ -36,6 +36,8 @@ const fmt = (n: number, digits = 2) =>
 
 const fmtPct = (n: number) => `${n >= 0 ? '+' : ''}${fmt(n)}%`;
 
+const fmtMoneyDelta = (n: number, symbol: string) => `${n >= 0 ? '+' : '-'}${symbol}${fmt(Math.abs(n))}`;
+
 const pnlColor = (n: number) =>
   n > 0 ? 'text-emerald-500' : n < 0 ? 'text-red-500' : 'text-secondary-text';
 
@@ -340,10 +342,22 @@ const OverviewTab: React.FC<{
   // Simple ASCII equity curve using last 10 snapshots
   const recentSnaps = snapshots.slice(-10);
 
+  const cnMarketValue = positions
+    .filter(p => p.currency === 'CNY')
+    .reduce((s, p) => s + p.last_price * p.qty, 0);
+  const usMarketValue = positions
+    .filter(p => p.currency === 'USD')
+    .reduce((s, p) => s + p.last_price * p.qty, 0);
   const cnPnl = positions.filter(p => p.currency === 'CNY').reduce((s, p) => s + p.unrealized_pnl, 0);
   const usPnl = positions.filter(p => p.currency === 'USD').reduce((s, p) => s + p.unrealized_pnl, 0);
-  const hasCn = positions.some(p => p.currency === 'CNY');
-  const hasUs = positions.some(p => p.currency === 'USD');
+  const cnAccountValue = account.cash_cny + cnMarketValue;
+  const usAccountValue = account.cash_usd + usMarketValue;
+  const cnNetFunding = account.total_deposited_cny - account.total_withdrawn_cny;
+  const usNetFunding = account.total_deposited_usd - account.total_withdrawn_usd;
+  const cnAccountPnl = cnAccountValue - cnNetFunding;
+  const usAccountPnl = usAccountValue - usNetFunding;
+  const cnAccountReturn = cnNetFunding > 0 ? (cnAccountPnl / cnNetFunding) * 100 : 0;
+  const usAccountReturn = usNetFunding > 0 ? (usAccountPnl / usNetFunding) * 100 : 0;
   const sortedTradeHistory = sortTradeHistory(tradeHistory, tradeSortKey, tradeSortDir);
 
   return (
@@ -355,22 +369,18 @@ const OverviewTab: React.FC<{
           value={eq ? `¥${fmt(eq.total_equity_cny)}` : '—'}
           sub={account.status === 'paused' ? '⏸ 已暂停' : account.auto_trade_enabled ? '🤖 自动交易中' : '手动模式'}
         />
-        <StatCard label="可用 CNY" value={`¥${fmt(account.cash_cny)}`} />
-        <StatCard label="可用 USD" value={`$${fmt(account.cash_usd)}`} sub={`≈ ¥${fmt(account.cash_usd * (eq?.fx_rate_usd_cny ?? 7.25))}`} />
-        {hasCn && (
-          <StatCard
-            label="浮动盈亏 (A 股 CNY)"
-            value={`¥${fmt(cnPnl)}`}
-            color={pnlColor(cnPnl)}
-          />
-        )}
-        {hasUs && (
-          <StatCard
-            label="浮动盈亏 (美股 USD)"
-            value={`$${fmt(usPnl)}`}
-            color={pnlColor(usPnl)}
-          />
-        )}
+        <StatCard
+          label="CNY 账户总值"
+          value={`¥${fmt(cnAccountValue)}`}
+          color={pnlColor(cnAccountPnl)}
+          sub={`净投入 ¥${fmt(cnNetFunding)} · 总盈亏 ${fmtMoneyDelta(cnAccountPnl, '¥')} (${fmtPct(cnAccountReturn)}) · 持仓盈亏 ${fmtMoneyDelta(cnPnl, '¥')}`}
+        />
+        <StatCard
+          label="USD 账户总值"
+          value={`$${fmt(usAccountValue)}`}
+          color={pnlColor(usAccountPnl)}
+          sub={`净投入 $${fmt(usNetFunding)} · 总盈亏 ${fmtMoneyDelta(usAccountPnl, '$')} (${fmtPct(usAccountReturn)}) · 持仓盈亏 ${fmtMoneyDelta(usPnl, '$')}`}
+        />
         {eq && (
           <StatCard
             label="总回报"
