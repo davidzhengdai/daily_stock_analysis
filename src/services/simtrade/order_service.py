@@ -26,6 +26,17 @@ logger = logging.getLogger(__name__)
 _shared_fetcher_manager = None
 
 
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except ValueError:
+        logger.warning("%s 配置无效，使用默认值 %d", name, default)
+        return default
+
+
+_AUTO_PENDING_ORDER_MAX_AGE_MINUTES = _positive_int_env('SIMTRADE_AUTO_PENDING_ORDER_MAX_AGE_MINUTES', 30)
+
+
 def _get_shared_fetcher_manager():
     global _shared_fetcher_manager
     if _shared_fetcher_manager is None:
@@ -52,7 +63,7 @@ def _fill_price(current_price: float, side: str, order_type: str, limit_price: O
     """
     确定成交价：
     - 市价单：当前价 ± 0.1% 滑点
-    - 限价单：若限价在当前价 ±3% 内则即时成交；否则挂单等待
+    - 限价单：买入价不高于限价、卖出价不低于限价时成交，成交价按当前价模拟
     """
     if order_type == 'market':
         slippage = 0.001 if side == 'buy' else -0.001
@@ -60,9 +71,10 @@ def _fill_price(current_price: float, side: str, order_type: str, limit_price: O
     # limit order
     if limit_price is None:
         return None
-    spread = abs(limit_price - current_price) / current_price if current_price > 0 else 1
-    if spread <= 0.03:
-        return limit_price
+    if side == 'buy' and current_price <= limit_price:
+        return round(current_price, 3)
+    if side == 'sell' and current_price >= limit_price:
+        return round(current_price, 3)
     return None  # 挂单等待
 
 
@@ -129,6 +141,17 @@ class OrderService:
             current_price = self._get_latest_price(code, allow_stale_fallback=source != 'auto')
         if current_price is None or current_price <= 0:
             raise ValueError(f"无法获取 {code} 的当前价格，请稍后重试")
+        if (
+            source == 'auto'
+            and side == 'buy'
+            and order_type == 'limit'
+            and limit_price is not None
+            and limit_price > current_price
+        ):
+            raise ValueError(
+                f"自动买入限价 {limit_price:.3f} 高于当前价 {current_price:.3f}，"
+                "取消下单并等待下一轮重新评估"
+            )
 
         # 计算成交价
         fp = _fill_price(current_price, side, order_type, limit_price)
@@ -311,8 +334,32 @@ class OrderService:
         filled_count = 0
         for order in pending:
             code = order['code']
+            if order.get('source') == 'auto':
+                rejection = self._auto_pending_order_rejection_reason(account_id, order)
+                if rejection:
+                    self.repo.update_order(order['id'], status='cancelled', rejection_reason=rejection)
+                    if order.get('ai_signal_id'):
+                        self.repo.update_signal(order['ai_signal_id'], status='rejected', order_id=None)
+                    logger.info("[SimTrade] 自动挂单已取消 %s #%s: %s", code, order['id'], rejection)
+                    continue
             current_price = self._get_latest_price(code, allow_stale_fallback=order.get('source') != 'auto')
             if current_price is None or current_price <= 0:
+                continue
+            if (
+                order.get('source') == 'auto'
+                and order.get('side') == 'buy'
+                and order.get('order_type') == 'limit'
+                and order.get('limit_price') is not None
+                and order['limit_price'] > current_price
+            ):
+                reason = (
+                    f"自动买入挂单限价 {order['limit_price']:.3f} 高于当前价 {current_price:.3f}，"
+                    "取消并等待下一轮重新评估"
+                )
+                self.repo.update_order(order['id'], status='cancelled', rejection_reason=reason)
+                if order.get('ai_signal_id'):
+                    self.repo.update_signal(order['ai_signal_id'], status='rejected', order_id=None)
+                logger.info("[SimTrade] 自动挂单已取消 %s #%s: %s", code, order['id'], reason)
                 continue
             fp = _fill_price(current_price, order['side'], order['order_type'], order['limit_price'])
             if fp is None:
@@ -325,6 +372,30 @@ class OrderService:
             self._execute_fill(account_id, order['id'], fp, qty, commission, order['currency'], order['side'], acct)
             filled_count += 1
         return filled_count
+
+    def _auto_pending_order_rejection_reason(self, account_id: int, order: Dict[str, Any]) -> Optional[str]:
+        """Revalidate auto pending orders before filling them."""
+        created_at_raw = order.get('created_at')
+        created_at = None
+        if created_at_raw:
+            try:
+                created_at = datetime.fromisoformat(str(created_at_raw))
+            except ValueError:
+                created_at = None
+        if created_at and (datetime.now() - created_at).total_seconds() > _AUTO_PENDING_ORDER_MAX_AGE_MINUTES * 60:
+            return f"自动挂单超过 {_AUTO_PENDING_ORDER_MAX_AGE_MINUTES} 分钟未成交，取消以避免旧信号成交"
+
+        if order.get('side') == 'buy':
+            try:
+                from src.services.simtrade.signal_service import _STOP_LOSS_COOLDOWN_MINUTES
+                cutoff = datetime.now() - timedelta(minutes=_STOP_LOSS_COOLDOWN_MINUTES)
+                recent_loss = self.repo.get_recent_loss_sell_order(account_id, order['code'], cutoff)
+                if recent_loss:
+                    return f"最近 {_STOP_LOSS_COOLDOWN_MINUTES} 分钟内已亏损/止损卖出，取消自动买入挂单"
+            except Exception as exc:
+                logger.debug("[SimTrade] 自动挂单冷却检查失败 %s: %s", order.get('code'), exc)
+
+        return None
 
     # -------------------------------------------------------
     # 止损 / 止盈

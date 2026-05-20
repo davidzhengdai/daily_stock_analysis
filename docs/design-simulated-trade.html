@@ -1244,6 +1244,11 @@ while True:
       <td><code>240</code></td>
       <td>自动交易发生止损或亏损卖出后，同一股票在冷却期内禁止重新买入，避免短时间反复高买低卖</td>
     </tr>
+    <tr>
+      <td><code>SIMTRADE_AUTO_PENDING_ORDER_MAX_AGE_MINUTES</code> <span class="tag tag-cfg">cfg</span></td>
+      <td><code>30</code></td>
+      <td>自动交易挂单最长保留时间；超时未成交会取消，避免旧 AI 信号在后续行情中延迟成交</td>
+    </tr>
   </tbody>
 </table>
 
@@ -1256,12 +1261,19 @@ SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES=5
 # LLM model for signal generation; falls back to LITELLM_MODEL if unset
 # SIMTRADE_LLM_MODEL=
 # Cooldown after auto stop-loss / loss sell before buying the same stock again
-SIMTRADE_STOP_LOSS_COOLDOWN_MINUTES=240</code></pre>
+SIMTRADE_STOP_LOSS_COOLDOWN_MINUTES=240
+# Maximum age for auto pending orders before cancellation
+SIMTRADE_AUTO_PENDING_ORDER_MAX_AGE_MINUTES=30</code></pre>
 
 <h3>11.2 账户级配置（运行时可修改，PATCH /account/settings）</h3>
 <p>
   以下参数存储在 <code>simulated_accounts</code> 表中，通过 API 实时修改，
   不需要重启服务：
+</p>
+
+<p>
+  自动交易在下单和挂单撮合前都会重新检查执行价：若自动买入限价高于当前实时价，
+  系统不会按旧限价成交，而是取消该订单并等待下一轮重新生成信号。
 </p>
 <ul>
   <li><code>auto_trade_mode</code>：conservative / balanced / aggressive</li>
