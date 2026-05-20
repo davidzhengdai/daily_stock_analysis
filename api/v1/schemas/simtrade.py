@@ -205,6 +205,10 @@ class SnapshotItem(BaseModel):
     cash_usd: float
     fx_rate_usd_cny: float
     market_value_cny: float
+    cny_total_value: Optional[float] = None
+    usd_total_value: Optional[float] = None
+    cny_return_pct: Optional[float] = None
+    usd_return_pct: Optional[float] = None
     total_equity_cny: float
     realized_pnl: float
     unrealized_pnl: float

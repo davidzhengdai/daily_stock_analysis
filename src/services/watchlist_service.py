@@ -10,6 +10,7 @@
 """
 
 import logging
+import threading
 from typing import List, Optional
 
 from src.repositories.watchlist_repo import WatchlistRepo
@@ -31,6 +32,7 @@ class WatchlistService:
         """添加或更新自选股，返回最新记录。"""
         item = self.repo.upsert(code=code, name=name, notes=notes)
         self.sync_to_sentinel()
+        self.refresh_market_data_async(item["code"])
         return item
 
     def remove(self, code: str) -> bool:
@@ -69,4 +71,42 @@ class WatchlistService:
             return 0
         except Exception as exc:
             logger.warning("同步自选股到 Sentinel 失败: %s", exc)
+            return 0
+
+    def refresh_market_data_async(self, code: str) -> None:
+        """Best-effort daily-bar refresh after watchlist changes."""
+        normalized = (code or "").strip().upper()
+        if not normalized:
+            return
+
+        thread = threading.Thread(
+            target=self.refresh_market_data,
+            args=(normalized,),
+            name=f"watchlist-refresh-{normalized}",
+            daemon=True,
+        )
+        thread.start()
+
+    def refresh_market_data(self, code: str, days: int = 60) -> int:
+        """Fetch and persist recent daily bars for a watched stock."""
+        normalized = (code or "").strip().upper()
+        if not normalized:
+            return 0
+        try:
+            from data_provider.base import DataFetcherManager
+            from src.storage import DatabaseManager
+
+            df, source = DataFetcherManager().get_daily_data(normalized, days=days)
+            if df is None or df.empty:
+                logger.warning("自选股 %s 行情预热未返回数据", normalized)
+                return 0
+            saved = DatabaseManager.get_instance().save_daily_data(
+                df,
+                normalized,
+                data_source=f"watchlist:{source}",
+            )
+            logger.info("自选股 %s 行情预热完成，source=%s, new_rows=%s", normalized, source, saved)
+            return saved
+        except Exception as exc:
+            logger.warning("自选股 %s 行情预热失败: %s", normalized, exc)
             return 0

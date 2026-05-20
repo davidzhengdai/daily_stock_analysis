@@ -980,6 +980,10 @@ class SimulatedSnapshot(Base):
     cash_usd = Column(Float, nullable=False, default=0.0)
     fx_rate_usd_cny = Column(Float, nullable=False, default=7.25)
     market_value_cny = Column(Float, nullable=False, default=0.0)
+    cny_total_value = Column(Float)
+    usd_total_value = Column(Float)
+    cny_return_pct = Column(Float)
+    usd_return_pct = Column(Float)
     total_equity_cny = Column(Float, nullable=False, default=0.0)
     realized_pnl = Column(Float, nullable=False, default=0.0)
     unrealized_pnl = Column(Float, nullable=False, default=0.0)
@@ -1001,6 +1005,10 @@ class SimulatedSnapshot(Base):
             'cash_usd': self.cash_usd,
             'fx_rate_usd_cny': self.fx_rate_usd_cny,
             'market_value_cny': self.market_value_cny,
+            'cny_total_value': self.cny_total_value,
+            'usd_total_value': self.usd_total_value,
+            'cny_return_pct': self.cny_return_pct,
+            'usd_return_pct': self.usd_return_pct,
             'total_equity_cny': self.total_equity_cny,
             'realized_pnl': self.realized_pnl,
             'unrealized_pnl': self.unrealized_pnl,
@@ -1191,6 +1199,10 @@ class DatabaseManager(metaclass=_DatabaseManagerMeta):
                 "ALTER TABLE simulated_accounts ADD COLUMN clear_before_close_minutes INTEGER NOT NULL DEFAULT 15",
                 "ALTER TABLE simulated_accounts ADD COLUMN scan_interval_minutes INTEGER",
                 "ALTER TABLE simulated_orders ADD COLUMN realized_pnl FLOAT",
+                "ALTER TABLE simulated_snapshots ADD COLUMN cny_total_value FLOAT",
+                "ALTER TABLE simulated_snapshots ADD COLUMN usd_total_value FLOAT",
+                "ALTER TABLE simulated_snapshots ADD COLUMN cny_return_pct FLOAT",
+                "ALTER TABLE simulated_snapshots ADD COLUMN usd_return_pct FLOAT",
             ]
             for stmt in _migrations:
                 try:

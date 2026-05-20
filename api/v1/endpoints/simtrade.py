@@ -362,10 +362,14 @@ def auto_trade_history(limit: int = Query(50, ge=1, le=200)):
 @router.get("/snapshot/history", response_model=SnapshotHistoryResponse, summary="权益曲线历史")
 def snapshot_history(limit: int = Query(90, ge=1, le=365)):
     from src.repositories.simtrade_repo import SimTradeRepo
+    from src.services.simtrade.order_service import OrderService
     repo = SimTradeRepo()
     try:
         acct = repo.get_or_create_account()
+        svc = OrderService(repo)
+        svc.take_daily_snapshot(acct['id'])
         items = repo.list_snapshots(acct['id'], limit=limit)
+        items = svc.enrich_snapshot_currency_fields(acct['id'], items)
         return SnapshotHistoryResponse(
             items=[SnapshotItem(**i) for i in items],
             total=len(items),

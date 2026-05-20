@@ -144,6 +144,10 @@ export interface SimSnapshot {
   cash_usd: number;
   fx_rate_usd_cny: number;
   market_value_cny: number;
+  cny_total_value: number | null;
+  usd_total_value: number | null;
+  cny_return_pct: number | null;
+  usd_return_pct: number | null;
   total_equity_cny: number;
   realized_pnl: number;
   unrealized_pnl: number;

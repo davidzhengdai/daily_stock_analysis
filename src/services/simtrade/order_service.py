@@ -14,7 +14,7 @@
 
 import logging
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Any, Dict, List, Optional
 
 from src.repositories.simtrade_repo import SimTradeRepo
@@ -126,7 +126,7 @@ class OrderService:
 
         # 获取当前价格（如未提供）
         if current_price is None or current_price <= 0:
-            current_price = self._get_latest_price(code)
+            current_price = self._get_latest_price(code, allow_stale_fallback=source != 'auto')
         if current_price is None or current_price <= 0:
             raise ValueError(f"无法获取 {code} 的当前价格，请稍后重试")
 
@@ -311,7 +311,7 @@ class OrderService:
         filled_count = 0
         for order in pending:
             code = order['code']
-            current_price = self._get_latest_price(code)
+            current_price = self._get_latest_price(code, allow_stale_fallback=order.get('source') != 'auto')
             if current_price is None or current_price <= 0:
                 continue
             fp = _fill_price(current_price, order['side'], order['order_type'], order['limit_price'])
@@ -428,13 +428,21 @@ class OrderService:
         positions = self.repo.list_positions(account_id)
         fx_rate = self._fx_rate
 
-        market_value_cny = sum(
-            (p['last_price'] * p['qty']) if p['currency'] == 'CNY'
-            else (p['last_price'] * p['qty'] * fx_rate)
+        cny_market_value = sum(
+            p['last_price'] * p['qty']
             for p in positions
+            if p['currency'] == 'CNY'
         )
+        usd_market_value = sum(
+            p['last_price'] * p['qty']
+            for p in positions
+            if p['currency'] == 'USD'
+        )
+        market_value_cny = cny_market_value + usd_market_value * fx_rate
         cash_equiv_cny = acct['cash_cny'] + acct['cash_usd'] * fx_rate
         total_equity = cash_equiv_cny + market_value_cny
+        cny_total_value = acct['cash_cny'] + cny_market_value
+        usd_total_value = acct['cash_usd'] + usd_market_value
 
         realized_pnl = sum(p['realized_pnl'] for p in positions)
         unrealized_pnl = sum(p['unrealized_pnl'] for p in positions)
@@ -451,9 +459,21 @@ class OrderService:
             acct['total_deposited_cny'] + acct['total_deposited_usd'] * fx_rate
             - acct['total_withdrawn_cny'] - acct['total_withdrawn_usd'] * fx_rate
         )
+        cny_net_deposited = acct['total_deposited_cny'] - acct['total_withdrawn_cny']
+        usd_net_deposited = acct['total_deposited_usd'] - acct['total_withdrawn_usd']
         total_return_pct = (
             (total_equity - net_deposited) / net_deposited * 100
             if net_deposited > 0
+            else 0.0
+        )
+        cny_return_pct = (
+            (cny_total_value - cny_net_deposited) / cny_net_deposited * 100
+            if cny_net_deposited > 0
+            else 0.0
+        )
+        usd_return_pct = (
+            (usd_total_value - usd_net_deposited) / usd_net_deposited * 100
+            if usd_net_deposited > 0
             else 0.0
         )
 
@@ -463,6 +483,10 @@ class OrderService:
             cash_usd=round(acct['cash_usd'], 2),
             fx_rate_usd_cny=fx_rate,
             market_value_cny=round(market_value_cny, 2),
+            cny_total_value=round(cny_total_value, 2),
+            usd_total_value=round(usd_total_value, 2),
+            cny_return_pct=round(cny_return_pct, 2),
+            usd_return_pct=round(usd_return_pct, 2),
             total_equity_cny=round(total_equity, 2),
             realized_pnl=round(realized_pnl, 2),
             unrealized_pnl=round(unrealized_pnl, 2),
@@ -471,11 +495,139 @@ class OrderService:
             peak_equity_cny=round(peak_equity, 2),
         )
 
+    def enrich_snapshot_currency_fields(self, account_id: int, snapshots: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Backfill currency-specific snapshot fields for old rows missing them."""
+        missing = [s for s in snapshots if s.get('cny_total_value') is None or s.get('usd_total_value') is None]
+        if not missing:
+            return snapshots
+
+        from sqlalchemy import select
+        from src.storage import SimulatedFundingLedger, SimulatedOrder, StockDaily
+
+        dates = [date.fromisoformat(str(s['date'])) for s in snapshots if s.get('date')]
+        if not dates:
+            return snapshots
+        max_day = max(dates)
+        max_dt = datetime.combine(max_day + timedelta(days=1), datetime.min.time())
+
+        with self.repo.db.get_session() as session:
+            order_rows = session.execute(
+                select(SimulatedOrder)
+                .where(
+                    SimulatedOrder.account_id == account_id,
+                    SimulatedOrder.status == 'filled',
+                    SimulatedOrder.filled_at < max_dt,
+                )
+                .order_by(SimulatedOrder.filled_at, SimulatedOrder.id)
+            ).scalars().all()
+            funding_rows = session.execute(
+                select(SimulatedFundingLedger)
+                .where(
+                    SimulatedFundingLedger.account_id == account_id,
+                    SimulatedFundingLedger.created_at < max_dt,
+                )
+                .order_by(SimulatedFundingLedger.created_at, SimulatedFundingLedger.id)
+            ).scalars().all()
+            codes = sorted({o.code for o in order_rows})
+            daily_rows = []
+            if codes:
+                daily_rows = session.execute(
+                    select(StockDaily)
+                    .where(
+                        StockDaily.code.in_(codes),
+                        StockDaily.date <= max_day,
+                    )
+                    .order_by(StockDaily.code, StockDaily.date)
+                ).scalars().all()
+
+        close_by_code: Dict[str, List[Any]] = {}
+        for row in daily_rows:
+            close_by_code.setdefault(row.code, []).append(row)
+
+        def latest_close(code: str, as_of: date) -> Optional[float]:
+            rows = close_by_code.get(code, [])
+            price = None
+            for row in rows:
+                if row.date and row.date <= as_of and row.close and row.close > 0:
+                    price = float(row.close)
+                elif row.date and row.date > as_of:
+                    break
+            return price
+
+        enriched: List[Dict[str, Any]] = []
+        for snap in snapshots:
+            item = dict(snap)
+            if item.get('cny_total_value') is not None and item.get('usd_total_value') is not None:
+                enriched.append(item)
+                continue
+
+            snap_day = date.fromisoformat(str(item['date']))
+            snap_end = datetime.combine(snap_day + timedelta(days=1), datetime.min.time())
+            positions: Dict[str, Dict[str, Any]] = {}
+            last_fill_price: Dict[str, float] = {}
+            for order in order_rows:
+                if not order.filled_at or order.filled_at >= snap_end:
+                    continue
+                qty = int(order.fill_qty or 0)
+                price = float(order.fill_price or 0)
+                if qty <= 0 or price <= 0:
+                    continue
+                pos = positions.setdefault(order.code, {'qty': 0, 'currency': order.currency})
+                last_fill_price[order.code] = price
+                if order.side == 'buy':
+                    pos['qty'] += qty
+                elif order.side == 'sell':
+                    pos['qty'] -= qty
+
+            cny_market_value = 0.0
+            usd_market_value = 0.0
+            for code, pos in positions.items():
+                qty = max(int(pos.get('qty') or 0), 0)
+                if qty <= 0:
+                    continue
+                price = latest_close(code, snap_day) or last_fill_price.get(code) or 0.0
+                if price <= 0:
+                    continue
+                if pos.get('currency') == 'USD':
+                    usd_market_value += qty * price
+                else:
+                    cny_market_value += qty * price
+
+            cny_total_value = float(item.get('cash_cny') or 0.0) + cny_market_value
+            usd_total_value = float(item.get('cash_usd') or 0.0) + usd_market_value
+            cny_net_deposited = 0.0
+            usd_net_deposited = 0.0
+            for ledger in funding_rows:
+                if not ledger.created_at or ledger.created_at >= snap_end:
+                    continue
+                amount = float(ledger.amount or 0.0)
+                signed = amount if ledger.direction == 'deposit' else -amount
+                if ledger.currency == 'USD':
+                    usd_net_deposited += signed
+                else:
+                    cny_net_deposited += signed
+
+            item['cny_total_value'] = round(cny_total_value, 2)
+            item['usd_total_value'] = round(usd_total_value, 2)
+            item['cny_return_pct'] = (
+                round((cny_total_value - cny_net_deposited) / cny_net_deposited * 100, 2)
+                if cny_net_deposited > 0
+                else 0.0
+            )
+            item['usd_return_pct'] = (
+                round((usd_total_value - usd_net_deposited) / usd_net_deposited * 100, 2)
+                if usd_net_deposited > 0
+                else 0.0
+            )
+            enriched.append(item)
+
+        return enriched
+
     # -------------------------------------------------------
     # 内部：价格获取
     # -------------------------------------------------------
 
-    def _get_latest_price(self, code: str) -> Optional[float]:
+    def _get_latest_price(self, code: str, *, allow_stale_fallback: bool = True) -> Optional[float]:
         """优先获取实时价，失败时回落到最近日线收盘价。"""
         try:
             quote = _get_shared_fetcher_manager().get_realtime_quote(code, log_final_failure=False)
@@ -484,6 +636,10 @@ class OrderService:
                 return float(price)
         except Exception as exc:
             logger.debug("获取 %s 实时价格失败，回落到日线收盘价: %s", code, exc)
+
+        if not allow_stale_fallback:
+            logger.warning("[SimTrade] %s 实时价格不可用，自动交易拒绝使用日线收盘价回退成交", code)
+            return None
 
         try:
             from src.storage import DatabaseManager, StockDaily

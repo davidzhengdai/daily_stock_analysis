@@ -145,6 +145,164 @@ const SortIndicator: React.FC<{ active: boolean; dir: SortDir }> = ({ active, di
   </span>
 );
 
+const EquityLineChart: React.FC<{ snapshots: SimSnapshot[] }> = ({ snapshots }) => {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const width = 720;
+  const height = 180;
+  const padX = 28;
+  const padY = 24;
+  const innerW = width - padX * 2;
+  const innerH = height - padY * 2;
+  const basePoints = snapshots.map((s, i) => {
+    const x = snapshots.length === 1 ? padX : padX + (i / (snapshots.length - 1)) * innerW;
+    return { x, snapshot: s };
+  });
+  const series = [
+    { key: 'cny-value', label: '人民币总值', color: 'stroke-emerald-500', text: 'text-emerald-500', value: (s: SimSnapshot) => s.cny_total_value, format: (v: number) => `¥${fmt(v)}` },
+    { key: 'usd-value', label: '美元总值', color: 'stroke-sky-500', text: 'text-sky-500', value: (s: SimSnapshot) => s.usd_total_value, format: (v: number) => `$${fmt(v)}` },
+    { key: 'cny-return', label: '人民币收益率', color: 'stroke-amber-500', text: 'text-amber-500', value: (s: SimSnapshot) => s.cny_return_pct, format: (v: number) => fmtPct(v) },
+    { key: 'usd-return', label: '美元收益率', color: 'stroke-fuchsia-500', text: 'text-fuchsia-500', value: (s: SimSnapshot) => s.usd_return_pct, format: (v: number) => fmtPct(v) },
+  ];
+  const drawableSeries = series.map((def) => {
+    const values = snapshots.map(def.value).filter((v): v is number => v != null && Number.isFinite(v));
+    const max = values.length > 0 ? Math.max(...values) : 0;
+    const min = values.length > 0 ? Math.min(...values) : 0;
+    const range = max - min || 1;
+    const points = basePoints
+      .map((p) => {
+        const value = def.value(p.snapshot);
+        if (value == null || !Number.isFinite(value)) return null;
+        return {
+          x: p.x,
+          y: padY + ((max - value) / range) * innerH,
+          value,
+          snapshot: p.snapshot,
+        };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+    const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(' ');
+    return { ...def, points, path, min, max };
+  }).filter((s) => s.points.length >= 1);
+  const first = snapshots[0];
+  const latest = snapshots[snapshots.length - 1];
+  const hovered = hoveredIndex == null ? null : basePoints[hoveredIndex];
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-xs text-secondary-text">当前净值</div>
+          <div className="text-lg font-semibold tabular-nums">¥{fmt(latest.total_equity_cny)}</div>
+        </div>
+        <div className="text-right">
+          <div className={cn('text-sm font-medium tabular-nums', pnlColor(latest.total_return_pct))}>
+            {fmtPct(latest.total_return_pct)}
+          </div>
+          <div className="text-xs text-secondary-text">
+            {first.date.slice(5)} → {latest.date.slice(5)}
+          </div>
+        </div>
+      </div>
+      <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {drawableSeries.map((s) => (
+          <span key={s.key} className={cn('font-medium', s.text)}>
+            ● {s.label}
+          </span>
+        ))}
+      </div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="h-48 w-full overflow-visible"
+        role="img"
+        aria-label="账户净值走势"
+        onMouseLeave={() => setHoveredIndex(null)}
+      >
+        {[0, 0.5, 1].map((t) => {
+          const y = padY + t * innerH;
+          return (
+            <g key={t}>
+              <line x1={padX} y1={y} x2={width - padX} y2={y} className="stroke-border" strokeDasharray="4 4" />
+            </g>
+          );
+        })}
+        {drawableSeries.map((s) => (
+          <g key={s.key}>
+            <path
+              d={s.path}
+              className={cn('fill-none stroke-[2.5]', s.color)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {s.points.map((p) => (
+              <circle key={`${s.key}-${p.snapshot.id}`} cx={p.x} cy={p.y} r={2.8} className={cn('fill-card', s.color)} strokeWidth={2} />
+            ))}
+          </g>
+        ))}
+        {hovered ? (
+          <g className="pointer-events-none">
+            <line x1={hovered.x} y1={padY} x2={hovered.x} y2={height - padY} className="stroke-primary/50" strokeDasharray="3 3" />
+            <rect
+              x={Math.min(Math.max(hovered.x - 96, padX), width - padX - 192)}
+              y={12}
+              width={192}
+              height={90}
+              rx={8}
+              className="fill-card stroke-border"
+            />
+            <text
+              x={Math.min(Math.max(hovered.x, padX + 96), width - padX - 96)}
+              y={30}
+              textAnchor="middle"
+              className="fill-foreground text-[11px] font-semibold"
+            >
+              {hovered.snapshot.date}
+            </text>
+            {series.map((s, i) => {
+              const value = s.value(hovered.snapshot);
+              return (
+                <text
+                  key={s.key}
+                  x={Math.min(Math.max(hovered.x, padX + 96), width - padX - 96)}
+                  y={48 + i * 13}
+                  textAnchor="middle"
+                  className="fill-secondary-text text-[10px] tabular-nums"
+                >
+                  {s.label}: {value == null ? '—' : s.format(value)}
+                </text>
+              );
+            })}
+          </g>
+        ) : null}
+        {basePoints.map((p, i) => {
+          const showLabel = i === 0 || i === basePoints.length - 1;
+          const nextX = basePoints[i + 1]?.x ?? width - padX;
+          const prevX = basePoints[i - 1]?.x ?? padX;
+          const hitX = i === 0 ? padX : (prevX + p.x) / 2;
+          const hitWidth = i === basePoints.length - 1 ? width - padX - hitX : (p.x + nextX) / 2 - hitX;
+          return (
+            <g key={p.snapshot.id}>
+              <rect
+                x={hitX}
+                y={padY}
+                width={Math.max(18, hitWidth)}
+                height={innerH}
+                className="fill-transparent cursor-crosshair"
+                onMouseEnter={() => setHoveredIndex(i)}
+                onMouseMove={() => setHoveredIndex(i)}
+              />
+              {showLabel ? (
+                <text x={p.x} y={height - 5} textAnchor={i === 0 ? 'start' : 'end'} className="fill-secondary-text text-[10px]">
+                  {p.snapshot.date.slice(5)}
+                </text>
+              ) : null}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+};
+
 function tradeTime(item: TradeHistoryItem): number {
   const value = item.closed_at ?? item.opened_at;
   return value ? new Date(value).getTime() : 0;
@@ -348,8 +506,6 @@ const OverviewTab: React.FC<{
   const usMarketValue = positions
     .filter(p => p.currency === 'USD')
     .reduce((s, p) => s + p.last_price * p.qty, 0);
-  const cnPnl = positions.filter(p => p.currency === 'CNY').reduce((s, p) => s + p.unrealized_pnl, 0);
-  const usPnl = positions.filter(p => p.currency === 'USD').reduce((s, p) => s + p.unrealized_pnl, 0);
   const cnAccountValue = account.cash_cny + cnMarketValue;
   const usAccountValue = account.cash_usd + usMarketValue;
   const cnNetFunding = account.total_deposited_cny - account.total_withdrawn_cny;
@@ -373,13 +529,23 @@ const OverviewTab: React.FC<{
           label="CNY 账户总值"
           value={`¥${fmt(cnAccountValue)}`}
           color={pnlColor(cnAccountPnl)}
-          sub={`净投入 ¥${fmt(cnNetFunding)} · 总盈亏 ${fmtMoneyDelta(cnAccountPnl, '¥')} (${fmtPct(cnAccountReturn)}) · 持仓盈亏 ${fmtMoneyDelta(cnPnl, '¥')}`}
+          sub={`持仓 ¥${fmt(cnMarketValue)} · 净投入 ¥${fmt(cnNetFunding)} · 总盈亏 ${fmtMoneyDelta(cnAccountPnl, '¥')} (${fmtPct(cnAccountReturn)})`}
         />
         <StatCard
           label="USD 账户总值"
           value={`$${fmt(usAccountValue)}`}
           color={pnlColor(usAccountPnl)}
-          sub={`净投入 $${fmt(usNetFunding)} · 总盈亏 ${fmtMoneyDelta(usAccountPnl, '$')} (${fmtPct(usAccountReturn)}) · 持仓盈亏 ${fmtMoneyDelta(usPnl, '$')}`}
+          sub={`持仓 $${fmt(usMarketValue)} · 净投入 $${fmt(usNetFunding)} · 总盈亏 ${fmtMoneyDelta(usAccountPnl, '$')} (${fmtPct(usAccountReturn)})`}
+        />
+        <StatCard
+          label="可用 CNY"
+          value={`¥${fmt(account.cash_cny)}`}
+          sub="可用于 A 股买入"
+        />
+        <StatCard
+          label="可用 USD"
+          value={`$${fmt(account.cash_usd)}`}
+          sub="可用于美股买入"
         />
         {eq && (
           <StatCard
@@ -395,24 +561,7 @@ const OverviewTab: React.FC<{
       {recentSnaps.length >= 2 ? (
         <div>
           <SectionTitle>净值走势（近 {recentSnaps.length} 日）</SectionTitle>
-          <div className="rounded-xl border border-border bg-card p-4">
-            <div className="flex items-end gap-1 h-20">
-              {recentSnaps.map((s, i) => {
-                const max = Math.max(...recentSnaps.map((x) => x.total_equity_cny));
-                const min = Math.min(...recentSnaps.map((x) => x.total_equity_cny));
-                const range = max - min || 1;
-                const h = Math.max(8, ((s.total_equity_cny - min) / range) * 72);
-                const isLast = i === recentSnaps.length - 1;
-                const color = s.total_return_pct >= 0 ? 'bg-emerald-500/70' : 'bg-red-500/70';
-                return (
-                  <div key={s.id} className="flex flex-1 flex-col items-center gap-1">
-                    <div className={cn('w-full rounded-sm', color)} style={{ height: h }} title={`¥${fmt(s.total_equity_cny)}`} />
-                    {isLast ? <span className="text-[9px] text-secondary-text">{s.date.slice(5)}</span> : null}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <EquityLineChart snapshots={recentSnaps} />
         </div>
       ) : null}
 

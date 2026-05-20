@@ -14,7 +14,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from src.repositories.simtrade_repo import SimTradeRepo
@@ -328,6 +328,13 @@ class SignalService:
                 if not rows:
                     return None
                 latest = rows[0]
+                if latest.date and (date.today() - latest.date).days > 3:
+                    logger.warning(
+                        "[SignalService] %s 日线数据过期，最新日期=%s，跳过自动交易信号",
+                        code,
+                        latest.date,
+                    )
+                    return None
                 change_5d = 0.0
                 if len(rows) >= 5 and rows[4].close and latest.close:
                     change_5d = (latest.close / rows[4].close - 1) * 100
