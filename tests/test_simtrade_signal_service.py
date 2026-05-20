@@ -16,3 +16,12 @@ def test_parse_llm_response_extracts_fenced_json():
 
     assert parsed["signal"] == "skip"
     assert parsed["confidence"] == 0.1
+
+
+def test_parse_risk_flags_accepts_string_and_list():
+    assert SignalService._parse_risk_flags(None) == []
+    assert SignalService._parse_risk_flags("recent_stop_loss") == ["recent_stop_loss"]
+    assert SignalService._parse_risk_flags(["price_mismatch", "", "max_position"]) == [
+        "price_mismatch",
+        "max_position",
+    ]

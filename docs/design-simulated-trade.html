@@ -1230,7 +1230,7 @@ while True:
     </tr>
     <tr>
       <td><code>SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES</code> <span class="tag tag-cfg">cfg</span></td>
-      <td><code>30</code></td>
+      <td><code>5</code></td>
       <td>自动交易调度间隔（分钟），服务启动时读取，修改需重启</td>
     </tr>
     <tr>
@@ -1238,6 +1238,11 @@ while True:
       <td>继承 <code>LITELLM_MODEL</code></td>
       <td>信号生成专用 LLM，未设置则使用全局 <code>LITELLM_MODEL</code>；
       可指定更快的 Flash 系列以降低延迟</td>
+    </tr>
+    <tr>
+      <td><code>SIMTRADE_STOP_LOSS_COOLDOWN_MINUTES</code> <span class="tag tag-cfg">cfg</span></td>
+      <td><code>240</code></td>
+      <td>自动交易发生止损或亏损卖出后，同一股票在冷却期内禁止重新买入，避免短时间反复高买低卖</td>
     </tr>
   </tbody>
 </table>
@@ -1249,7 +1254,9 @@ SIMTRADE_USD_CNY_RATE=7.25
 # Auto-trade scheduler interval in minutes (requires restart to change)
 SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES=5
 # LLM model for signal generation; falls back to LITELLM_MODEL if unset
-# SIMTRADE_LLM_MODEL=</code></pre>
+# SIMTRADE_LLM_MODEL=
+# Cooldown after auto stop-loss / loss sell before buying the same stock again
+SIMTRADE_STOP_LOSS_COOLDOWN_MINUTES=240</code></pre>
 
 <h3>11.2 账户级配置（运行时可修改，PATCH /account/settings）</h3>
 <p>

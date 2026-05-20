@@ -67,6 +67,18 @@ const MODE_LABEL: Record<string, string> = {
 const formatDateTime = (value: string | null) =>
   value ? new Date(value).toLocaleString('zh-CN') : '—';
 
+function signalRiskFlags(signal: SimSignal): string[] {
+  if (!signal.signal_factors) return [];
+  try {
+    const parsed = JSON.parse(signal.signal_factors) as { risk_flags?: unknown };
+    return Array.isArray(parsed.risk_flags)
+      ? parsed.risk_flags.map(String).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 // ─── Sortable positions table ─────────────────────────────────────────────
 
 type PositionSortKey =
@@ -1279,24 +1291,38 @@ const AutoTradeTab: React.FC<{
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-secondary-text text-xs">
-                  {['代码', '信号', '置信度', '当前价', '止损', '止盈', '状态', '原因'].map((h) => (
+                  {['代码', '信号', '置信度', '当前价', '止损', '止盈', '状态', '风险', '原因'].map((h) => (
                     <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {signals.map((s) => (
-                  <tr key={s.id} className="border-b border-border/40 hover:bg-hover/50">
-                    <td className="px-3 py-2 font-mono font-medium">{s.code}</td>
-                    <td className={cn('px-3 py-2 font-bold uppercase text-xs', SIGNAL_COLOR[s.signal])}>{s.signal}</td>
-                    <td className="px-3 py-2 tabular-nums text-xs">{(s.confidence * 100).toFixed(0)}%</td>
-                    <td className="px-3 py-2 tabular-nums text-xs">{s.price_at_signal ? fmt(s.price_at_signal, 3) : '—'}</td>
-                    <td className="px-3 py-2 tabular-nums text-xs text-red-400">{s.stop_loss ? fmt(s.stop_loss, 3) : '—'}</td>
-                    <td className="px-3 py-2 tabular-nums text-xs text-emerald-400">{s.take_profit ? fmt(s.take_profit, 3) : '—'}</td>
-                    <td className="px-3 py-2 text-xs text-secondary-text">{STATUS_LABEL[s.status] ?? s.status}</td>
-                    <td className="px-3 py-2 text-xs text-secondary-text max-w-48 truncate" title={s.reasoning ?? ''}>{s.reasoning ?? '—'}</td>
-                  </tr>
-                ))}
+                {signals.map((s) => {
+                  const risks = signalRiskFlags(s);
+                  return (
+                    <tr key={s.id} className="border-b border-border/40 hover:bg-hover/50">
+                      <td className="px-3 py-2 font-mono font-medium">{s.code}</td>
+                      <td className={cn('px-3 py-2 font-bold uppercase text-xs', SIGNAL_COLOR[s.signal])}>{s.signal}</td>
+                      <td className="px-3 py-2 tabular-nums text-xs">{(s.confidence * 100).toFixed(0)}%</td>
+                      <td className="px-3 py-2 tabular-nums text-xs">{s.price_at_signal ? fmt(s.price_at_signal, 3) : '—'}</td>
+                      <td className="px-3 py-2 tabular-nums text-xs text-red-400">{s.stop_loss ? fmt(s.stop_loss, 3) : '—'}</td>
+                      <td className="px-3 py-2 tabular-nums text-xs text-emerald-400">{s.take_profit ? fmt(s.take_profit, 3) : '—'}</td>
+                      <td className="px-3 py-2 text-xs text-secondary-text">{STATUS_LABEL[s.status] ?? s.status}</td>
+                      <td className="px-3 py-2 text-xs text-secondary-text max-w-44">
+                        {risks.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {risks.slice(0, 3).map((risk) => (
+                              <span key={risk} className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-500">
+                                {risk}
+                              </span>
+                            ))}
+                          </div>
+                        ) : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-secondary-text max-w-48 truncate" title={s.reasoning ?? ''}>{s.reasoning ?? '—'}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

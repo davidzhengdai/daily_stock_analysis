@@ -14,7 +14,7 @@ import json
 import logging
 import os
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from src.repositories.simtrade_repo import SimTradeRepo
@@ -23,6 +23,18 @@ logger = logging.getLogger(__name__)
 
 # 信号有效期（小时）
 _SIGNAL_TTL_HOURS = 4
+_PRICE_MISMATCH_LIMIT_PCT = 3.0
+
+
+def _parse_positive_int_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except ValueError:
+        logger.warning("%s 配置无效，使用默认值 %d", name, default)
+        return default
+
+
+_STOP_LOSS_COOLDOWN_MINUTES = _parse_positive_int_env('SIMTRADE_STOP_LOSS_COOLDOWN_MINUTES', 240)
 
 _SIGNAL_PROMPT = """\
 You are an AI trading advisor for a paper-trading simulation system.
@@ -53,6 +65,7 @@ Respond with JSON ONLY (no markdown, no explanation):
   "technical_score": 0.0-1.0,
   "sentiment_score": 0.0-1.0,
   "risk_score": 0.0-1.0,
+  "risk_flags": ["short_machine_readable_flags"],
   "position_size_pct": 0.0-100.0,
   "suggested_price": null or float,
   "stop_loss": null or float,
@@ -63,6 +76,7 @@ Respond with JSON ONLY (no markdown, no explanation):
 Rules:
 - signal=sell when: stop-loss approached, take-profit hit, or trend reversal confirmed
 - signal=skip when: data insufficient, already at max position, or low conviction
+- Add risk_flags for issues such as recent_stop_loss, stale_price, price_mismatch, max_position, concentration
 - position_size_pct: % of available cash to deploy (not % of portfolio)
 - stop_loss/take_profit: absolute price levels (not percentages)
 """
@@ -126,7 +140,21 @@ class SignalService:
                 status='rejected',
             )
 
-        current_price = stock_data.get('close', 0.0) or 0.0
+        daily_price = stock_data.get('close', 0.0) or 0.0
+        current_price = daily_price
+        data_date = stock_data.get('date')
+        risk_flags: List[str] = []
+        realtime_price = self._get_realtime_price(code)
+        if realtime_price and realtime_price > 0:
+            current_price = realtime_price
+            if daily_price > 0:
+                mismatch_pct = abs(realtime_price / daily_price - 1) * 100
+                if mismatch_pct > _PRICE_MISMATCH_LIMIT_PCT:
+                    risk_flags.append('price_mismatch')
+        else:
+            risk_flags.append('realtime_price_unavailable')
+        if data_date and data_date != date.today():
+            risk_flags.append('stale_daily_bar')
         ma5 = stock_data.get('ma5') or current_price
         ma10 = stock_data.get('ma10') or current_price
         ma20 = stock_data.get('ma20') or current_price
@@ -160,6 +188,13 @@ class SignalService:
         pos_value = (current_price * qty) * (1 if currency == 'CNY' else fx_rate)
         pos_weight_pct = (pos_value / total_equity * 100) if total_equity > 0 else 0.0
         max_pos = acct.get('max_position_pct', 20.0)
+        if pos_weight_pct >= max_pos * 0.8:
+            risk_flags.append('concentration')
+        if pos_weight_pct >= max_pos:
+            risk_flags.append('max_position')
+        recent_loss_order = self._recent_loss_sell_order(account_id, code)
+        if recent_loss_order:
+            risk_flags.append('recent_stop_loss')
 
         # ---- 新闻情绪 ----
         sentiment_summary = self._get_sentiment(code)
@@ -197,6 +232,24 @@ class SignalService:
         signal = parsed.get('signal', 'skip')
         confidence = float(parsed.get('confidence', 0.0))
         min_conf = acct.get('min_signal_confidence', 0.65)
+        llm_risk_flags = self._parse_risk_flags(parsed.get('risk_flags'))
+        risk_flags = sorted(set(risk_flags + llm_risk_flags))
+
+        if signal in ('buy', 'sell') and 'realtime_price_unavailable' in risk_flags:
+            signal = 'skip'
+            parsed['reasoning'] = '实时成交价不可用，跳过自动交易'
+
+        if signal in ('buy', 'sell') and 'price_mismatch' in risk_flags:
+            signal = 'skip'
+            parsed['reasoning'] = '实时价与日线价偏差过大，跳过自动交易'
+
+        if signal == 'buy' and recent_loss_order:
+            signal = 'skip'
+            filled_at = recent_loss_order.get('filled_at') or ''
+            parsed['reasoning'] = (
+                f"最近 {_STOP_LOSS_COOLDOWN_MINUTES} 分钟内已亏损/止损卖出"
+                f"（{filled_at[:16]}），冷却期内禁止重新买入"
+            )
 
         # 仓位已满 → 禁止买入
         if signal == 'buy' and pos_weight_pct >= max_pos:
@@ -248,6 +301,11 @@ class SignalService:
                 'pos_weight_pct': round(pos_weight_pct, 2),
                 'available_cash': round(available_cash, 2),
                 'total_equity': round(total_equity, 2),
+                'risk_flags': risk_flags,
+                'realtime_price': round(realtime_price, 4) if realtime_price else None,
+                'daily_price': round(daily_price, 4) if daily_price else None,
+                'daily_date': data_date.isoformat() if data_date else None,
+                'recent_loss_sell_order_id': recent_loss_order.get('id') if recent_loss_order else None,
             }, ensure_ascii=False),
             status='pending',
         )
@@ -339,6 +397,7 @@ class SignalService:
                 if len(rows) >= 5 and rows[4].close and latest.close:
                     change_5d = (latest.close / rows[4].close - 1) * 100
                 return {
+                    'date': latest.date,
                     'close': latest.close,
                     'ma5': latest.ma5,
                     'ma10': latest.ma10,
@@ -349,6 +408,31 @@ class SignalService:
         except Exception as exc:
             logger.debug("[SignalService] 数据获取失败 %s: %s", code, exc)
             return None
+
+    def _get_realtime_price(self, code: str) -> Optional[float]:
+        """Fetch realtime price for execution-grade signal review."""
+        try:
+            from src.services.simtrade.order_service import _get_shared_fetcher_manager
+            quote = _get_shared_fetcher_manager().get_realtime_quote(code, log_final_failure=False)
+            price = getattr(quote, 'price', None) if quote is not None else None
+            return float(price) if price is not None and float(price) > 0 else None
+        except Exception as exc:
+            logger.debug("[SignalService] 实时价格获取失败 %s: %s", code, exc)
+            return None
+
+    def _recent_loss_sell_order(self, account_id: int, code: str) -> Optional[Dict[str, Any]]:
+        cutoff = datetime.now() - timedelta(minutes=_STOP_LOSS_COOLDOWN_MINUTES)
+        return self.repo.get_recent_loss_sell_order(account_id, code, cutoff)
+
+    @staticmethod
+    def _parse_risk_flags(value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value] if value else []
+        if isinstance(value, list):
+            return [str(v) for v in value if v]
+        return []
 
     def _get_sentiment(self, code: str) -> str:
         """从 Sentinel 获取新闻情绪摘要（可选，失败静默降级）。"""

@@ -335,6 +335,15 @@ class AutoTradeService:
         signal_svc = SignalService(repo=self.repo)
         order_svc = OrderService(repo=self.repo)
 
+        # 风控先于新信号执行，避免已经触发止损的持仓在同一轮继续被加仓。
+        try:
+            pre_triggered = order_svc.check_stop_loss_take_profit(account_id)
+            if pre_triggered:
+                result['stop_loss_triggered'] = pre_triggered
+                logger.info("[AutoTrade] 交易前风控触发：%s", pre_triggered)
+        except Exception as exc:
+            logger.warning("[AutoTrade] 交易前止损/止盈检查失败: %s", exc)
+
         for item in watchlist:
             code = item['code']
             name = item.get('name', '')
@@ -381,7 +390,8 @@ class AutoTradeService:
         # ---- 止损/止盈 ----
         try:
             triggered = order_svc.check_stop_loss_take_profit(account_id)
-            result['stop_loss_triggered'] = triggered
+            if triggered:
+                result['stop_loss_triggered'] = sorted(set(result['stop_loss_triggered'] + triggered))
         except Exception as exc:
             logger.warning("[AutoTrade] 止损/止盈检查失败: %s", exc)
 

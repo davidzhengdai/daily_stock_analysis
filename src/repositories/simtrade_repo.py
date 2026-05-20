@@ -376,6 +376,32 @@ class SimTradeRepo:
     def list_pending_orders(self, account_id: int) -> List[Dict[str, Any]]:
         return self.list_orders(account_id, status='pending', limit=200)
 
+    def get_recent_loss_sell_order(
+        self,
+        account_id: int,
+        code: str,
+        since: datetime,
+    ) -> Optional[Dict[str, Any]]:
+        """Return the latest filled loss/stop sell for a code since the cutoff."""
+        with self.db.get_session() as session:
+            rows = session.execute(
+                select(SimulatedOrder)
+                .where(
+                    SimulatedOrder.account_id == account_id,
+                    SimulatedOrder.code == code,
+                    SimulatedOrder.side == 'sell',
+                    SimulatedOrder.status == 'filled',
+                    SimulatedOrder.filled_at >= since,
+                )
+                .order_by(desc(SimulatedOrder.filled_at), desc(SimulatedOrder.id))
+            ).scalars().all()
+            for row in rows:
+                reason = row.rejection_reason or ""
+                realized = row.realized_pnl if row.realized_pnl is not None else 0.0
+                if realized < 0 or "止损" in reason.lower() or "stop" in reason.lower():
+                    return row.to_dict()
+        return None
+
     # =========================================================
     # Positions
     # =========================================================
