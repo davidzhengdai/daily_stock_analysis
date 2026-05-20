@@ -515,17 +515,6 @@ class OrderService:
         cny_total_value = acct['cash_cny'] + cny_market_value
         usd_total_value = acct['cash_usd'] + usd_market_value
 
-        realized_pnl = sum(p['realized_pnl'] for p in positions)
-        unrealized_pnl = sum(p['unrealized_pnl'] for p in positions)
-
-        # 计算最大回撤
-        peak_equity = max(self.repo.get_peak_equity(account_id), total_equity)
-        max_drawdown_pct = (
-            (peak_equity - total_equity) / peak_equity * 100
-            if peak_equity > 0
-            else 0.0
-        )
-
         net_deposited = (
             acct['total_deposited_cny'] + acct['total_deposited_usd'] * fx_rate
             - acct['total_withdrawn_cny'] - acct['total_withdrawn_usd'] * fx_rate
@@ -547,6 +536,11 @@ class OrderService:
             if usd_net_deposited > 0
             else 0.0
         )
+        realized_pnl = sum(p['realized_pnl'] for p in positions)
+        unrealized_pnl = sum(p['unrealized_pnl'] for p in positions)
+
+        peak_equity = max(self.repo.get_peak_equity(account_id), total_equity)
+        max_drawdown_pct = self._cashflow_adjusted_drawdown_pct(account_id, total_return_pct)
 
         return self.repo.upsert_snapshot(
             account_id, today_str,
@@ -565,6 +559,28 @@ class OrderService:
             max_drawdown_pct=round(max_drawdown_pct, 2),
             peak_equity_cny=round(peak_equity, 2),
         )
+
+    def _cashflow_adjusted_drawdown_pct(self, account_id: int, current_return_pct: float) -> float:
+        """Calculate max drawdown from the return curve instead of raw equity.
+
+        Raw equity drawdown is distorted by deposits and withdrawals. Simulated
+        trading risk protection should compare normalized NAV values, where
+        NAV = 1 + total_return_pct / 100.
+        """
+        snapshots = self.repo.list_snapshots(account_id, limit=365)
+        nav_values = [
+            1.0 + (float(row.get('total_return_pct') or 0.0) / 100.0)
+            for row in snapshots
+        ]
+        current_nav = 1.0 + current_return_pct / 100.0
+        nav_values.append(current_nav)
+        positive_navs = [nav for nav in nav_values if nav > 0]
+        if not positive_navs:
+            return 0.0
+        peak_nav = max(positive_navs)
+        if peak_nav <= 0:
+            return 0.0
+        return max(0.0, (peak_nav - current_nav) / peak_nav * 100.0)
 
     def enrich_snapshot_currency_fields(self, account_id: int, snapshots: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Backfill currency-specific snapshot fields for old rows missing them."""

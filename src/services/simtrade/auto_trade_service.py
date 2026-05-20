@@ -320,20 +320,24 @@ class AutoTradeService:
                 self._last_run_result = result
                 return result
 
-        # ---- 最大回撤保护 ----
-        snapshots = self.repo.list_snapshots(account_id, limit=1)
-        if snapshots:
-            last_dd = snapshots[-1].get('max_drawdown_pct', 0.0)
-            if last_dd >= acct.get('max_drawdown_pct', 20.0):
-                result['skipped_reason'] = f"最大回撤保护触发 ({last_dd:.1f}% ≥ {acct['max_drawdown_pct']:.1f}%)"
-                self.repo.update_account(account_id, status='paused')
-                logger.warning("[AutoTrade] 最大回撤保护：账户已暂停")
-                self._last_run_result = result
-                return result
-
         # ---- 生成信号并执行 ----
         signal_svc = SignalService(repo=self.repo)
         order_svc = OrderService(repo=self.repo)
+
+        # ---- 最大回撤保护 ----
+        try:
+            latest_snapshot = order_svc.take_daily_snapshot(account_id)
+        except Exception as exc:
+            logger.warning("[AutoTrade] 最大回撤快照刷新失败，回退到最近快照: %s", exc)
+            snapshots = self.repo.list_snapshots(account_id, limit=1)
+            latest_snapshot = snapshots[-1] if snapshots else {}
+        last_dd = latest_snapshot.get('max_drawdown_pct', 0.0)
+        if last_dd >= acct.get('max_drawdown_pct', 20.0):
+            result['skipped_reason'] = f"最大回撤保护触发 ({last_dd:.1f}% ≥ {acct['max_drawdown_pct']:.1f}%)"
+            self.repo.update_account(account_id, status='paused')
+            logger.warning("[AutoTrade] 最大回撤保护：账户已暂停")
+            self._last_run_result = result
+            return result
 
         # 风控先于新信号执行，避免已经触发止损的持仓在同一轮继续被加仓。
         try:

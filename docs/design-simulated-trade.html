@@ -532,8 +532,8 @@
       <tr><td><code>realized_pnl</code></td><td>FLOAT</td><td>截至该日累计已实现盈亏</td></tr>
       <tr><td><code>unrealized_pnl</code></td><td>FLOAT</td><td>截至该日浮动盈亏</td></tr>
       <tr><td><code>total_return_pct</code></td><td>FLOAT</td><td>(total_equity_cny / total_deposited_cny_equiv − 1) × 100</td></tr>
-      <tr><td><code>max_drawdown_pct</code></td><td>FLOAT</td><td>(peak_equity_cny − total_equity_cny) / peak_equity_cny × 100</td></tr>
-      <tr><td><code>peak_equity_cny</code></td><td>FLOAT</td><td>历史滚动峰值权益（含当日更新）</td></tr>
+      <tr><td><code>max_drawdown_pct</code></td><td>FLOAT</td><td>基于资金流调整后的净值曲线计算：NAV = 1 + total_return_pct / 100</td></tr>
+      <tr><td><code>peak_equity_cny</code></td><td>FLOAT</td><td>历史滚动峰值权益（仅展示/参考，不用于回撤保护）</td></tr>
       <tr><td colspan="3"><code>UNIQUE(account_id, date)</code>  — 每日幂等，重复调用 UPSERT</td></tr>
     </tbody>
   </table>
@@ -959,10 +959,10 @@ while True:
     total_return_pct = (total_equity_cny / total_deposited_equiv - 1) * 100 \
                        if total_deposited_equiv > 0 else 0.0
 
-    prev_peak = repo.get_peak_equity(account.id) or total_equity_cny
-    peak_equity = max(prev_peak, total_equity_cny)
-    max_drawdown_pct = (peak_equity - total_equity_cny) / peak_equity * 100 \
-                       if peak_equity > 0 else 0.0
+    current_nav = 1 + total_return_pct / 100
+    peak_nav = max([1 + s.total_return_pct / 100 for s in historical_snapshots] + [current_nav])
+    max_drawdown_pct = (peak_nav - current_nav) / peak_nav * 100 \
+                       if peak_nav > 0 else 0.0
 
     repo.upsert_snapshot(SimulatedSnapshot(
         account_id=account.id, date=today,
@@ -1202,7 +1202,7 @@ while True:
       <td>7</td>
       <td><strong>回撤保护</strong></td>
       <td><code>auto_trade_service</code></td>
-      <td>自动监控快照中 <code>max_drawdown_pct</code>，超限后自动暂停所有买入，账户切换为 paused</td>
+      <td>自动监控资金流调整后的 <code>max_drawdown_pct</code>，超限后自动暂停所有买入，账户切换为 paused</td>
     </tr>
     <tr>
       <td>8</td>
