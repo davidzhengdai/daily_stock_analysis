@@ -940,6 +940,14 @@ while True:
   等待下一个交易时段的价格确认后再撮合。
 </div>
 
+<div class="callout info">
+  <strong>开闭市分频</strong>
+  持仓价格刷新会先判断市场交易时段：开市市场按页面或任务触发频率正常刷新；
+  闭市市场默认每 <code>120</code> 分钟最多刷新一次，可通过
+  <code>SIMTRADE_CLOSED_MARKET_REFRESH_MINUTES</code> 调整。自动止损/止盈巡检只处理当前开市市场，
+  避免美股开盘时反复请求 A 股实时权限，或 A 股开盘时反复请求闭市美股行情。
+</div>
+
 <h3>6.2 每日快照计算</h3>
 <pre><code>def take_daily_snapshot():
     today = date.today().isoformat()

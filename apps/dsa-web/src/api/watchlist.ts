@@ -1,6 +1,11 @@
 import apiClient from './index';
 import { toCamelCase } from './utils';
-import type { WatchlistItem, WatchlistListResponse, AnalyzeWatchlistResult } from '../types/watchlist';
+import type {
+  WatchlistItem,
+  WatchlistListResponse,
+  AnalyzeWatchlistResult,
+  SymbolSearchResponse,
+} from '../types/watchlist';
 
 export const watchlistApi = {
   /**
@@ -49,6 +54,16 @@ export const watchlistApi = {
       codes: codes ?? null,
     });
     return toCamelCase<AnalyzeWatchlistResult>(response.data);
+  },
+
+  /**
+   * 按美股代码、公司名或常见别名搜索股票代码。
+   */
+  searchSymbols: async (query: string, limit = 8): Promise<SymbolSearchResponse> => {
+    const response = await apiClient.get<Record<string, unknown>>('/api/v1/watchlist/symbols/search', {
+      params: { q: query, limit },
+    });
+    return toCamelCase<SymbolSearchResponse>(response.data);
   },
 
   /**

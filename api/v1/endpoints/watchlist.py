@@ -17,10 +17,11 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from src.services.us_symbol_search import UsSymbolSearchService
 from src.services.watchlist_service import WatchlistService
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,20 @@ class WatchlistAnalyzeResponse(BaseModel):
     codes: List[str]
 
 
+class SymbolSuggestion(BaseModel):
+    symbol: str
+    name: str
+    exchange: str = ""
+    quote_type: str = Field("EQUITY", alias="quoteType")
+    source: str
+
+
+class SymbolSearchResponse(BaseModel):
+    query: str
+    items: List[SymbolSuggestion]
+    total: int
+
+
 # ============================================================
 # Helper
 # ============================================================
@@ -103,6 +118,40 @@ def list_watchlist() -> WatchlistListResponse:
         )
     except Exception as exc:
         raise _internal_error("获取自选股列表失败", exc)
+
+
+# ============================================================
+# GET /symbols/search — 美股代码搜索
+# ============================================================
+
+@router.get(
+    "/symbols/search",
+    response_model=SymbolSearchResponse,
+    summary="搜索美股代码",
+)
+def search_us_symbols(
+    q: str = Query(..., min_length=1, max_length=80, description="股票代码、公司名或常见别名"),
+    limit: int = Query(8, ge=1, le=20, description="最多返回条数"),
+) -> SymbolSearchResponse:
+    try:
+        service = UsSymbolSearchService()
+        items = service.search(q, limit=limit)
+        return SymbolSearchResponse(
+            query=q,
+            items=[
+                SymbolSuggestion(
+                    symbol=item.symbol,
+                    name=item.name,
+                    exchange=item.exchange,
+                    quoteType=item.quote_type,
+                    source=item.source,
+                )
+                for item in items
+            ],
+            total=len(items),
+        )
+    except Exception as exc:
+        raise _internal_error("搜索美股代码失败", exc)
 
 
 # ============================================================

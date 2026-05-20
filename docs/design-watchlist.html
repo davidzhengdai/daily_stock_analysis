@@ -72,6 +72,7 @@
 │  DELETE /api/v1/watchlist/{code} (remove)                │
 │  GET /api/v1/watchlist           (list)                  │
 │  POST /api/v1/watchlist/analyze  (bulk analyze)          │
+│  GET /api/v1/watchlist/symbols/search?q=GOOGLE           │
 └────────────────┬────────────────────────────────────────┘
                  │
         ┌────────┴───────────┐
@@ -103,7 +104,8 @@
   <tr><td><code>src/storage.py</code></td><td><span class="tag mod">改</span></td><td>新增 Watchlist ORM 模型（已含 to_dict）</td></tr>
   <tr><td><code>src/repositories/watchlist_repo.py</code></td><td><span class="tag new">新</span></td><td>CRUD：list_all, get, upsert, remove, mark_analyzed, is_watched</td></tr>
   <tr><td><code>src/services/watchlist_service.py</code></td><td><span class="tag new">新</span></td><td>业务层 + sync_to_sentinel（直接写 Sentinel DB，try/except 保护）</td></tr>
-  <tr><td><code>api/v1/endpoints/watchlist.py</code></td><td><span class="tag new">新</span></td><td>5 个端点：GET / POST / DELETE / PATCH / POST analyze</td></tr>
+  <tr><td><code>src/services/us_symbol_search.py</code></td><td><span class="tag new">新</span></td><td>美股代码搜索建议：内置常见别名 + Yahoo Finance 查询兜底</td></tr>
+  <tr><td><code>api/v1/endpoints/watchlist.py</code></td><td><span class="tag new">新</span></td><td>端点：GET / POST / DELETE / PATCH / POST analyze / GET symbols/search</td></tr>
   <tr><td><code>api/v1/router.py</code></td><td><span class="tag mod">改</span></td><td>注册 /watchlist 路由</td></tr>
   <tr><td><code>apps/dsa-web/src/types/watchlist.ts</code></td><td><span class="tag new">新</span></td><td>WatchlistItem, AnalyzeWatchlistResult TypeScript 类型</td></tr>
   <tr><td><code>apps/dsa-web/src/api/watchlist.ts</code></td><td><span class="tag new">新</span></td><td>watchlistApi：listAll, add, remove, update, analyze, isWatched</td></tr>
@@ -124,6 +126,7 @@
   <tr><td>DELETE</td><td><code>/api/v1/watchlist/{code}</code></td><td>移除股票，同步 Sentinel</td></tr>
   <tr><td>PATCH</td><td><code>/api/v1/watchlist/{code}</code></td><td>更新 name/notes</td></tr>
   <tr><td>POST</td><td><code>/api/v1/watchlist/analyze</code></td><td>批量触发分析 <code>{codes?: list}</code>，空 = 全部。返回 <code>{submitted, codes}</code></td></tr>
+  <tr><td>GET</td><td><code>/api/v1/watchlist/symbols/search?q=GOOGLE</code></td><td>按美股代码、公司名或常见别名返回候选代码。先匹配内置别名，再尝试 Yahoo Finance 搜索；外部查询失败时返回内置结果或空列表。</td></tr>
 </table>
 
 <h2>6. Sentinel 同步机制</h2>
@@ -143,7 +146,7 @@
 <details open>
   <summary>自选股页面（/watchlist）</summary>
   <ul>
-    <li><strong>添加股票</strong>：输入框 + "添加" → POST /watchlist → 刷新列表 → 后台触发 Sentinel 即时抓取</li>
+    <li><strong>添加股票</strong>：输入股票代码或公司名 → 美股建议框辅助选择代码 → "添加" → POST /watchlist → 刷新列表 → 后台触发 Sentinel 即时抓取</li>
     <li><strong>分析单只</strong>：行内"分析"按钮 → POST /watchlist/analyze 仅含该 code</li>
     <li><strong>批量分析</strong>：勾选 checkbox → "分析选中 (N)" → POST /watchlist/analyze 含选中 codes</li>
     <li><strong>分析全部</strong>：页头"分析全部" → POST /watchlist/analyze 无 codes（后端取全部）</li>

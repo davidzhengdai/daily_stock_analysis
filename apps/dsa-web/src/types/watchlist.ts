@@ -15,3 +15,17 @@ export interface AnalyzeWatchlistResult {
   submitted: number;
   codes: string[];
 }
+
+export interface SymbolSuggestion {
+  symbol: string;
+  name: string;
+  exchange: string;
+  quoteType: string;
+  source: string;
+}
+
+export interface SymbolSearchResponse {
+  query: string;
+  items: SymbolSuggestion[];
+  total: number;
+}

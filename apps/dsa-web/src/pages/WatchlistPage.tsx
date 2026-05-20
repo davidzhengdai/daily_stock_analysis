@@ -1,9 +1,9 @@
 import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, Star, Trash2, TrendingUp } from 'lucide-react';
+import { Loader2, RefreshCw, Search, Star, Trash2, TrendingUp } from 'lucide-react';
 import { watchlistApi } from '../api/watchlist';
-import type { WatchlistItem } from '../types/watchlist';
+import type { SymbolSuggestion, WatchlistItem } from '../types/watchlist';
 import {
   AppPage,
   Button,
@@ -37,6 +37,8 @@ const WatchlistPage: React.FC = () => {
   const [newCode, setNewCode] = useState('');
   const [newName, setNewName] = useState('');
   const [newNotes, setNewNotes] = useState('');
+  const [symbolSuggestions, setSymbolSuggestions] = useState<SymbolSuggestion[]>([]);
+  const [isSearchingSymbols, setIsSearchingSymbols] = useState(false);
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
   const [feedback, setFeedback] = useState<{ variant: 'success' | 'danger'; message: string } | null>(null);
   const feedbackTimer = useRef<number | null>(null);
@@ -75,18 +77,62 @@ const WatchlistPage: React.FC = () => {
     };
   }, [loadItems]);
 
+  useEffect(() => {
+    const query = newCode.trim();
+    if (query.length < 2 || !/[A-Za-z]/.test(query)) {
+      setSymbolSuggestions([]);
+      setIsSearchingSymbols(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setIsSearchingSymbols(true);
+      watchlistApi.searchSymbols(query)
+        .then((res) => {
+          if (cancelled) return;
+          const exact = query.toUpperCase();
+          setSymbolSuggestions(res.items.filter((item) => item.symbol !== exact));
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSymbolSuggestions([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setIsSearchingSymbols(false);
+          }
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [newCode]);
+
+  const applySymbolSuggestion = useCallback((suggestion: SymbolSuggestion) => {
+    setNewCode(suggestion.symbol);
+    setNewName(suggestion.name);
+    setSymbolSuggestions([]);
+  }, []);
+
   const handleAdd = useCallback(async () => {
-    const code = newCode.trim().toUpperCase();
+    const typedCode = newCode.trim().toUpperCase();
+    const builtinSuggestion = symbolSuggestions.find((item) => item.source === 'builtin');
+    const code = builtinSuggestion?.symbol ?? typedCode;
     if (!code) {
       showFeedback('danger', '请输入股票代码');
       return;
     }
     setIsAdding(true);
     try {
-      await watchlistApi.add(code, newName.trim(), newNotes.trim());
+      await watchlistApi.add(code, builtinSuggestion?.name ?? newName.trim(), newNotes.trim());
       setNewCode('');
       setNewName('');
       setNewNotes('');
+      setSymbolSuggestions([]);
       await loadItems();
       showFeedback('success', `已添加 ${code}`);
       codeInputRef.current?.focus();
@@ -95,7 +141,7 @@ const WatchlistPage: React.FC = () => {
     } finally {
       setIsAdding(false);
     }
-  }, [newCode, newName, newNotes, loadItems, showFeedback]);
+  }, [newCode, newName, newNotes, symbolSuggestions, loadItems, showFeedback]);
 
   const handleRemove = useCallback(
     async (code: string) => {
@@ -148,10 +194,19 @@ const WatchlistPage: React.FC = () => {
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter') {
+        if (
+          e.currentTarget === codeInputRef.current
+          && symbolSuggestions.length > 0
+          && newCode.trim().toUpperCase() !== symbolSuggestions[0].symbol
+        ) {
+          e.preventDefault();
+          applySymbolSuggestion(symbolSuggestions[0]);
+          return;
+        }
         void handleAdd();
       }
     },
-    [handleAdd],
+    [applySymbolSuggestion, handleAdd, newCode, symbolSuggestions],
   );
 
   const selectedArray = Array.from(selectedCodes);
@@ -204,18 +259,48 @@ const WatchlistPage: React.FC = () => {
         {/* 添加自选股 */}
         <SectionCard title="添加自选股">
           <div className="flex flex-wrap items-end gap-2">
-            <div className="flex flex-col gap-1">
+            <div className="relative flex flex-col gap-1">
               <label className="text-xs text-secondary-text">股票代码 *</label>
-              <input
-                ref={codeInputRef}
-                type="text"
-                value={newCode}
-                onChange={(e) => setNewCode(e.target.value.toUpperCase())}
-                onKeyDown={handleKeyDown}
-                placeholder="如 600519 / AAPL"
-                className={INPUT_CLS + ' w-40'}
-                disabled={isAdding}
-              />
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-secondary-text" aria-hidden="true" />
+                <input
+                  ref={codeInputRef}
+                  type="text"
+                  value={newCode}
+                  onChange={(e) => setNewCode(e.target.value.toUpperCase())}
+                  onKeyDown={handleKeyDown}
+                  placeholder="AAPL / GOOGLE"
+                  className={INPUT_CLS + ' w-44 pl-8 pr-8'}
+                  disabled={isAdding}
+                  autoComplete="off"
+                />
+                {isSearchingSymbols ? (
+                  <Loader2 className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-secondary-text" aria-hidden="true" />
+                ) : null}
+              </div>
+              {symbolSuggestions.length > 0 ? (
+                <div className="absolute left-0 top-full z-20 mt-1 w-72 overflow-hidden rounded-lg border border-border/70 bg-panel shadow-lg">
+                  {symbolSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.symbol}
+                      type="button"
+                      className="flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-hover"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => applySymbolSuggestion(suggestion)}
+                    >
+                      <span className="w-16 flex-shrink-0 font-mono font-semibold text-cyan">
+                        {suggestion.symbol}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-foreground">
+                        {suggestion.name}
+                      </span>
+                      <span className="flex-shrink-0 text-xs text-secondary-text">
+                        {suggestion.exchange || suggestion.quoteType}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-secondary-text">名称（可选）</label>

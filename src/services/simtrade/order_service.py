@@ -14,7 +14,7 @@
 
 import logging
 import os
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time as dtime, timedelta
 from typing import Any, Dict, List, Optional
 
 from src.repositories.simtrade_repo import SimTradeRepo
@@ -35,6 +35,30 @@ def _positive_int_env(name: str, default: int) -> int:
 
 
 _AUTO_PENDING_ORDER_MAX_AGE_MINUTES = _positive_int_env('SIMTRADE_AUTO_PENDING_ORDER_MAX_AGE_MINUTES', 30)
+_CLOSED_MARKET_REFRESH_MINUTES = _positive_int_env('SIMTRADE_CLOSED_MARKET_REFRESH_MINUTES', 120)
+
+
+def _is_market_open(market: str) -> bool:
+    """Return whether the market is currently in regular trading hours."""
+    try:
+        from zoneinfo import ZoneInfo
+    except ImportError:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+
+    market = (market or '').upper()
+    if market == 'CN':
+        now = datetime.now(ZoneInfo('Asia/Shanghai'))
+        if now.weekday() >= 5:
+            return False
+        t = now.time().replace(second=0, microsecond=0)
+        return dtime(9, 30) <= t < dtime(11, 30) or dtime(13, 0) <= t < dtime(15, 0)
+    if market == 'US':
+        now = datetime.now(ZoneInfo('America/New_York'))
+        if now.weekday() >= 5:
+            return False
+        t = now.time().replace(second=0, microsecond=0)
+        return dtime(9, 30) <= t < dtime(16, 0)
+    return False
 
 
 def _get_shared_fetcher_manager():
@@ -408,6 +432,8 @@ class OrderService:
         for pos in positions:
             if pos['qty'] <= 0:
                 continue
+            if not _is_market_open(pos['market']):
+                continue
             current_price = self._get_latest_price(pos['code'])
             if current_price is None or current_price <= 0:
                 continue
@@ -467,11 +493,13 @@ class OrderService:
     # -------------------------------------------------------
 
     def refresh_position_prices(self, account_id: int) -> int:
-        """刷新所有持仓的最新价格与浮动盈亏，返回刷新数量。"""
+        """刷新持仓价格；开市市场正常刷新，闭市市场低频刷新。"""
         positions = self.repo.list_positions(account_id)
         updated = 0
         for pos in positions:
             if pos['qty'] <= 0:
+                continue
+            if not self._should_refresh_position(pos):
                 continue
             current_price = self._get_latest_price(pos['code'])
             if current_price is None or current_price <= 0:
@@ -487,6 +515,18 @@ class OrderService:
             )
             updated += 1
         return updated
+
+    def _should_refresh_position(self, pos: Dict[str, Any]) -> bool:
+        if _is_market_open(pos['market']):
+            return True
+        updated_at = pos.get('updated_at')
+        if not updated_at:
+            return True
+        try:
+            last_updated = datetime.fromisoformat(str(updated_at))
+        except ValueError:
+            return True
+        return (datetime.now() - last_updated).total_seconds() >= _CLOSED_MARKET_REFRESH_MINUTES * 60
 
     # -------------------------------------------------------
     # 日快照
