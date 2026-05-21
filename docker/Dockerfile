@@ -19,8 +19,8 @@ FROM python:3.11-slim-bookworm
 # 设置工作目录
 WORKDIR /app
 
-# 设置时区为上海
-ENV TZ=Asia/Shanghai
+# 设置默认容器时区
+ENV TZ=America/Los_Angeles
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # 安装系统依赖（wkhtmltopdf 含 wkhtmltoimage，用于 Markdown 转图片 Issue #289）

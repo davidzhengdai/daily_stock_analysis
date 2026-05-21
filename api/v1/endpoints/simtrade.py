@@ -240,7 +240,7 @@ def list_positions(refresh: bool = Query(False, description="返回前刷新持�
     try:
         if refresh:
             acct = AccountService().get_account()
-            svc.refresh_position_prices(acct['id'])
+            svc.refresh_position_prices(acct['id'], include_closed_markets=False)
         items = svc.list_positions()
         return PositionListResponse(items=[PositionItem(**i) for i in items], total=len(items))
     except Exception as exc:

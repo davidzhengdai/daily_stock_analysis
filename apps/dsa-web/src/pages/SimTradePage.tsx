@@ -58,6 +58,8 @@ const STATUS_LABEL: Record<string, string> = {
   rejected: '已拒绝',
 };
 
+const LIVE_POSITION_REFRESH_MS = 5_000;
+
 const MODE_LABEL: Record<string, string> = {
   conservative: '保守',
   balanced: '均衡',
@@ -1552,7 +1554,7 @@ const SimTradePage: React.FC = () => {
   }, [fetchAll]);
 
   useEffect(() => {
-    const id = setInterval(() => void refreshLivePositions(), 10_000);
+    const id = setInterval(() => void refreshLivePositions(), LIVE_POSITION_REFRESH_MS);
     return () => clearInterval(id);
   }, [refreshLivePositions]);
 

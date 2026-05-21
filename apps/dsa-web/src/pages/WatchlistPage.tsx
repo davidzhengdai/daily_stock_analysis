@@ -1,5 +1,6 @@
 import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { Loader2, RefreshCw, Search, Star, Trash2, TrendingUp } from 'lucide-react';
 import { watchlistApi } from '../api/watchlist';
@@ -39,6 +40,7 @@ const WatchlistPage: React.FC = () => {
   const [newNotes, setNewNotes] = useState('');
   const [symbolSuggestions, setSymbolSuggestions] = useState<SymbolSuggestion[]>([]);
   const [isSearchingSymbols, setIsSearchingSymbols] = useState(false);
+  const [suggestionPanelStyle, setSuggestionPanelStyle] = useState<React.CSSProperties | null>(null);
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
   const [feedback, setFeedback] = useState<{ variant: 'success' | 'danger'; message: string } | null>(null);
   const feedbackTimer = useRef<number | null>(null);
@@ -116,7 +118,49 @@ const WatchlistPage: React.FC = () => {
     setNewCode(suggestion.symbol);
     setNewName(suggestion.name);
     setSymbolSuggestions([]);
+    setSuggestionPanelStyle(null);
   }, []);
+
+  const updateSuggestionPanelPosition = useCallback(() => {
+    const input = codeInputRef.current;
+    if (!input) {
+      setSuggestionPanelStyle(null);
+      return;
+    }
+
+    const rect = input.getBoundingClientRect();
+    const panelWidth = Math.min(288, window.innerWidth - 24);
+    const left = Math.min(Math.max(rect.left, 12), window.innerWidth - panelWidth - 12);
+    const estimatedHeight = Math.min(240, symbolSuggestions.length * 40);
+    const belowTop = rect.bottom + 6;
+    const aboveTop = Math.max(12, rect.top - estimatedHeight - 6);
+    const hasRoomBelow = belowTop + estimatedHeight <= window.innerHeight - 12;
+
+    setSuggestionPanelStyle({
+      position: 'fixed',
+      top: hasRoomBelow ? belowTop : aboveTop,
+      left,
+      width: panelWidth,
+      zIndex: 160,
+    });
+  }, [symbolSuggestions.length]);
+
+  useEffect(() => {
+    if (symbolSuggestions.length === 0) {
+      setSuggestionPanelStyle(null);
+      return undefined;
+    }
+
+    const frameId = window.requestAnimationFrame(updateSuggestionPanelPosition);
+    window.addEventListener('resize', updateSuggestionPanelPosition);
+    window.addEventListener('scroll', updateSuggestionPanelPosition, true);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener('resize', updateSuggestionPanelPosition);
+      window.removeEventListener('scroll', updateSuggestionPanelPosition, true);
+    };
+  }, [symbolSuggestions.length, updateSuggestionPanelPosition]);
 
   const handleAdd = useCallback(async () => {
     const typedCode = newCode.trim().toUpperCase();
@@ -133,6 +177,7 @@ const WatchlistPage: React.FC = () => {
       setNewName('');
       setNewNotes('');
       setSymbolSuggestions([]);
+      setSuggestionPanelStyle(null);
       await loadItems();
       showFeedback('success', `已添加 ${code}`);
       codeInputRef.current?.focus();
@@ -278,8 +323,12 @@ const WatchlistPage: React.FC = () => {
                   <Loader2 className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-secondary-text" aria-hidden="true" />
                 ) : null}
               </div>
-              {symbolSuggestions.length > 0 ? (
-                <div className="absolute left-0 top-full z-20 mt-1 w-72 overflow-hidden rounded-lg border border-border/70 bg-panel shadow-lg">
+              {symbolSuggestions.length > 0 && suggestionPanelStyle
+                ? createPortal(
+                <div
+                  className="max-h-60 overflow-y-auto rounded-lg border border-border/70 bg-panel shadow-[0_24px_60px_rgba(3,8,20,0.32)] backdrop-blur-xl"
+                  style={suggestionPanelStyle}
+                >
                   {symbolSuggestions.map((suggestion) => (
                     <button
                       key={suggestion.symbol}
@@ -299,7 +348,8 @@ const WatchlistPage: React.FC = () => {
                       </span>
                     </button>
                   ))}
-                </div>
+                </div>,
+                document.body,
               ) : null}
             </div>
             <div className="flex flex-col gap-1">

@@ -449,7 +449,7 @@ x-common: &common
   env_file:
     - ../.env
   environment:
-    - TZ=Asia/Shanghai
+    - TZ=America/Los_Angeles
   volumes:
     - ../data:/app/data
     - ../logs:/app/logs

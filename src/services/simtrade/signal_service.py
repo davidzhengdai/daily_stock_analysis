@@ -81,6 +81,47 @@ Rules:
 - stop_loss/take_profit: absolute price levels (not percentages)
 """
 
+_SELL_REVIEW_PROMPT = """\
+You are the execution risk reviewer for an AI paper-trading system.
+Review whether a proposed SELL should be executed now.
+
+Stock: {code} ({name}), Market: {market}
+Current Price: {price} {currency}
+Position: {qty} shares, avg cost {avg_cost}, unrealized P&L {pnl_pct}%
+Position weight: {pos_weight_pct}% of portfolio, max position policy: {max_pos}%
+
+Trend context:
+  MA5={ma5}, MA10={ma10}, MA20={ma20}
+  5-day price change={change_5d}%
+  Technical score={technical_score}
+
+News context:
+  {sentiment_summary}
+
+Original SELL proposal:
+  confidence={confidence}
+  risk_flags={risk_flags}
+  reasoning={reasoning}
+
+Decide if execution should proceed. Consider trend, news catalysts, position risk,
+stop-loss/take-profit, and whether this is a full exit or only a trim.
+
+Respond with JSON ONLY:
+{{
+  "approve": true|false,
+  "action": "sell|trim|hold",
+  "quantity_pct": 0.0-100.0,
+  "confidence": 0.0-1.0,
+  "reasoning": "one concise sentence max 160 chars"
+}}
+
+Guidance:
+- approve=false/action=hold if the sell thesis is weak or contradicted by trend/news.
+- action=trim if the issue is position size or concentration but the thesis remains positive.
+- action=sell only when there is a clear exit reason such as stop-loss, take-profit,
+  confirmed reversal, or materially negative news.
+"""
+
 
 class SignalService:
     """AI 交易信号生成服务。"""
@@ -123,6 +164,8 @@ class SignalService:
         market = market.upper()
         currency = 'CNY' if market == 'CN' else 'USD'
         fx_rate = float(os.getenv('SIMTRADE_USD_CNY_RATE', '7.25'))
+        display_name = f"{code}({name})" if name else code
+        logger.info("[SignalService] 开始评估 %s 市场=%s", display_name, market)
 
         acct = self.repo.get_or_create_account()
         account_id = acct['id']
@@ -131,7 +174,7 @@ class SignalService:
         # ---- 获取市场数据 ----
         stock_data = self._get_stock_data(code)
         if not stock_data:
-            logger.warning("[SignalService] 无法获取 %s 市场数据，信号跳过", code)
+            logger.warning("[SignalService] 无法获取 %s 市场数据，信号跳过", display_name)
             return self.repo.create_signal(
                 account_id=account_id,
                 code=code, name=name, market=market,
@@ -197,7 +240,7 @@ class SignalService:
             risk_flags.append('recent_stop_loss')
 
         # ---- 新闻情绪 ----
-        sentiment_summary = self._get_sentiment(code)
+        sentiment_summary, news_bias = self._get_sentiment(code)
 
         # ---- 构建 Prompt ----
         prompt = _SIGNAL_PROMPT.format(
@@ -268,6 +311,7 @@ class SignalService:
 
         # ---- 计算建议数量 ----
         suggested_qty = None
+        sell_review: Dict[str, Any] = {}
         pos_size_pct = float(parsed.get('position_size_pct', 10.0) or 10.0)
         if signal == 'buy' and current_price > 0 and available_cash > 0:
             max_spend = available_cash * pos_size_pct / 100
@@ -275,7 +319,41 @@ class SignalService:
             raw_qty = int(max_spend / current_price)
             suggested_qty = max(lot, (raw_qty // lot) * lot)
         elif signal == 'sell' and qty > 0:
-            suggested_qty = qty
+            sell_review = self._review_sell_with_ai(
+                code=code,
+                name=name,
+                market=market,
+                currency=currency,
+                current_price=current_price,
+                qty=qty,
+                avg_cost=avg_cost,
+                pnl_pct=pnl_pct,
+                pos_weight_pct=pos_weight_pct,
+                max_pos=max_pos,
+                ma5=ma5,
+                ma10=ma10,
+                ma20=ma20,
+                change_5d=change_5d,
+                technical_score=technical_score,
+                sentiment_summary=sentiment_summary,
+                confidence=confidence,
+                risk_flags=risk_flags,
+                reasoning=str(parsed.get('reasoning', '')),
+            )
+            if not sell_review.get('approve') or sell_review.get('action') == 'hold':
+                signal = 'skip'
+                parsed['reasoning'] = f"AI 卖出复核未通过: {sell_review.get('reasoning', '未给出理由')}"
+            else:
+                action = sell_review.get('action')
+                if action == 'trim':
+                    quantity_pct = float(sell_review.get('quantity_pct') or 0.0)
+                    lot = 100 if market == 'CN' else 1
+                    raw_qty = int(qty * max(0.0, min(quantity_pct, 100.0)) / 100)
+                    suggested_qty = max(lot, (raw_qty // lot) * lot)
+                    suggested_qty = min(qty, suggested_qty)
+                else:
+                    suggested_qty = qty
+                parsed['reasoning'] = f"{parsed.get('reasoning', '')}；AI 卖出复核: {sell_review.get('reasoning', '')}"
 
         # ---- 写入 DB ----
         signal_record = self.repo.create_signal(
@@ -302,6 +380,9 @@ class SignalService:
                 'available_cash': round(available_cash, 2),
                 'total_equity': round(total_equity, 2),
                 'risk_flags': risk_flags,
+                'news_bias': news_bias,
+                'sentiment_summary': sentiment_summary,
+                'sell_review': sell_review,
                 'realtime_price': round(realtime_price, 4) if realtime_price else None,
                 'daily_price': round(daily_price, 4) if daily_price else None,
                 'daily_date': data_date.isoformat() if data_date else None,
@@ -413,12 +494,83 @@ class SignalService:
         """Fetch realtime price for execution-grade signal review."""
         try:
             from src.services.simtrade.order_service import _get_shared_fetcher_manager
+            logger.info("[SignalService] 查询实时价格 %s", code)
             quote = _get_shared_fetcher_manager().get_realtime_quote(code, log_final_failure=False)
             price = getattr(quote, 'price', None) if quote is not None else None
+            if price is not None and float(price) > 0:
+                logger.info("[SignalService] %s 实时价格 %.4f", code, float(price))
             return float(price) if price is not None and float(price) > 0 else None
         except Exception as exc:
             logger.debug("[SignalService] 实时价格获取失败 %s: %s", code, exc)
             return None
+
+    def _review_sell_with_ai(
+        self,
+        *,
+        code: str,
+        name: str,
+        market: str,
+        currency: str,
+        current_price: float,
+        qty: int,
+        avg_cost: float,
+        pnl_pct: float,
+        pos_weight_pct: float,
+        max_pos: float,
+        ma5: float,
+        ma10: float,
+        ma20: float,
+        change_5d: float,
+        technical_score: float,
+        sentiment_summary: str,
+        confidence: float,
+        risk_flags: List[str],
+        reasoning: str,
+    ) -> Dict[str, Any]:
+        """Ask the LLM for execution confirmation before any auto sell."""
+        prompt = _SELL_REVIEW_PROMPT.format(
+            code=code,
+            name=name or code,
+            market=market,
+            price=round(current_price, 4),
+            currency=currency,
+            qty=qty,
+            avg_cost=round(avg_cost, 4),
+            pnl_pct=round(pnl_pct, 2),
+            pos_weight_pct=round(pos_weight_pct, 2),
+            max_pos=round(max_pos, 2),
+            ma5=round(ma5, 4),
+            ma10=round(ma10, 4),
+            ma20=round(ma20, 4),
+            change_5d=round(change_5d, 2),
+            technical_score=round(technical_score, 3),
+            sentiment_summary=sentiment_summary,
+            confidence=round(confidence, 3),
+            risk_flags=", ".join(risk_flags) or "none",
+            reasoning=reasoning or "none",
+        )
+        try:
+            raw = self._get_analyzer().generate_text(prompt, max_tokens=512, temperature=0.1)
+            parsed = self._parse_llm_response(raw)
+            action = str(parsed.get('action') or 'hold').lower()
+            if action not in ('sell', 'trim', 'hold'):
+                action = 'hold'
+            return {
+                'approve': bool(parsed.get('approve')) and action in ('sell', 'trim'),
+                'action': action,
+                'quantity_pct': float(parsed.get('quantity_pct') or 0.0),
+                'confidence': float(parsed.get('confidence') or 0.0),
+                'reasoning': str(parsed.get('reasoning') or '')[:300],
+            }
+        except Exception as exc:
+            logger.warning("[SignalService] AI 卖出复核失败 %s: %s", code, exc)
+            return {
+                'approve': False,
+                'action': 'hold',
+                'quantity_pct': 0.0,
+                'confidence': 0.0,
+                'reasoning': f'AI 卖出复核不可用: {exc}',
+            }
 
     def _recent_loss_sell_order(self, account_id: int, code: str) -> Optional[Dict[str, Any]]:
         cutoff = datetime.now() - timedelta(minutes=_STOP_LOSS_COOLDOWN_MINUTES)
@@ -434,19 +586,25 @@ class SignalService:
             return [str(v) for v in value if v]
         return []
 
-    def _get_sentiment(self, code: str) -> str:
+    def _get_sentiment(self, code: str) -> tuple[str, str]:
         """从 Sentinel 获取新闻情绪摘要（可选，失败静默降级）。"""
         try:
             from src.services.sentinel.store import NewsStore
             store = NewsStore()
             items = store.get_news_for_stock(code, limit=5)
             if not items:
-                return "无可用新闻"
+                return "无可用新闻", "neutral"
             pos = sum(1 for i in items if getattr(i, 'sentiment', '') == 'positive')
             neg = sum(1 for i in items if getattr(i, 'sentiment', '') == 'negative')
-            return f"{len(items)} 条近期新闻，正面 {pos} 条，负面 {neg} 条"
+            if pos > neg:
+                bias = "positive"
+            elif neg > pos:
+                bias = "negative"
+            else:
+                bias = "neutral"
+            return f"{len(items)} 条近期新闻，正面 {pos} 条，负面 {neg} 条", bias
         except Exception:
-            return "情报中心不可用"
+            return "情报中心不可用", "unknown"
 
     @staticmethod
     def _infer_market(code: str) -> str:

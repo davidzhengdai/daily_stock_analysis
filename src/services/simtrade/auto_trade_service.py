@@ -323,6 +323,20 @@ class AutoTradeService:
         # ---- 生成信号并执行 ----
         signal_svc = SignalService(repo=self.repo)
         order_svc = OrderService(repo=self.repo)
+        grouped_codes: Dict[str, List[str]] = {}
+        for item in watchlist:
+            market = SignalService._infer_market(item['code'])
+            display = item['code']
+            if item.get('name'):
+                display = f"{display}({item['name']})"
+            grouped_codes.setdefault(market, []).append(display)
+        for market, codes in sorted(grouped_codes.items()):
+            logger.info(
+                "[AutoTrade] 本轮扫描 %s 市场 %d 只: %s",
+                market,
+                len(codes),
+                ", ".join(codes),
+            )
 
         # ---- 最大回撤保护 ----
         try:
@@ -401,7 +415,7 @@ class AutoTradeService:
 
         # ---- 刷新价格 ----
         try:
-            order_svc.refresh_position_prices(account_id)
+            order_svc.refresh_position_prices(account_id, include_closed_markets=False)
         except Exception as exc:
             logger.debug("[AutoTrade] 价格刷新失败: %s", exc)
 

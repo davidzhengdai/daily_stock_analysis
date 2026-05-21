@@ -492,17 +492,22 @@ class OrderService:
     # 持仓刷新
     # -------------------------------------------------------
 
-    def refresh_position_prices(self, account_id: int) -> int:
+    def refresh_position_prices(self, account_id: int, include_closed_markets: bool = True) -> int:
         """刷新持仓价格；开市市场正常刷新，闭市市场低频刷新。"""
         positions = self.repo.list_positions(account_id)
         updated = 0
         for pos in positions:
             if pos['qty'] <= 0:
                 continue
+            market_open = _is_market_open(pos['market'])
+            if not market_open and not include_closed_markets:
+                continue
             if not self._should_refresh_position(pos):
                 continue
             current_price = self._get_latest_price(pos['code'])
             if current_price is None or current_price <= 0:
+                if not market_open:
+                    self.repo.upsert_position(account_id, pos['code'], updated_at=datetime.now())
                 continue
             avg_cost = pos['avg_cost']
             unrealized_pnl = (current_price - avg_cost) * pos['qty']
@@ -512,6 +517,7 @@ class OrderService:
                 last_price=current_price,
                 unrealized_pnl=round(unrealized_pnl, 2),
                 unrealized_pnl_pct=round(unrealized_pnl_pct, 2),
+                updated_at=datetime.now(),
             )
             updated += 1
         return updated
