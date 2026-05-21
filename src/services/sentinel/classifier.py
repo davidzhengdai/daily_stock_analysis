@@ -51,6 +51,11 @@ Priority calibration guide:
   2 — Routine corporate disclosures, minor analyst upgrades, commodity price moves
   1 — Repetitive news, soft comments, social media sentiment, very low relevance
 
+If an item contains "Target stock", it was retrieved by a per-stock watcher.
+Use that target as important context, but only include it in affected_stocks
+when the title/content is actually relevant to that company, its sector, or a
+direct competitor/supplier/customer event.
+
 News items to classify:
 {items_block}
 
@@ -150,11 +155,23 @@ class LLMClassifier:
             source = row["source_name"] or ""
             content_snip = (row["content"] or "")[:300].replace("\n", " ")
             pub = row["published_at"] or row["fetched_at"] or ""
+            target = ""
+            target_code = self._row_get(row, "target_code", "")
+            if target_code:
+                target_name = self._row_get(row, "target_name", "")
+                target = f" Target stock: {target_code} {target_name}".rstrip()
             lines.append(
-                f"[{i}] [{source}] [{pub[:16]}] {title}\n    {content_snip}"
+                f"[{i}] [{source}] [{pub[:16]}]{target} {title}\n    {content_snip}"
             )
         items_block = "\n\n".join(lines)
         return _CLASSIFICATION_PROMPT_TEMPLATE.format(n=len(rows), items_block=items_block)
+
+    @staticmethod
+    def _row_get(row: Any, key: str, default: Any = None) -> Any:
+        try:
+            return row[key]
+        except (KeyError, IndexError, TypeError):
+            return default
 
     def _parse_response(self, text: str) -> List[dict]:
         text = text.strip()

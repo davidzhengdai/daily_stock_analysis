@@ -50,6 +50,14 @@ class SpiderBase(ABC):
             self._consecutive_empty = 0
             self._consecutive_errors = 0
 
+    def _on_success(self) -> None:
+        """Compatibility hook for older spider bases."""
+        self._record_result(1)
+
+    def _on_empty(self) -> None:
+        """Compatibility hook for older spider bases."""
+        self._record_result(0)
+
     def _record_error(self) -> None:
         self._consecutive_errors += 1
         self._consecutive_empty += 1

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import logging
 import os
+import json
+import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -39,6 +41,8 @@ CREATE TABLE IF NOT EXISTS news_items (
     expires_at       TEXT,
     is_expired       INTEGER DEFAULT 0,
     is_archived      INTEGER DEFAULT 0,
+    target_code      TEXT DEFAULT '',
+    target_name      TEXT DEFAULT '',
     CONSTRAINT priority_range CHECK (priority IS NULL OR priority BETWEEN 1 AND 5)
 );
 
@@ -108,7 +112,8 @@ END;
 
 
 class NewsStore:
-    def __init__(self, db_path: str = "data/sentinel.db") -> None:
+    def __init__(self, db_path: Optional[str] = None) -> None:
+        db_path = db_path or os.getenv("SENTINEL_DB_PATH") or "data/sentinel.db"
         os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else ".", exist_ok=True)
         self._db_path = db_path
         self._lock = threading.RLock()
@@ -128,6 +133,7 @@ class NewsStore:
             con = self._connect()
             try:
                 con.executescript(_DDL)
+                self._ensure_schema_columns(con)
                 try:
                     con.executescript(_FTS_DDL)
                 except sqlite3.OperationalError as exc:
@@ -155,12 +161,12 @@ class NewsStore:
                     INSERT OR IGNORE INTO news_items
                         (url_hash, simhash, url, title, content,
                          source_name, source_url, spider_name, language,
-                         published_at, fetched_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                         published_at, fetched_at, target_code, target_name)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """,
                     (uh, sh, article.url, article.title, article.content,
                      article.source_name, source_url, article.spider_name, article.language,
-                     pub, fetched),
+                     pub, fetched, article.target_code.strip().upper(), article.target_name.strip()),
                 )
                 con.commit()
                 return cur.rowcount > 0
@@ -279,6 +285,92 @@ class NewsStore:
                 return []
             finally:
                 con.close()
+
+    def get_news_for_stock(
+        self,
+        code: str,
+        name: str = "",
+        hours: int = 72,
+        priority_min: int = 1,
+        limit: int = 10,
+    ) -> List[NewsItem]:
+        """Return recent classified news that is relevant to a stock.
+
+        Relevance prefers per-stock spider target metadata, then explicit LLM
+        ``affected_stocks`` matches, then title/content/source FTS matches.
+        """
+        code = (code or "").strip()
+        if not code:
+            return []
+
+        watched_name = name.strip()
+        if not watched_name:
+            watched_name = self._get_watched_stock_name(code)
+
+        rows_by_id = {}
+
+        with self._lock:
+            con = self._connect()
+            try:
+                rows = con.execute(
+                    """
+                    SELECT * FROM news_items
+                    WHERE fetched_at >= datetime('now', ?)
+                      AND priority IS NOT NULL
+                      AND priority >= ?
+                      AND is_expired = 0
+                      AND (
+                        upper(target_code) = upper(?)
+                        OR target_code IS NULL
+                        OR target_code = ''
+                      )
+                    ORDER BY priority DESC, fetched_at DESC
+                    LIMIT 500
+                    """,
+                    (f"-{hours} hours", priority_min, code),
+                ).fetchall()
+                for row in rows:
+                    if self._stock_matches_row(row, code, watched_name):
+                        rows_by_id[row["id"]] = row
+
+                terms = [code]
+                if watched_name:
+                    terms.append(watched_name)
+                for term in terms:
+                    query = self._fts_query(term)
+                    if not query:
+                        continue
+                    try:
+                        fts_rows = con.execute(
+                            """
+                            SELECT n.* FROM news_items n
+                            JOIN news_fts f ON f.rowid = n.id
+                            WHERE news_fts MATCH ?
+                              AND n.fetched_at >= datetime('now', ?)
+                              AND n.priority IS NOT NULL
+                              AND n.priority >= ?
+                              AND n.is_expired = 0
+                            ORDER BY rank
+                            LIMIT ?
+                            """,
+                            (query, f"-{hours} hours", priority_min, limit),
+                        ).fetchall()
+                    except sqlite3.OperationalError:
+                        fts_rows = []
+                    for row in fts_rows:
+                        rows_by_id[row["id"]] = row
+            finally:
+                con.close()
+
+        sorted_rows = sorted(
+            rows_by_id.values(),
+            key=lambda row: (
+                int(row["priority"] or 0),
+                row["published_at"] or row["fetched_at"] or "",
+            ),
+            reverse=True,
+        )
+        return [self._row_to_news_item(row) for row in sorted_rows[:limit]]
 
     def get_latest_spider_run_time(self) -> Optional[datetime]:
         """Return the most recent successful spider run finish time, or None."""
@@ -592,3 +684,101 @@ class NewsStore:
                 return []
             finally:
                 con.close()
+
+    def _get_watched_stock_name(self, code: str) -> str:
+        with self._lock:
+            con = self._connect()
+            try:
+                row = con.execute(
+                    "SELECT name FROM watched_stocks WHERE upper(code)=upper(?) LIMIT 1",
+                    (code,),
+                ).fetchone()
+                return str(row[0] or "") if row else ""
+            except sqlite3.Error:
+                return ""
+            finally:
+                con.close()
+
+    @staticmethod
+    def _stock_matches_row(row: sqlite3.Row, code: str, name: str = "") -> bool:
+        needle_code = code.upper()
+        if str(row["target_code"] or "").strip().upper() == needle_code:
+            return True
+        affected = row["affected_stocks"] or ""
+        try:
+            parsed = json.loads(affected) if affected else []
+        except json.JSONDecodeError:
+            parsed = affected
+
+        if isinstance(parsed, list):
+            for item in parsed:
+                if isinstance(item, dict):
+                    values = [item.get("code"), item.get("symbol"), item.get("name")]
+                else:
+                    values = [item]
+                if any(str(value or "").strip().upper() == needle_code for value in values):
+                    return True
+        elif needle_code in str(parsed).upper():
+            return True
+
+        haystack = " ".join(
+            str(row[field] or "")
+            for field in ("title", "content", "source_name", "llm_reasoning")
+        ).upper()
+        if needle_code and re.search(rf"(?<![A-Z0-9]){re.escape(needle_code)}(?![A-Z0-9])", haystack):
+            return True
+        return bool(name and name.upper() in haystack)
+
+    @staticmethod
+    def _fts_query(term: str) -> str:
+        tokens = [
+            token.replace('"', "").strip()
+            for token in str(term or "").split()
+            if token.replace('"', "").strip()
+        ]
+        return " OR ".join(f'"{token}"' for token in tokens[:4])
+
+    @staticmethod
+    def _row_to_news_item(row: sqlite3.Row) -> NewsItem:
+        return NewsItem(
+            id=row["id"],
+            url_hash=row["url_hash"],
+            url=row["url"],
+            title=row["title"],
+            content=row["content"] or "",
+            source_name=row["source_name"],
+            source_url=row["source_url"],
+            spider_name=row["spider_name"],
+            language=row["language"] or "zh",
+            simhash=row["simhash"],
+            category=row["category"],
+            priority=row["priority"],
+            sentiment=row["sentiment"],
+            market_scope=row["market_scope"],
+            affected_sectors=row["affected_sectors"],
+            affected_stocks=row["affected_stocks"],
+            impact_horizon=row["impact_horizon"],
+            llm_reasoning=row["llm_reasoning"],
+            is_actionable=bool(row["is_actionable"]),
+            published_at=row["published_at"],
+            fetched_at=row["fetched_at"],
+            expires_at=row["expires_at"],
+            is_expired=bool(row["is_expired"]),
+            is_archived=bool(row["is_archived"]),
+            target_code=row["target_code"] or "",
+            target_name=row["target_name"] or "",
+        )
+
+    @staticmethod
+    def _ensure_schema_columns(con: sqlite3.Connection) -> None:
+        existing = {
+            str(row[1])
+            for row in con.execute("PRAGMA table_info(news_items)").fetchall()
+        }
+        additions = {
+            "target_code": "ALTER TABLE news_items ADD COLUMN target_code TEXT DEFAULT ''",
+            "target_name": "ALTER TABLE news_items ADD COLUMN target_name TEXT DEFAULT ''",
+        }
+        for column, ddl in additions.items():
+            if column not in existing:
+                con.execute(ddl)

@@ -153,7 +153,7 @@ class StockAnalysisNewsSpider(SpiderBase):
     source_name = "StockAnalysis"
     source_url = "https://stockanalysis.com"
 
-    def __init__(self, store: NewsStore, max_stocks: int = 20) -> None:
+    def __init__(self, store: NewsStore, max_stocks: int = 50) -> None:
         super().__init__()
         self._store = store
         self._max_stocks = max_stocks
@@ -219,6 +219,8 @@ class StockAnalysisNewsSpider(SpiderBase):
                 spider_name=self.name,
                 language=self.language,
                 published_at=pub_dt,
+                target_code=code.strip().upper(),
+                target_name=name.strip(),
             ))
         return articles
 
@@ -294,7 +296,7 @@ class FinvizNewsSpider(SpiderBase):
     source_name = "Finviz"
     source_url = "https://finviz.com"
 
-    def __init__(self, store: NewsStore, max_stocks: int = 20) -> None:
+    def __init__(self, store: NewsStore, max_stocks: int = 50) -> None:
         super().__init__()
         self._store = store
         self._max_stocks = max_stocks
@@ -356,6 +358,8 @@ class FinvizNewsSpider(SpiderBase):
                 spider_name=self.name,
                 language=self.language,
                 published_at=pub_dt,
+                target_code=code.strip().upper(),
+                target_name=name.strip(),
             ))
         return articles
 

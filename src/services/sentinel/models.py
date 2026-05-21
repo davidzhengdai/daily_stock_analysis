@@ -15,6 +15,8 @@ class RawArticle:
     published_at: Optional[datetime] = None
     fetched_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     language: str = "zh"
+    target_code: str = ""
+    target_name: str = ""
 
 
 @dataclass
@@ -44,6 +46,8 @@ class NewsItem:
     llm_reasoning: Optional[str] = None
     is_actionable: bool = False
     id: Optional[int] = None
+    target_code: str = ""
+    target_name: str = ""
 
 
 @dataclass

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from src.services.sentinel.dedup import url_hash
 from src.services.sentinel.models import RawArticle
 from src.services.sentinel.store import NewsStore
 
@@ -93,6 +94,84 @@ class TestNewsStoreGetRecent:
         store.upsert(_make_article("https://example.com/recent"))
         rows = store.get_recent(hours=1)
         assert len(rows) >= 1
+
+
+class TestNewsStoreGetNewsForStock:
+    def test_returns_classified_news_by_affected_stock(self, store):
+        article = _make_article("https://example.com/mu", title="Micron earnings lift chip outlook")
+        store.upsert(article)
+        store.update_classification(
+            url_hash(article.url),
+            {
+                "priority": 4,
+                "sentiment": "positive",
+                "affected_stocks": '["MU"]',
+                "llm_reasoning": "Micron demand improves",
+            },
+        )
+
+        rows = store.get_news_for_stock("MU", limit=5)
+
+        assert len(rows) == 1
+        assert rows[0].sentiment == "positive"
+
+    def test_returns_classified_news_by_watched_name_fts(self, store):
+        store.upsert_watched_stocks([{"code": "NVDA", "name": "NVIDIA"}])
+        article = _make_article("https://example.com/nvda", title="NVIDIA raises AI chip guidance")
+        store.upsert(article)
+        store.update_classification(
+            url_hash(article.url),
+            {
+                "priority": 3,
+                "sentiment": "positive",
+                "affected_stocks": "[]",
+                "llm_reasoning": "Strong data center demand",
+            },
+        )
+
+        rows = store.get_news_for_stock("NVDA", limit=5)
+
+        assert [row.title for row in rows] == ["NVIDIA raises AI chip guidance"]
+
+    def test_returns_per_stock_target_news_without_llm_affected_stock(self, store):
+        article = _make_article("https://example.com/targeted", title="Analyst raises price target")
+        article.target_code = "MU"
+        article.target_name = "Micron Technology"
+        store.upsert(article)
+        store.update_classification(
+            url_hash(article.url),
+            {
+                "priority": 3,
+                "sentiment": "positive",
+                "affected_stocks": "[]",
+                "llm_reasoning": "Targeted watcher fetched this stock news",
+            },
+        )
+
+        rows = store.get_news_for_stock("MU", limit=5)
+
+        assert len(rows) == 1
+        assert rows[0].target_code == "MU"
+
+    def test_short_ticker_does_not_match_inside_words(self, store):
+        article = _make_article(
+            "https://example.com/systemic",
+            title="Nvidia posts record profit amid AI chip boom",
+        )
+        article.target_code = "NVDA"
+        article.content = "This is a systemic semiconductor market update."
+        store.upsert(article)
+        store.update_classification(
+            url_hash(article.url),
+            {
+                "priority": 5,
+                "sentiment": "positive",
+                "affected_stocks": '["NVDA"]',
+                "llm_reasoning": "Major AI chip demand update",
+            },
+        )
+
+        assert store.get_news_for_stock("MU", limit=5) == []
 
 
 class TestNewsStoreLogRun:

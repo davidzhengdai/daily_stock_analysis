@@ -139,6 +139,8 @@ class WatchedStocksNewsSpider(SpiderBase):
                 source_url="https://news.google.com",
                 spider_name=self.name,
                 language=_detect_language(code),
+                target_code=code.strip().upper(),
+                target_name=name.strip(),
             ))
             if len(articles) >= self.max_items_per_run:
                 break

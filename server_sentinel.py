@@ -275,6 +275,8 @@ def _row_to_news(row) -> dict:
         "is_actionable": bool(d.get("is_actionable", 0)),
         "published_at": d.get("published_at"),
         "fetched_at": d.get("fetched_at") or "",
+        "target_code": d.get("target_code") or "",
+        "target_name": d.get("target_name") or "",
     }
 
 
@@ -313,6 +315,10 @@ def _search_news(query: dict) -> dict:
 
 def _search_stock_context_rows(code: str, name: str, context: str = "", limit: int = 10) -> list:
     store = _store()
+    stock_rows = store.get_news_for_stock(code, name=name, hours=72, priority_min=1, limit=limit)
+    if stock_rows:
+        return [dict(item.__dict__) for item in stock_rows]
+
     terms = " ".join(
         part for part in [
             name.strip(),

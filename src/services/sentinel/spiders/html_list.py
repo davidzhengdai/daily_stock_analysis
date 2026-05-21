@@ -37,16 +37,31 @@ def _extract_text(html_snippet: str) -> str:
 def _parse_cn_date(raw: str) -> Optional[datetime]:
     """Try to parse common Chinese date patterns → aware UTC datetime."""
     raw = raw.strip()
+    normalized = (
+        raw.replace("年", "-")
+        .replace("月", "-")
+        .replace("日", "")
+        .replace("/", "-")
+        .replace(".", "-")
+    )
+    normalized = re.sub(r"-+", "-", normalized).strip("-")
     for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y年%m月%d日", "%Y.%m.%d"):
         try:
             dt = datetime.strptime(raw, fmt)
             return dt.replace(tzinfo=timezone.utc)
         except ValueError:
             continue
+    try:
+        dt = datetime.strptime(normalized, "%Y-%m-%d")
+        return dt.replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
     # Search for YYYY-MM-DD embedded in a string
-    m = re.search(r"(\d{4}[-/年]\d{1,2}[-/月]\d{1,2})", raw)
+    m = re.search(r"(\d{4}[-/年.]\d{1,2}[-/月.]\d{1,2})", raw)
     if m:
-        return _parse_cn_date(m.group(1))
+        matched = m.group(1)
+        if matched != raw:
+            return _parse_cn_date(matched)
     return None
 
 
