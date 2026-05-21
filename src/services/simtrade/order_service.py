@@ -126,6 +126,8 @@ class OrderService:
         ai_signal_id: Optional[int] = None,
         current_price: Optional[float] = None,
         reason: Optional[str] = None,
+        stop_loss_pct: Optional[float] = None,
+        take_profit_pct: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         提交一笔模拟委托。
@@ -224,7 +226,18 @@ class OrderService:
 
         # 若可以即时成交则立刻执行
         if fp is not None:
-            order = self._execute_fill(account_id, order['id'], fp, qty, commission, currency, side, acct)
+            order = self._execute_fill(
+                account_id,
+                order['id'],
+                fp,
+                qty,
+                commission,
+                currency,
+                side,
+                acct,
+                stop_loss_pct=stop_loss_pct,
+                take_profit_pct=take_profit_pct,
+            )
 
         return order
 
@@ -238,6 +251,8 @@ class OrderService:
         currency: str,
         side: str,
         acct: Dict[str, Any],
+        stop_loss_pct: Optional[float] = None,
+        take_profit_pct: Optional[float] = None,
     ) -> Dict[str, Any]:
         """完成一笔成交：更新委托状态、调整现金、更新持仓。"""
         # 更新委托
@@ -261,7 +276,14 @@ class OrderService:
         self.repo.update_account(account_id, **{cash_field: max(0.0, new_cash)})
 
         # 更新持仓
-        self._update_position(account_id, order, fill_price, fill_qty)
+        self._update_position(
+            account_id,
+            order,
+            fill_price,
+            fill_qty,
+            stop_loss_pct=stop_loss_pct,
+            take_profit_pct=take_profit_pct,
+        )
         return order
 
     def _update_position(
@@ -270,6 +292,8 @@ class OrderService:
         order: Dict[str, Any],
         fill_price: float,
         fill_qty: int,
+        stop_loss_pct: Optional[float] = None,
+        take_profit_pct: Optional[float] = None,
     ) -> None:
         code = order['code']
         side = order['side']
@@ -279,8 +303,8 @@ class OrderService:
 
         acct_info = self.repo.get_account(account_id)
         pos = self.repo.get_position(account_id, code)
-        stop_loss_pct = acct_info['stop_loss_pct'] if acct_info else 5.0
-        take_profit_pct = acct_info['take_profit_pct'] if acct_info else 15.0
+        stop_loss_pct = stop_loss_pct if stop_loss_pct is not None else (acct_info['stop_loss_pct'] if acct_info else 5.0)
+        take_profit_pct = take_profit_pct if take_profit_pct is not None else (acct_info['take_profit_pct'] if acct_info else 15.0)
 
         if side == 'buy':
             old_qty = pos['qty'] if pos else 0

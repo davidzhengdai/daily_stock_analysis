@@ -86,6 +86,7 @@ class Scheduler:
         self.shutdown_handler = GracefulShutdown()
         self._task_callback: Optional[Callable] = None
         self._daily_job: Optional[Any] = None
+        self._named_jobs: Dict[str, Any] = {}
         self._background_tasks: List[Dict[str, Any]] = []
         self._running = False
 
@@ -252,6 +253,105 @@ class Scheduler:
         entry["thread"] = worker
         worker.start()
         return True
+
+    def add_named_daily_task(
+        self,
+        name: str,
+        task: Callable,
+        schedule_time: str,
+        run_immediately: bool = False,
+    ) -> bool:
+        """Register an additional named daily task at a fixed wall-clock time.
+
+        Fully independent of the primary daily job managed by set_daily_task().
+        Multiple calls with the same name replace the previous registration.
+        """
+        if not self._is_valid_schedule_time(schedule_time):
+            logger.warning("[Scheduler] 无效的时间 %r，命名任务 %r 未注册", schedule_time, name)
+            return False
+        # Remove previous registration with same name
+        old = self._named_jobs.pop(name, None)
+        if old and hasattr(self.schedule, "cancel_job"):
+            try:
+                self.schedule.cancel_job(old["job"])
+            except Exception:
+                pass
+        job = self.schedule.every().day.at(schedule_time).do(
+            self._safe_run_named_task, name, task
+        )
+        self._named_jobs[name] = {"job": job, "task": task, "time": schedule_time}
+        logger.info("[Scheduler] 已注册命名每日任务 %r，执行时间 %s", name, schedule_time)
+        if run_immediately:
+            self._safe_run_named_task(name, task)
+        return True
+
+    def _safe_run_named_task(self, name: str, task: Callable) -> None:
+        try:
+            logger.info("[Scheduler] 命名任务 [%s] 开始 - %s", name, datetime.now().isoformat())
+            task()
+            logger.info("[Scheduler] 命名任务 [%s] 完成", name)
+        except Exception as exc:
+            logger.exception("[Scheduler] 命名任务 [%s] 失败: %s", name, exc)
+
+    def _add_market_close_watcher(
+        self,
+        cn_post_close_task: Optional[Callable] = None,
+        us_post_close_task: Optional[Callable] = None,
+    ) -> None:
+        """Register a 60-second background poller that fires tasks once per session close.
+
+        CN close: fires in the 15:05-15:10 CST window on weekdays.
+        US close: fires in the 16:05-16:10 ET window on weekdays.
+        Uses a _fired dict (keyed by date string) to prevent duplicate firing
+        within the same calendar day.  Resets on process restart (intentional —
+        each run is idempotent via source_run_id in DiscoveryList).
+        """
+        _fired: Dict[str, Optional[str]] = {"cn": None, "us": None}
+
+        def _watcher() -> None:
+            try:
+                from datetime import time as _dtime
+                try:
+                    from zoneinfo import ZoneInfo
+                except ImportError:
+                    from backports.zoneinfo import ZoneInfo  # type: ignore
+
+                if cn_post_close_task is not None:
+                    from datetime import datetime as _dt
+                    now_cn = _dt.now(ZoneInfo("Asia/Shanghai"))
+                    if now_cn.weekday() < 5:
+                        today_cn = now_cn.date().isoformat()
+                        t = now_cn.time().replace(second=0, microsecond=0)
+                        if (
+                            _fired["cn"] != today_cn
+                            and _dtime(15, 5) <= t <= _dtime(15, 10)
+                        ):
+                            _fired["cn"] = today_cn
+                            logger.info("[Scheduler] 触发 CN 盘后扫描 (%s)", now_cn.strftime("%H:%M CST"))
+                            cn_post_close_task()
+
+                if us_post_close_task is not None:
+                    from datetime import datetime as _dt
+                    now_us = _dt.now(ZoneInfo("America/New_York"))
+                    if now_us.weekday() < 5:
+                        today_us = now_us.date().isoformat()
+                        t = now_us.time().replace(second=0, microsecond=0)
+                        if (
+                            _fired["us"] != today_us
+                            and _dtime(16, 5) <= t <= _dtime(16, 10)
+                        ):
+                            _fired["us"] = today_us
+                            logger.info("[Scheduler] 触发 US 盘后扫描 (%s)", now_us.strftime("%H:%M ET"))
+                            us_post_close_task()
+            except Exception as exc:
+                logger.error("[Scheduler][PostCloseWatcher] 异常: %s", exc)
+
+        self.add_background_task(_watcher, interval_seconds=60, name="market-close-watcher")
+        logger.info(
+            "[Scheduler] 已注册盘后扫描监控 (CN=%s, US=%s)",
+            "启用" if cn_post_close_task else "禁用",
+            "启用" if us_post_close_task else "禁用",
+        )
 
     def _run_background_tasks(self) -> None:
         """Execute any background tasks whose interval has elapsed."""

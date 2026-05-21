@@ -274,6 +274,14 @@ class MarketScanner:
                     self._scans[scan_id]["completed_at"] = datetime.now().isoformat()
                 self._save_result(report)
                 self._send_notifications(report)
+                # Populate DiscoveryList (淘金列表)
+                if report.top_picks:
+                    try:
+                        from src.services.discovery_service import DiscoveryService
+                        n = DiscoveryService().add_from_scanner(scan_id)
+                        logger.info("[Scanner] DiscoveryList +%d from %s", n, scan_id)
+                    except Exception as exc:
+                        logger.warning("[Scanner] DiscoveryList 写入失败: %s", exc)
             except Exception as exc:
                 logger.exception("Market scan %s failed: %s", scan_id, exc)
                 with self._results_lock:

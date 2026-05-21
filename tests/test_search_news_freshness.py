@@ -193,6 +193,36 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         p1.search.assert_called_once()
         p2.search.assert_called_once()
 
+    def test_generic_search_filters_fresh_news_and_tries_next_provider(self) -> None:
+        """Generic market-theme search should use providers, freshness filter, and fallback."""
+        today = datetime.now().date()
+        old = (today - timedelta(days=90)).isoformat()
+        fresh = today.isoformat()
+        service = SearchService(
+            bocha_keys=["dummy_key"],
+            searxng_public_instances_enabled=False,
+            news_max_age_days=2,
+            news_strategy_profile="short",
+        )
+        p1 = SimpleNamespace(
+            is_available=True,
+            name="P1",
+            search=MagicMock(return_value=_response([_result("too_old", old)])),
+        )
+        p2 = SimpleNamespace(
+            is_available=True,
+            name="P2",
+            search=MagicMock(return_value=_response([_result("fresh", fresh)])),
+        )
+        service._providers = [p1, p2]
+
+        resp = service.search("sector catalyst today", max_results=3, days=2)
+
+        self.assertEqual(resp.provider, "P2")
+        self.assertEqual([r.title for r in resp.results], ["fresh"])
+        p1.search.assert_called_once()
+        p2.search.assert_called_once()
+
     def test_search_stock_news_prioritizes_chinese_items_within_mixed_results(self) -> None:
         """Chinese items should be ordered ahead of English items in mixed batches."""
         fresh = datetime.now().date().isoformat()

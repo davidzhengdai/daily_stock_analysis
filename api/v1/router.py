@@ -17,6 +17,7 @@ from api.v1.endpoints import (
     analysis,
     auth,
     backtest,
+    discovery,
     gold_digger,
     history,
     portfolio,
@@ -120,4 +121,10 @@ router.include_router(
     simtrade.router,
     prefix="/sim-trade",
     tags=["SimTrade"]
+)
+
+router.include_router(
+    discovery.router,
+    prefix="/discovery",
+    tags=["Discovery"]
 )

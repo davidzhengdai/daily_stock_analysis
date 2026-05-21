@@ -266,9 +266,27 @@ class AutoTradeService:
         # ---- 前置条件检查 ----
         from src.services.watchlist_service import WatchlistService
         watchlist = WatchlistService().list_all()
+
+        # 合并淘金列表（DiscoveryList）
+        _discovery_items: List[Dict[str, Any]] = []
+        if os.getenv("DISCOVERY_AUTO_TRADE_ENABLED", "true").lower() not in ("0", "false", "no"):
+            try:
+                from src.services.discovery_service import DiscoveryService
+                _discovery_items = DiscoveryService().get_auto_trade_stocks()
+                if _discovery_items:
+                    logger.info("[AutoTrade] DiscoveryList 提供 %d 只股票", len(_discovery_items))
+            except Exception as _exc:
+                logger.warning("[AutoTrade] DiscoveryList 读取失败，跳过: %s", _exc)
+
+        # 去重：已在自选股中的 ticker 不重复处理
+        _watchlist_codes = {item['code'] for item in watchlist}
+        watchlist = list(watchlist) + [
+            item for item in _discovery_items if item['code'] not in _watchlist_codes
+        ]
+
         if not watchlist:
-            result['skipped_reason'] = '自选股列表为空'
-            logger.info("[AutoTrade] 跳过：自选股列表为空")
+            result['skipped_reason'] = '自选股与淘金列表均为空'
+            logger.info("[AutoTrade] 跳过：自选股与淘金列表均为空")
             self._last_run_result = result
             return result
 
@@ -366,9 +384,46 @@ class AutoTradeService:
             code = item['code']
             name = item.get('name', '')
             market = SignalService._infer_market(code)
+            from_discovery = bool(item.get('_from_discovery'))
+            trade_context = item.get('_trade_context', 'watchlist')
+            discovery_stop_loss_pct = None
+            discovery_take_profit_pct = None
             try:
-                signal = signal_svc.generate_signal(code, market, name)
+                signal = signal_svc.generate_signal(code, market, name, trade_context=trade_context)
                 result['signals_generated'] += 1
+
+                # 淘金列表短线仓位覆盖：买入时用更紧的参数
+                if from_discovery and signal['signal'] == 'buy':
+                    try:
+                        _pos_pct = float(os.getenv('DISCOVERY_AUTO_TRADE_POSITION_PCT', '10.0'))
+                        _sl_pct = float(os.getenv('DISCOVERY_AUTO_TRADE_STOP_LOSS_PCT', '5.0'))
+                        _tp_pct = float(os.getenv('DISCOVERY_AUTO_TRADE_TAKE_PROFIT_PCT', '15.0'))
+                        discovery_stop_loss_pct = _sl_pct
+                        discovery_take_profit_pct = _tp_pct
+                        _entry = signal.get('suggested_price') or 0.0
+                        if _entry > 0 and _pos_pct > 0:
+                            _acct_fresh = self.repo.get_or_create_account()
+                            _cash = (
+                                _acct_fresh.get('cash_cny', 0) if market == 'CN'
+                                else _acct_fresh.get('cash_usd', 0)
+                            )
+                            lot = 100 if market == 'CN' else 1
+                            _raw = int(_cash * _pos_pct / 100 / _entry)
+                            _qty = max(lot, (_raw // lot) * lot)
+                            signal['suggested_qty'] = _qty
+                        if _sl_pct > 0 and _entry > 0:
+                            signal['stop_loss'] = round(_entry * (1 - _sl_pct / 100), 4)
+                        if _tp_pct > 0 and _entry > 0:
+                            signal['take_profit'] = round(_entry * (1 + _tp_pct / 100), 4)
+                        logger.debug(
+                            "[AutoTrade] 淘金列表买入参数覆盖 %s: qty=%s sl=%.4f tp=%.4f",
+                            code,
+                            signal.get('suggested_qty'),
+                            signal.get('stop_loss', 0),
+                            signal.get('take_profit', 0),
+                        )
+                    except Exception as _exc:
+                        logger.debug("[AutoTrade] 淘金列表参数覆盖失败 %s: %s", code, _exc)
 
                 if signal['signal'] in ('buy', 'sell') and signal.get('suggested_qty', 0):
                     try:
@@ -382,6 +437,8 @@ class AutoTradeService:
                             name=name,
                             source='auto',
                             ai_signal_id=signal['id'],
+                            stop_loss_pct=discovery_stop_loss_pct,
+                            take_profit_pct=discovery_take_profit_pct,
                         )
                         # 标记信号已执行
                         self.repo.update_signal(signal['id'], status='executed', order_id=order['id'])

@@ -1002,6 +1002,28 @@ class Config:
     scanner_ai_preselect_enabled: bool = True
     gold_digger_ai_preselect_enabled: bool = True
 
+    # === 热点雷达配置 ===
+    heat_radar_enabled: bool = True
+    heat_radar_top_n: int = 10
+    heat_radar_markets: List[str] = field(default_factory=lambda: ["us", "cn"])
+    heat_radar_ttl_days: int = 5
+    heat_radar_model: str = ""
+
+    # === 淘金列表 TTL ===
+    discovery_scanner_ttl_days: int = 14
+    discovery_gold_digger_ttl_days: int = 21
+    discovery_heat_radar_ttl_days: int = 5
+
+    # === 盘后自动触发 ===
+    post_close_scan_enabled: bool = True
+    post_close_scan_markets: List[str] = field(default_factory=lambda: ["us", "cn"])
+
+    # === 淘金列表自动交易参数 ===
+    discovery_auto_trade_enabled: bool = True
+    discovery_auto_trade_position_pct: float = 10.0
+    discovery_auto_trade_stop_loss_pct: float = 5.0
+    discovery_auto_trade_take_profit_pct: float = 15.0
+
     # === 配置校验模式 ===
     # CONFIG_VALIDATE_MODE=warn (default): log all issues but always continue startup
     # CONFIG_VALIDATE_MODE=strict: exit(1) when any "error" severity issue is found
@@ -1872,6 +1894,60 @@ class Config:
             ),
             gold_digger_ai_preselect_enabled=parse_env_bool(
                 os.getenv('GOLD_DIGGER_AI_PRESELECT_ENABLED'), default=True,
+            ),
+            heat_radar_enabled=parse_env_bool(os.getenv('HEAT_RADAR_ENABLED'), default=True),
+            heat_radar_top_n=parse_env_int(
+                os.getenv('HEAT_RADAR_TOP_N'), 10,
+                field_name='HEAT_RADAR_TOP_N', minimum=1, maximum=50,
+            ),
+            heat_radar_markets=[
+                m for m in (
+                    part.strip().lower()
+                    for part in os.getenv('HEAT_RADAR_MARKETS', 'us,cn').split(',')
+                )
+                if m in ('us', 'cn')
+            ] or ['us', 'cn'],
+            heat_radar_ttl_days=parse_env_int(
+                os.getenv('HEAT_RADAR_TTL_DAYS'), 5,
+                field_name='HEAT_RADAR_TTL_DAYS', minimum=1, maximum=30,
+            ),
+            heat_radar_model=os.getenv('HEAT_RADAR_MODEL', '').strip(),
+            discovery_scanner_ttl_days=parse_env_int(
+                os.getenv('DISCOVERY_SCANNER_TTL_DAYS'), 14,
+                field_name='DISCOVERY_SCANNER_TTL_DAYS', minimum=1,
+            ),
+            discovery_gold_digger_ttl_days=parse_env_int(
+                os.getenv('DISCOVERY_GOLD_DIGGER_TTL_DAYS'), 21,
+                field_name='DISCOVERY_GOLD_DIGGER_TTL_DAYS', minimum=1,
+            ),
+            discovery_heat_radar_ttl_days=parse_env_int(
+                os.getenv('DISCOVERY_HEAT_RADAR_TTL_DAYS'), 5,
+                field_name='DISCOVERY_HEAT_RADAR_TTL_DAYS', minimum=1,
+            ),
+            post_close_scan_enabled=parse_env_bool(
+                os.getenv('POST_CLOSE_SCAN_ENABLED'), default=True,
+            ),
+            post_close_scan_markets=[
+                m for m in (
+                    part.strip().lower()
+                    for part in os.getenv('POST_CLOSE_SCAN_MARKETS', 'us,cn').split(',')
+                )
+                if m in ('us', 'cn')
+            ] or ['us', 'cn'],
+            discovery_auto_trade_enabled=parse_env_bool(
+                os.getenv('DISCOVERY_AUTO_TRADE_ENABLED'), default=True,
+            ),
+            discovery_auto_trade_position_pct=parse_env_float(
+                os.getenv('DISCOVERY_AUTO_TRADE_POSITION_PCT'), 10.0,
+                field_name='DISCOVERY_AUTO_TRADE_POSITION_PCT', minimum=1.0, maximum=50.0,
+            ),
+            discovery_auto_trade_stop_loss_pct=parse_env_float(
+                os.getenv('DISCOVERY_AUTO_TRADE_STOP_LOSS_PCT'), 5.0,
+                field_name='DISCOVERY_AUTO_TRADE_STOP_LOSS_PCT', minimum=1.0, maximum=20.0,
+            ),
+            discovery_auto_trade_take_profit_pct=parse_env_float(
+                os.getenv('DISCOVERY_AUTO_TRADE_TAKE_PROFIT_PCT'), 15.0,
+                field_name='DISCOVERY_AUTO_TRADE_TAKE_PROFIT_PCT', minimum=1.0, maximum=100.0,
             ),
         )
     

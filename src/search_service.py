@@ -2956,6 +2956,54 @@ class SearchService:
         )
         # Lazy sentinel cache client (initialised on first use)
         self._sentinel_client = None
+
+    @property
+    def is_available(self) -> bool:
+        """Whether at least one configured provider can serve generic news search."""
+        return any(provider.is_available for provider in self._providers)
+
+    def search(self, query: str, max_results: int = 5, days: int = 7) -> SearchResponse:
+        """Run a generic fresh-news search across configured providers.
+
+        This is intentionally provider-agnostic and is used by workflows that
+        search market themes rather than one stock ticker.
+        """
+        search_days = max(1, min(int(days or 1), self.news_max_age_days))
+        provider_max_results = self._provider_request_size(max_results)
+        fallback_response: Optional[SearchResponse] = None
+
+        for provider in self._providers:
+            if not provider.is_available:
+                continue
+
+            search_kwargs: Dict[str, Any] = {}
+            if isinstance(provider, TavilySearchProvider):
+                search_kwargs["topic"] = "news"
+
+            response = provider.search(
+                query,
+                max_results=provider_max_results,
+                days=search_days,
+                **search_kwargs,
+            )
+            if fallback_response is None:
+                fallback_response = response
+            filtered_response = self._filter_news_response(
+                response,
+                search_days=search_days,
+                max_results=max_results,
+                log_scope=f"{provider.name}:generic_news",
+            )
+            if filtered_response.success and filtered_response.results:
+                return filtered_response
+
+        return fallback_response or SearchResponse(
+            query=query,
+            results=[],
+            provider="none",
+            success=False,
+            error_message="未配置可用搜索源",
+        )
     
     def _try_sentinel_for_stock(
         self,

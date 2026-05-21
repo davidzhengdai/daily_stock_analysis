@@ -103,6 +103,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [修复] 修复 Scanner / 沙里淘金使用 NASDAQ 股票池时因接口参数返回空 rows 导致扫描无结果的问题，并为沙里淘金美股价格下载增加分批处理。
 - [修复] 修复 Scanner 同时扫描美股和 A股时全局 TopN 与行业分散截断可能让美股挤出全部 A股候选的问题，技术筛选、基本面筛选、行业分散和最终 Top Picks 改为跨市场保留有效候选名额。
 - [改进] Scanner 与沙里淘金新增深度分析前 AI 预选，先由轻量 LLM 从规则候选池中挑选进入完整分析的股票，并在 LLM 失败时自动回退到原规则排序。
+- [新功能] 热点雷达（NewsHeatRadar）：独立新闻驱动短线扫描器，并发查询 8 个 24-48h 短线新闻维度，LLM 识别热门板块后提名个股，结果自动写入淘金列表（TTL=5天），支持 CLI（--heat-radar）和 REST API（/api/v1/discovery/heat-scan/）。
+- [新功能] 淘金列表（DiscoveryList）：新增 discovery_list 数据表，由 Scanner / 沙里淘金 / 热点雷达三个扫描源自动维护，纯 TTL 失效（Scanner=14天 / 沙里淘金=21天 / 热点雷达=5天），新增 /api/v1/discovery/ REST API，支持查看、拒绝和统计操作。
+- [新功能] 盘后自动触发：--schedule 模式下，CN 收盘后（15:05 CST）和 US 收盘后（16:05 ET）各自自动触发完整 Scanner + 沙里淘金 + 热点雷达流水线，结果写入淘金列表；支持 POST_CLOSE_SCAN_ENABLED 和 POST_CLOSE_SCAN_MARKETS 配置。
+- [新功能] 淘金列表自动交易：AutoTradeService 在自选股之外额外处理淘金列表活跃股票，短线参数（仓位 10%、止损 5%、止盈 15%），与自选股参数独立，支持 DISCOVERY_AUTO_TRADE_* 系列环境变量配置。
+- [改进] 系统设置页新增“淘金雷达”配置分组，可直接启用/停用热点雷达、盘后扫描和淘金列表自动交易，并调整热点市场、TopN、仓位、止损止盈与最低信号置信度。
+- [修复] 修复热点雷达未接入通用新闻搜索聚合导致实时新闻摘要为空的问题，新增按市场裁剪 query、跨 query URL 去重和新闻新鲜度过滤。
 - [修复] 修复 Scanner / 沙里淘金 A 股候选池可能混入指数且在技术筛选阶段因单一 Akshare 接口失败被整批剔除的问题，A 股行情改为复用统一数据源 fallback。
 - [修复] 修复 Scanner / 沙里淘金 Web 页面切换路由后丢失后台任务进度的问题，启动后持久化任务 ID 并在返回页面时自动恢复轮询。
 - [修复] 修复沙里淘金后台线程启动时因日期工具未导入导致任务卡在 0% 运行中的问题，并确保启动期异常能正确写入失败状态。

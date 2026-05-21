@@ -152,6 +152,7 @@ class SignalService:
         code: str,
         market: str,
         name: str = "",
+        trade_context: str = "watchlist",
     ) -> Dict[str, Any]:
         """
         为指定股票生成 AI 信号，写入数据库并返回。
@@ -253,6 +254,16 @@ class SignalService:
             max_pos=max_pos, sentiment_summary=sentiment_summary, mode=mode,
         )
 
+        # 淘金列表短线上下文：引导 LLM 使用更紧的止损和催化剂导向判断
+        if trade_context == "discovery_short_term":
+            prompt += (
+                "\n\nTrade context: SHORT-TERM discovery pick (5-day horizon). "
+                "This stock was identified by the heat radar or discovery scanner as having "
+                "an immediate catalyst. Prioritize momentum and catalyst proximity over "
+                "long-term fundamentals. Suggest stop_loss 3-5% below entry price, "
+                "take_profit 10-15% above entry price."
+            )
+
         # ---- LLM 调用 ----
         parsed: Dict[str, Any] = {}
         try:
@@ -275,6 +286,9 @@ class SignalService:
         signal = parsed.get('signal', 'skip')
         confidence = float(parsed.get('confidence', 0.0))
         min_conf = acct.get('min_signal_confidence', 0.65)
+        # 淘金列表短线：允许较低置信度阈值（外部催化剂已确认）
+        if trade_context == "discovery_short_term":
+            min_conf = min(min_conf, float(os.getenv('DISCOVERY_MIN_SIGNAL_CONFIDENCE', '0.55')))
         llm_risk_flags = self._parse_risk_flags(parsed.get('risk_flags'))
         risk_flags = sorted(set(risk_flags + llm_risk_flags))
 

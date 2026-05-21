@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设计文档：热点雷达 + 淘金列表 + 盘后触发 + AutoTrade 接入</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 960px; margin: 0 auto; padding: 24px; color: #24292f; line-height: 1.6; }
+  h1 { font-size: 1.8rem; border-bottom: 2px solid #0969da; padding-bottom: 8px; }
+  h2 { font-size: 1.3rem; border-bottom: 1px solid #d0d7de; padding-bottom: 4px; margin-top: 32px; }
+  h3 { font-size: 1.05rem; margin-top: 20px; color: #0969da; }
+  code { background: #f6f8fa; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+  pre { background: #f6f8fa; padding: 16px; border-radius: 6px; overflow-x: auto; font-size: 0.88em; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #d0d7de; padding: 8px 12px; text-align: left; }
+  th { background: #f6f8fa; font-weight: 600; }
+  details { border: 1px solid #d0d7de; border-radius: 6px; padding: 8px 12px; margin: 8px 0; }
+  summary { cursor: pointer; font-weight: 600; }
+  .note { background: #ddf4ff; border-left: 4px solid #0969da; padding: 8px 12px; border-radius: 0 4px 4px 0; margin: 12px 0; }
+  .warn { background: #fff8c5; border-left: 4px solid #d4a017; padding: 8px 12px; border-radius: 0 4px 4px 0; margin: 12px 0; }
+</style>
+</head>
+<body>
+
+<h1>设计文档：热点雷达 + 淘金列表 + 盘后触发 + AutoTrade 接入</h1>
+<p><strong>版本：</strong>1.0 &nbsp;&nbsp;
+   <strong>状态：</strong>已实现 &nbsp;&nbsp;
+   <strong>日期：</strong>2026-05</p>
+
+<h2>1. 背景与目标</h2>
+<p>
+  原有 Scanner（中线 1–6 个月）和 GoldDigger（价值挖掘）均不具备短线新闻敏感能力。
+  本子系统新增四个能力：
+</p>
+<ol>
+  <li><strong>NewsHeatRadar（热点雷达）</strong>：独立查询 24-48h 新闻，识别板块热度，提名短线股票（5 日视野）。</li>
+  <li><strong>DiscoveryList（淘金列表）</strong>：独立于用户自选股的自动维护列表，由三个扫描源写入，纯 TTL 失效。</li>
+  <li><strong>盘后自动触发</strong>：CN/US 收盘后各自触发完整 Scanner + GoldDigger + HeatRadar 流水线，结果写入淘金列表。</li>
+  <li><strong>AutoTrade 接入</strong>：AutoTradeService 处理淘金列表活跃股，使用短线参数（仓位小、止损紧）。</li>
+</ol>
+
+<h2>2. 整体架构</h2>
+<pre>
+盘后自动触发（Scheduler market-close-watcher）
+      ├─ CN 收盘 15:05 CST → _run_post_close_scan(markets=["cn"])
+      └─ US 收盘 16:05 ET  → _run_post_close_scan(markets=["us"])
+                                  │
+             ┌────────────────────┼─────────────────────┐
+             ▼                    ▼                      ▼
+       MarketScanner         GoldDigger           NewsHeatRadar
+       (20-40 min)           (15-25 min)          (5-10 min)
+             │                    │                      │
+             └────────────────────┴──────────────────────┘
+                                  │ 完成后回调
+                                  ▼
+                           DiscoveryService
+                                  │ add_from_scanner / add_from_gold_digger
+                                  │ add_from_heat_radar
+                                  ▼
+                           discovery_list (SQLite)
+                           status: active | expired | rejected
+                           TTL: scanner=14d, gold_digger=21d, heat_radar=5d
+
+AutoTradeService (每 5 min 循环)
+      ├─ WatchlistService().list_all()     → 自选股（中线参数）
+      └─ DiscoveryService().get_auto_trade_stocks() → 淘金列表（短线参数）
+                                  │
+             SignalService.generate_signal(trade_context="discovery_short_term")
+             ↓
+             OrderService.place_order() + 仓位/止损覆盖
+</pre>
+
+<h2>3. NewsHeatRadar 模块</h2>
+
+<h3>3.1 文件路径</h3>
+<ul>
+  <li><code>src/schemas/news_heat_radar.py</code> — HeatConfig / HotSector / HotPick / HeatReport</li>
+  <li><code>src/services/news_heat_radar.py</code> — 主服务类 + 单例 get_news_heat_radar()</li>
+</ul>
+
+<h3>3.2 Pipeline 步骤</h3>
+<table>
+  <tr><th>步骤</th><th>说明</th><th>耗时估算</th></tr>
+  <tr><td>Step 1</td><td>8 条搜索查询并发（days=2），构建 news_digest（最大 10k 字符）</td><td>5-15s</td></tr>
+  <tr><td>Step 2</td><td>LLM 从 digest 识别 top-N HotSector，按 heat_score 排序</td><td>10-20s</td></tr>
+  <tr><td>Step 3</td><td>对 top-5 板块各自 LLM 提名 3 只股票 → HotPick</td><td>25-60s（5×5-12s）</td></tr>
+  <tr><td>Step 4</td><td>按 market 过滤 → 去重（保留最高 heat_score）→ top_n</td><td>&lt;1s</td></tr>
+  <tr><td>Step 5</td><td>保存 JSON → 发通知 → DiscoveryService 写入</td><td>&lt;2s</td></tr>
+</table>
+
+<h3>3.3 SearchService Fallback</h3>
+<div class="note">当 SearchService 不可用（未配置搜索 API Key）时，news_digest 设置为固定提示语，LLM 依赖训练知识生成结果，heat_score 普遍偏低（confidence ≤ 60），仍可产出 HeatReport。</div>
+
+<h3>3.4 搜索查询维度（8条，days=2）</h3>
+<pre>
+"breaking stock market news sector catalyst today"
+"government policy regulation announcement stock sector impact this week"
+"earnings surprise guidance raised revenue beat sector stocks"
+"A股热门概念板块题材资金流向 近两日"
+"Federal Reserve economic data jobs report GDP market reaction sectors"
+"sector rotation money flow hot sector rally momentum today"
+"supply chain disruption trade announcement sector winners losers"
+"technology breakthrough product launch semiconductor AI chip stocks news"
+</pre>
+<p>与 ThemeDetector 的 7 条宏观查询（days=7）完全独立，聚焦更短时间窗口。</p>
+
+<h3>3.5 LLM Prompt 语义</h3>
+<details>
+  <summary>_HEAT_SECTOR_PROMPT — 板块识别</summary>
+  <p>输入：news_digest（≤10k chars）+ 日期 + count<br>
+  输出：JSON array of HotSector<br>
+  关键约束：heat_score = 新闻频次 × 影响权重；只有1条低影响提及的板块不纳入；需指定 market_regions。</p>
+</details>
+<details>
+  <summary>_HEAT_STOCK_PROMPT — 个股提名</summary>
+  <p>输入：sector_name + catalyst_summary + keywords + markets + n<br>
+  输出：JSON array of HotPick<br>
+  关键约束：直接暴露（非外围关联）；5个交易日内可能波动；避免市值 &lt;100M 的微盘股；A股用数字代码，US股用字母 ticker。</p>
+</details>
+
+<h3>3.6 结果存储</h3>
+<p>结果文件：<code>data/scanner_cache/heat_results/{run_id}.json</code><br>
+单例访问：<code>get_news_heat_radar()</code></p>
+
+<h2>4. DiscoveryList 模块</h2>
+
+<h3>4.1 数据模型</h3>
+<pre>
+discovery_list (SQLite)
+  id             INTEGER PRIMARY KEY AUTOINCREMENT
+  ticker         VARCHAR(20) NOT NULL  -- 股票代码
+  name           VARCHAR(100)          -- 股票名称
+  market         VARCHAR(8)  NOT NULL  -- CN | US | HK（已标准化）
+  sector         VARCHAR(100)          -- 行业
+  source         VARCHAR(20) NOT NULL  -- scanner | gold_digger | heat_radar
+  source_run_id  VARCHAR(64) NOT NULL  -- 关联的扫描 run_id / scan_id
+  score          FLOAT                 -- 来源评分（heat_score / composite_score）
+  confidence     INTEGER               -- LLM 置信度 0-100
+  thesis         TEXT                  -- 简短投资论点
+  themes         TEXT                  -- JSON list 主题关键词
+  trade_horizon  VARCHAR(16)           -- short | medium
+  added_at       DATETIME              -- 写入时间（UTC）
+  expires_at     DATETIME              -- 过期时间（UTC）= added_at + TTL
+  status         VARCHAR(16)           -- active | expired | rejected
+  rejected_at    DATETIME
+  allow_auto_trade BOOLEAN DEFAULT 1
+
+UNIQUE (ticker, source, source_run_id)  -- 同一扫描结果幂等
+</pre>
+
+<h3>4.2 TTL 设计</h3>
+<table>
+  <tr><th>来源</th><th>默认 TTL</th><th>环境变量</th><th>逻辑</th></tr>
+  <tr><td>heat_radar</td><td>5 天</td><td>DISCOVERY_HEAT_RADAR_TTL_DAYS</td><td>短线催化剂，快速失效</td></tr>
+  <tr><td>scanner</td><td>14 天</td><td>DISCOVERY_SCANNER_TTL_DAYS</td><td>每两周扫一次</td></tr>
+  <tr><td>gold_digger</td><td>21 天</td><td>DISCOVERY_GOLD_DIGGER_TTL_DAYS</td><td>价值反转慢，给更长窗口</td></tr>
+</table>
+<p>失效检查：<code>DiscoveryService.list_active()</code> 和 <code>get_auto_trade_stocks()</code> 调用前先 <code>expire_stale()</code>（懒失效）。</p>
+
+<h3>4.3 重复处理</h3>
+<ul>
+  <li>同一 ticker 来自同一 source 的同一 run_id：UNIQUE 约束幂等忽略（重启安全）。</li>
+  <li>同一 ticker 来自不同 source：DB 存多行；<code>get_auto_trade_stocks()</code> 去重后统一以 <code>trade_context="discovery_short_term"</code> 处理。</li>
+  <li>同一 ticker 同时在自选股和淘金列表：AutoTrade 以自选股为准（watchlist_codes 过滤），不重复处理。</li>
+</ul>
+
+<h3>4.4 market 字段标准化</h3>
+<p><code>_normalize_market()</code>：<code>"A-share" → "CN"</code>，<code>"cn" → "CN"</code>，<code>"us" → "US"</code>，兼容三个来源的不同命名习惯。</p>
+
+<h2>5. 盘后自动触发</h2>
+
+<h3>5.1 机制</h3>
+<p><code>Scheduler._add_market_close_watcher()</code> 注册一个 60s 轮询的后台任务（<code>add_background_task</code>）：</p>
+<ul>
+  <li><strong>CN</strong>：检测 <code>Asia/Shanghai</code> 时区 15:05-15:10 窗口 + 工作日 + 当日未触发（<code>_fired["cn"]</code>）</li>
+  <li><strong>US</strong>：检测 <code>America/New_York</code> 时区 16:05-16:10 窗口 + 工作日 + 当日未触发（<code>_fired["us"]</code>）</li>
+</ul>
+<div class="warn">_fired 字典在进程内防止重复触发，进程重启后重置。如重启恰好落在触发窗口内会再次触发，但淘金列表的 UniqueConstraint 保证幂等。</div>
+
+<h3>5.2 main.py 注册</h3>
+<p><code>--schedule</code> 模式下，若 <code>POST_CLOSE_SCAN_ENABLED=true</code>（默认），自动调用 <code>_add_market_close_watcher</code>；<code>POST_CLOSE_SCAN_MARKETS</code> 控制触发范围（us,cn / 只填 us / 只填 cn）。</p>
+
+<h3>5.3 _run_post_close_scan</h3>
+<p>启动 Scanner + GoldDigger + HeatRadar 三个后台线程（fire-and-forget），返回后立即完成。各扫描在自己线程中完成后回调 DiscoveryService 写入淘金列表。并发安全：SQLite WAL 模式 + DatabaseManager 写重试。</p>
+
+<h2>6. AutoTrade 接入</h2>
+
+<h3>6.1 合并逻辑（auto_trade_service.py）</h3>
+<pre>
+watchlist = WatchlistService().list_all()
+_discovery = DiscoveryService().get_auto_trade_stocks()  # 懒失效后返回
+
+watchlist_codes = {item['code'] for item in watchlist}
+watchlist += [item for item in _discovery if item['code'] not in watchlist_codes]
+</pre>
+<p>已在自选股中的 ticker 不重复处理，以自选股参数为准。</p>
+
+<h3>6.2 短线参数覆盖</h3>
+<p>对 <code>_from_discovery=True</code> 的买单，在 <code>generate_signal()</code> 返回后、<code>place_order()</code> 之前覆盖：</p>
+<table>
+  <tr><th>参数</th><th>默认值</th><th>环境变量</th></tr>
+  <tr><td>最大仓位占比</td><td>10.0%</td><td>DISCOVERY_AUTO_TRADE_POSITION_PCT</td></tr>
+  <tr><td>止损百分比</td><td>5.0%</td><td>DISCOVERY_AUTO_TRADE_STOP_LOSS_PCT</td></tr>
+  <tr><td>止盈百分比</td><td>15.0%</td><td>DISCOVERY_AUTO_TRADE_TAKE_PROFIT_PCT</td></tr>
+</table>
+<p>仓位计算：<code>qty = floor(cash × pos_pct% / entry_price)</code>，对齐到手数（CN=100股，US=1股）。</p>
+
+<h3>6.3 SignalService trade_context 参数</h3>
+<p><code>generate_signal(code, market, name, trade_context="discovery_short_term")</code></p>
+<ul>
+  <li>LLM prompt 末尾追加短线上下文说明（优先催化剂动量，止损 3-5%，止盈 10-15%）。</li>
+  <li>最低置信度阈值降至 <code>DISCOVERY_MIN_SIGNAL_CONFIDENCE</code>（默认 0.55，低于自选股的 0.65）。</li>
+</ul>
+
+<h2>7. API 端点（/api/v1/discovery/）</h2>
+<table>
+  <tr><th>Method</th><th>Path</th><th>说明</th></tr>
+  <tr><td>GET</td><td>/</td><td>列出活跃条目（支持 source / market / limit 过滤）</td></tr>
+  <tr><td>GET</td><td>/stats</td><td>按来源和状态统计数量</td></tr>
+  <tr><td>POST</td><td>/{id}/reject</td><td>标记拒绝（AutoTrade 将不再处理）</td></tr>
+  <tr><td>GET</td><td>/runs</td><td>热点雷达历史运行列表（HeatMeta）</td></tr>
+  <tr><td>POST</td><td>/heat-scan</td><td>手动触发热点雷达扫描，返回 run_id</td></tr>
+  <tr><td>GET</td><td>/heat-scan/{run_id}/status</td><td>轮询进度（progress 0-100）</td></tr>
+  <tr><td>GET</td><td>/heat-scan/{run_id}/result</td><td>获取完整 HeatReport</td></tr>
+</table>
+
+<h2>8. 配置项速查</h2>
+<p>以下配置可通过 <strong>Web 系统设置 → 淘金雷达</strong> 分组维护；也可直接写入 <code>.env</code>。</p>
+<table>
+  <tr><th>环境变量</th><th>默认值</th><th>说明</th></tr>
+  <tr><td>HEAT_RADAR_ENABLED</td><td>true</td><td>热点雷达主开关</td></tr>
+  <tr><td>HEAT_RADAR_TOP_N</td><td>10</td><td>最终提名热点股数量</td></tr>
+  <tr><td>HEAT_RADAR_MARKETS</td><td>us,cn</td><td>扫描市场</td></tr>
+  <tr><td>HEAT_RADAR_TTL_DAYS</td><td>5</td><td>淘金列表 TTL（天）</td></tr>
+  <tr><td>HEAT_RADAR_MODEL</td><td>（空）</td><td>LLM 模型覆盖</td></tr>
+  <tr><td>DISCOVERY_SCANNER_TTL_DAYS</td><td>14</td><td>Scanner 结果 TTL</td></tr>
+  <tr><td>DISCOVERY_GOLD_DIGGER_TTL_DAYS</td><td>21</td><td>沙里淘金结果 TTL</td></tr>
+  <tr><td>DISCOVERY_HEAT_RADAR_TTL_DAYS</td><td>5</td><td>热点雷达结果 TTL（同上）</td></tr>
+  <tr><td>POST_CLOSE_SCAN_ENABLED</td><td>true</td><td>盘后自动触发开关</td></tr>
+  <tr><td>POST_CLOSE_SCAN_MARKETS</td><td>us,cn</td><td>触发市场范围</td></tr>
+  <tr><td>DISCOVERY_AUTO_TRADE_ENABLED</td><td>true</td><td>淘金列表自动买卖开关</td></tr>
+  <tr><td>DISCOVERY_AUTO_TRADE_POSITION_PCT</td><td>10.0</td><td>仓位占可用资金%</td></tr>
+  <tr><td>DISCOVERY_AUTO_TRADE_STOP_LOSS_PCT</td><td>5.0</td><td>止损%（距入场价）</td></tr>
+  <tr><td>DISCOVERY_AUTO_TRADE_TAKE_PROFIT_PCT</td><td>15.0</td><td>止盈%（距入场价）</td></tr>
+  <tr><td>DISCOVERY_MIN_SIGNAL_CONFIDENCE</td><td>0.55</td><td>淘金列表信号最低置信度</td></tr>
+</table>
+
+<h2>9. 边界条件与风险</h2>
+<table>
+  <tr><th>场景</th><th>处理方式</th></tr>
+  <tr><td>SearchService 不可用</td><td>news_digest 为空，LLM fallback prompt，报告仍产出但 confidence 低</td></tr>
+  <tr><td>盘后扫描耗时超 1 小时</td><td>各服务后台线程独立，DiscoveryList 在各自完成后写入，AutoTrade 线程不受影响</td></tr>
+  <tr><td>进程重启落在触发窗口内</td><td>_fired 重置→重新触发；UniqueConstraint 幂等保护</td></tr>
+  <tr><td>同一 ticker 被多源收录</td><td>DB 多行，get_auto_trade_stocks() 按 score 去重，trade_context 统一为 short_term</td></tr>
+  <tr><td>market 字段不一致（"A-share" vs "CN"）</td><td>_normalize_market() 统一到 CN/US</td></tr>
+  <tr><td>DiscoveryService 写入失败</td><td>try/except + logger.warning，不影响主扫描流程通知发送</td></tr>
+</table>
+
+<h2>10. 验证方式</h2>
+<pre>
+# 编译检查
+python3 -m py_compile src/storage.py src/schemas/news_heat_radar.py \
+    src/repositories/discovery_repo.py src/services/discovery_service.py \
+    src/services/news_heat_radar.py src/config.py \
+    api/v1/endpoints/discovery.py api/v1/router.py main.py
+
+# 热点雷达手动运行
+python3 main.py --heat-radar --discovery-markets cn
+
+# Scanner 触发淘金列表
+python3 main.py --scanner --discovery-markets us
+# 检查 data/scanner_cache/results/ 和 data/stock_analysis.db 中 discovery_list 表
+
+# API 测试（需服务运行）
+curl http://localhost:8000/api/v1/discovery/
+curl http://localhost:8000/api/v1/discovery/stats
+curl -X POST http://localhost:8000/api/v1/discovery/heat-scan \
+  -H "Content-Type: application/json" \
+  -d '{"top_n":5,"markets":["us","cn"]}'
+
+# CI
+./scripts/ci_gate.sh
+</pre>
+
+<h2>11. 回滚方式</h2>
+<ul>
+  <li><strong>热点雷达</strong>：设置 <code>HEAT_RADAR_ENABLED=false</code> 禁用，CLI 不触发，盘后不触发，不影响其他模块。</li>
+  <li><strong>淘金列表自动交易</strong>：设置 <code>DISCOVERY_AUTO_TRADE_ENABLED=false</code>，AutoTrade 恢复只处理自选股。</li>
+  <li><strong>盘后触发</strong>：设置 <code>POST_CLOSE_SCAN_ENABLED=false</code>，market-close-watcher 不注册。</li>
+  <li><strong>DB 表</strong>：<code>discovery_list</code> 是独立新表，删除后不影响任何现有功能。</li>
+  <li><strong>代码层面</strong>：所有集成点（Scanner/GoldDigger 钩子、AutoTrade 合并）均在 try/except 内，失败只 logger.warning，不影响主流程。</li>
+</ul>
+
+</body>
+</html>

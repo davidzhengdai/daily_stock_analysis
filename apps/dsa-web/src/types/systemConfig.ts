@@ -6,6 +6,7 @@ export type SystemConfigCategory =
   | 'system'
   | 'agent'
   | 'sentinel'
+  | 'discovery'
   | 'backtest'
   | 'uncategorized';
 

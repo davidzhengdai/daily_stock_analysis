@@ -547,5 +547,27 @@ class TestMarketReviewFieldsRegistered(unittest.TestCase):
         self.assertIn("MARKET_REVIEW_COLOR_SCHEME", field_keys)
 
 
+class TestDiscoveryFieldsRegistered(unittest.TestCase):
+    """Discovery feature switches must be visible in settings schema."""
+
+    def test_discovery_category_and_switches_exist(self):
+        schema = build_schema_response()
+        discovery_cat = next(
+            (c for c in schema["categories"] if c["category"] == "discovery"),
+            None,
+        )
+        self.assertIsNotNone(discovery_cat, "discovery category missing")
+        field_keys = {f["key"] for f in discovery_cat["fields"]}
+        for key in (
+            "HEAT_RADAR_ENABLED",
+            "POST_CLOSE_SCAN_ENABLED",
+            "DISCOVERY_AUTO_TRADE_ENABLED",
+        ):
+            self.assertIn(key, field_keys)
+            field = get_field_definition(key)
+            self.assertEqual(field["category"], "discovery")
+            self.assertEqual(field["ui_control"], "switch")
+
+
 if __name__ == "__main__":
     unittest.main()

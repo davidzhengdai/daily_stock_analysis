@@ -319,6 +319,12 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        '--heat-radar',
+        action='store_true',
+        help='运行热点雷达，基于 24-48h 新闻识别短线热门板块和个股（TTL=5天）'
+    )
+
+    parser.add_argument(
         '--discovery-markets',
         type=str,
         default=None,
@@ -1042,6 +1048,103 @@ def _run_gold_digger_cli(config: Config, args: argparse.Namespace) -> int:
         time.sleep(10)
 
 
+def _run_heat_radar_cli(config, args) -> int:
+    """Run NewsHeatRadar once from CLI and wait for completion."""
+    if not getattr(config, "heat_radar_enabled", True):
+        logger.info("HeatRadar 已禁用：HEAT_RADAR_ENABLED=false")
+        return 0
+
+    from src.schemas.news_heat_radar import HeatConfig
+    from src.services.news_heat_radar import get_news_heat_radar
+
+    markets = _parse_discovery_markets(
+        getattr(args, "discovery_markets", None),
+        getattr(config, "heat_radar_markets", ["us", "cn"]),
+    )
+    cfg = HeatConfig(
+        top_n=getattr(args, "discovery_top_n", None) or getattr(config, "heat_radar_top_n", 10),
+        markets=markets,
+        ttl_days=getattr(config, "heat_radar_ttl_days", 5),
+        theme_count=8,
+        max_stocks_per_sector=3,
+        model=getattr(config, "heat_radar_model", "") or "",
+    )
+    radar = get_news_heat_radar()
+    run_id = radar.start_heat_scan(cfg)
+    logger.info("HeatRadar started: run_id=%s markets=%s top_n=%s", run_id, ",".join(cfg.markets), cfg.top_n)
+
+    while True:
+        status = radar.get_status(run_id) or {}
+        logger.info(
+            "HeatRadar progress: %s%% %s",
+            status.get("progress", 0),
+            status.get("message", ""),
+        )
+        if status.get("status") == "completed":
+            report = radar.get_result(run_id)
+            picks = report.hot_picks if report else []
+            logger.info("HeatRadar completed: %d hot picks", len(picks))
+            for pick in picks:
+                logger.info(
+                    "#%s %s %s [%s] heat=%.1f confidence=%s",
+                    pick.rank, pick.ticker, pick.name, pick.market,
+                    pick.heat_score, pick.llm_confidence,
+                )
+            return 0
+        if status.get("status") == "error":
+            logger.error("HeatRadar failed: %s", status.get("message"))
+            return 1
+        time.sleep(10)
+
+
+def _run_post_close_scan(config, markets: list) -> None:
+    """盘后触发：Scanner + GoldDigger + HeatRadar 各自后台运行，结果写入淘金列表。"""
+    import os
+    from src.schemas.scanner import ScanConfig
+    from src.schemas.gold_digger import DigConfig
+    from src.schemas.news_heat_radar import HeatConfig
+    from src.services.market_scanner import get_market_scanner
+    from src.services.gold_digger import get_gold_digger
+    from src.services.news_heat_radar import get_news_heat_radar
+
+    markets_str = ",".join(markets)
+    logger.info("[PostClose] 盘后扫描启动，市场=%s", markets_str)
+
+    try:
+        scan_cfg = ScanConfig(
+            markets=markets,
+            top_n=getattr(config, "scanner_top_n", 10),
+            min_market_cap_m=getattr(config, "scanner_min_market_cap_m", 500.0),
+            min_avg_volume=getattr(config, "scanner_min_avg_volume", 500_000),
+        )
+        scan_id = get_market_scanner().start_scan(scan_config=scan_cfg)
+        logger.info("[PostClose] Scanner 已启动: scan_id=%s", scan_id)
+    except Exception as exc:
+        logger.warning("[PostClose] Scanner 启动失败: %s", exc)
+
+    try:
+        dig_cfg = DigConfig(markets=markets, top_n=10)
+        run_id = get_gold_digger().start_dig(dig_cfg)
+        logger.info("[PostClose] GoldDigger 已启动: run_id=%s", run_id)
+    except Exception as exc:
+        logger.warning("[PostClose] GoldDigger 启动失败: %s", exc)
+
+    try:
+        if not getattr(config, "heat_radar_enabled", True):
+            logger.info("[PostClose] HeatRadar 已禁用，跳过")
+            return
+        heat_cfg = HeatConfig(
+            markets=markets,
+            top_n=getattr(config, "heat_radar_top_n", 10),
+            ttl_days=getattr(config, "heat_radar_ttl_days", 5),
+            model=getattr(config, "heat_radar_model", "") or "",
+        )
+        run_id = get_news_heat_radar().start_heat_scan(heat_cfg)
+        logger.info("[PostClose] HeatRadar 已启动: run_id=%s", run_id)
+    except Exception as exc:
+        logger.warning("[PostClose] HeatRadar 启动失败: %s", exc)
+
+
 def main() -> int:
     """
     主入口函数
@@ -1108,6 +1211,10 @@ def main() -> int:
     if args.gold_digger:
         logger.info("模式: 沙里淘金")
         return _run_gold_digger_cli(config, args)
+
+    if getattr(args, "heat_radar", False):
+        logger.info("模式: 热点雷达")
+        return _run_heat_radar_cli(config, args)
 
     # 解析股票列表（统一为大写 Issue #355）
     stock_codes = None
@@ -1228,7 +1335,7 @@ def main() -> int:
 
             logger.info(f"启动时立即执行: {should_run_immediately}")
 
-            from src.scheduler import run_with_schedule
+            from src.scheduler import Scheduler
             scheduled_stock_codes = _resolve_scheduled_stock_codes(stock_codes)
             schedule_time_provider = _build_schedule_time_provider(config.schedule_time)
 
@@ -1236,7 +1343,11 @@ def main() -> int:
                 runtime_config = _reload_runtime_config()
                 run_full_analysis(runtime_config, args, scheduled_stock_codes)
 
-            background_tasks = []
+            scheduler = Scheduler(
+                schedule_time=config.schedule_time,
+                schedule_time_provider=schedule_time_provider,
+            )
+
             if getattr(config, 'agent_event_monitor_enabled', False):
                 from src.services.alert_worker import AlertWorker
 
@@ -1249,20 +1360,32 @@ def main() -> int:
                     if triggered_count:
                         logger.info("[EventMonitor] 本轮触发 %d 条提醒", triggered_count)
 
-                background_tasks.append({
-                    "task": event_monitor_task,
-                    "interval_seconds": interval_minutes * 60,
-                    "run_immediately": True,
-                    "name": "agent_event_monitor",
-                })
+                scheduler.add_background_task(
+                    task=event_monitor_task,
+                    interval_seconds=interval_minutes * 60,
+                    run_immediately=True,
+                    name="agent_event_monitor",
+                )
 
-            run_with_schedule(
-                task=scheduled_task,
-                schedule_time=config.schedule_time,
-                run_immediately=should_run_immediately,
-                background_tasks=background_tasks,
-                schedule_time_provider=schedule_time_provider,
-            )
+            # 盘后自动触发 Scanner + GoldDigger + HeatRadar
+            _post_close_enabled = getattr(config, "post_close_scan_enabled", True)
+            if _post_close_enabled:
+                _post_close_markets = getattr(config, "post_close_scan_markets", ["us", "cn"])
+                _runtime_config_ref = [config]
+
+                def _cn_post_close():
+                    _run_post_close_scan(_runtime_config_ref[0], ["cn"])
+
+                def _us_post_close():
+                    _run_post_close_scan(_runtime_config_ref[0], ["us"])
+
+                scheduler._add_market_close_watcher(
+                    cn_post_close_task=_cn_post_close if "cn" in _post_close_markets else None,
+                    us_post_close_task=_us_post_close if "us" in _post_close_markets else None,
+                )
+
+            scheduler.set_daily_task(scheduled_task, run_immediately=should_run_immediately)
+            scheduler.run()
             return 0
 
         # 模式3: 正常单次运行

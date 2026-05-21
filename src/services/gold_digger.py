@@ -856,6 +856,15 @@ class GoldDigger:
         except Exception as exc:
             logger.warning("Notification failed: %s", exc)
 
+        # Populate DiscoveryList (淘金列表)
+        if report.gold_picks:
+            try:
+                from src.services.discovery_service import DiscoveryService
+                n = DiscoveryService().add_from_gold_digger(run_id)
+                logger.info("[GoldDigger] DiscoveryList +%d from %s", n, run_id)
+            except Exception as exc:
+                logger.warning("[GoldDigger] DiscoveryList 写入失败: %s", exc)
+
     def _ai_preselect_market_candidates(
         self,
         candidates: List[GoldCandidate],

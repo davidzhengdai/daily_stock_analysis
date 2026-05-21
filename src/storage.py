@@ -784,6 +784,57 @@ class Watchlist(Base):
             "last_analyzed_at": self.last_analyzed_at.isoformat() if self.last_analyzed_at else None,
         }
 
+class DiscoveryItem(Base):
+    """淘金列表条目：由 Scanner / GoldDigger / NewsHeatRadar 自动写入，纯 TTL 失效。"""
+
+    __tablename__ = 'discovery_list'
+
+    id             = Column(Integer, primary_key=True, autoincrement=True)
+    ticker         = Column(String(20), nullable=False, index=True)
+    name           = Column(String(100), default="")
+    market         = Column(String(8),  nullable=False)        # "US" | "CN"
+    sector         = Column(String(100), default="")
+    source         = Column(String(20), nullable=False, index=True)  # scanner|gold_digger|heat_radar
+    source_run_id  = Column(String(64), nullable=False)
+    score          = Column(Float, default=0.0)
+    confidence     = Column(Integer, default=50)               # 0-100
+    thesis         = Column(Text)
+    themes         = Column(Text)                              # JSON list of strings
+    trade_horizon  = Column(String(16), default="medium")      # "short" | "medium"
+    added_at       = Column(DateTime, default=datetime.utcnow, index=True)
+    expires_at     = Column(DateTime, nullable=False, index=True)
+    status         = Column(String(16), default="active", index=True)  # active|expired|rejected
+    rejected_at    = Column(DateTime, nullable=True)
+    allow_auto_trade = Column(Boolean, default=True)
+
+    __table_args__ = (
+        UniqueConstraint('ticker', 'source', 'source_run_id', name='uix_discovery_ticker_source_run'),
+        Index('ix_discovery_active_expires', 'status', 'expires_at'),
+        Index('ix_discovery_ticker_status', 'ticker', 'status'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'id': self.id,
+            'ticker': self.ticker,
+            'name': self.name,
+            'market': self.market,
+            'sector': self.sector,
+            'source': self.source,
+            'source_run_id': self.source_run_id,
+            'score': self.score,
+            'confidence': self.confidence,
+            'thesis': self.thesis,
+            'themes': json.loads(self.themes) if self.themes else [],
+            'trade_horizon': self.trade_horizon,
+            'added_at': self.added_at.isoformat() if self.added_at else None,
+            'expires_at': self.expires_at.isoformat() if self.expires_at else None,
+            'status': self.status,
+            'rejected_at': self.rejected_at.isoformat() if self.rejected_at else None,
+            'allow_auto_trade': bool(self.allow_auto_trade),
+        }
+
+
 class SimulatedAccount(Base):
     """模拟交易账户。支持多货币资金管理与 AI 自动交易配置。"""
 

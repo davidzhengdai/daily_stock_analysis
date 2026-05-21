@@ -8,6 +8,7 @@ const categoryTitleMap: Record<SystemConfigCategory, string> = {
   system: '系统设置',
   agent: 'Agent 设置',
   sentinel: '情报中心',
+  discovery: '淘金雷达',
   backtest: '回测配置',
   uncategorized: '其他',
 };
@@ -20,6 +21,7 @@ const categoryDescriptionMap: Partial<Record<SystemConfigCategory, string>> = {
   system: '管理调度、日志、端口等系统级参数。',
   agent: '管理 Agent 模式、策略与多 Agent 编排配置。',
   sentinel: '管理新闻爬虫调度、LLM 分类模型与优先级规则。',
+  discovery: '管理热点雷达、盘后扫描与淘金列表自动交易。',
   backtest: '管理回测开关、评估窗口和引擎参数。',
   uncategorized: '其他未归类的配置项。',
 };
@@ -171,6 +173,16 @@ const fieldTitleMap: Record<string, string> = {
   SENTINEL_ENABLED_SPIDERS: '启用的爬虫列表',
   SENTINEL_TRADING_HOURS_BOOST: '交易时段优先级加成',
   SENTINEL_WATCHED_STOCKS_BOOST: '自选股优先级加成',
+  HEAT_RADAR_ENABLED: '启用热点雷达',
+  POST_CLOSE_SCAN_ENABLED: '启用盘后扫描',
+  DISCOVERY_AUTO_TRADE_ENABLED: '淘金列表自动交易',
+  HEAT_RADAR_MARKETS: '热点雷达市场',
+  POST_CLOSE_SCAN_MARKETS: '盘后扫描市场',
+  HEAT_RADAR_TOP_N: '热点股数量',
+  DISCOVERY_AUTO_TRADE_POSITION_PCT: '淘金仓位占比（%）',
+  DISCOVERY_AUTO_TRADE_STOP_LOSS_PCT: '淘金止损（%）',
+  DISCOVERY_AUTO_TRADE_TAKE_PROFIT_PCT: '淘金止盈（%）',
+  DISCOVERY_MIN_SIGNAL_CONFIDENCE: '淘金最低信号置信度',
 };
 
 const fieldDescriptionMap: Record<string, string> = {
@@ -311,6 +323,16 @@ const fieldDescriptionMap: Record<string, string> = {
   BACKTEST_MIN_AGE_DAYS: '仅回测早于该天数的分析记录。',
   BACKTEST_ENGINE_VERSION: '回测引擎版本标识，用于区分结果版本。',
   BACKTEST_NEUTRAL_BAND_PCT: '中性区间阈值百分比，例如 2 表示 -2%~+2%。',
+  HEAT_RADAR_ENABLED: '控制 NewsHeatRadar 功能。关闭后，CLI/API 与盘后流程都会跳过热点雷达。',
+  POST_CLOSE_SCAN_ENABLED: '在 --schedule 模式中，收盘后自动触发 Scanner、沙里淘金和热点雷达。',
+  DISCOVERY_AUTO_TRADE_ENABLED: '允许模拟自动交易处理淘金列表中的活跃股票；关闭后只处理自选股。',
+  HEAT_RADAR_MARKETS: '热点雷达扫描市场，逗号分隔，可填 us、cn。',
+  POST_CLOSE_SCAN_MARKETS: '盘后自动触发的市场范围，逗号分隔，可填 us、cn。',
+  HEAT_RADAR_TOP_N: '每次热点雷达最多输出的热点股票数量。',
+  DISCOVERY_AUTO_TRADE_POSITION_PCT: '淘金列表买入时使用的可用资金比例。',
+  DISCOVERY_AUTO_TRADE_STOP_LOSS_PCT: '淘金列表买入持仓的止损比例。',
+  DISCOVERY_AUTO_TRADE_TAKE_PROFIT_PCT: '淘金列表买入持仓的止盈比例。',
+  DISCOVERY_MIN_SIGNAL_CONFIDENCE: '淘金短线候选的最低 AI 信号置信度，0.55 表示 55%。',
 };
 
 const fieldOptionLabelMap: Record<string, Record<string, string>> = {

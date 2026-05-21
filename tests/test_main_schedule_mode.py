@@ -92,6 +92,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
             "agent_event_monitor_enabled": False,
             "agent_event_alert_rules_json": "",
             "agent_event_monitor_interval_minutes": 5,
+            "post_close_scan_enabled": False,
         }
         defaults.update(overrides)
         return _DummyConfig(**defaults)
@@ -101,20 +102,26 @@ class MainScheduleModeTestCase(unittest.TestCase):
         config = self._make_config(schedule_enabled=False)
         scheduled_call = {}
 
-        def fake_run_with_schedule(
-            task,
-            schedule_time,
-            run_immediately,
-            background_tasks=None,
-            schedule_time_provider=None,
-        ):
-            scheduled_call["schedule_time"] = schedule_time
-            scheduled_call["run_immediately"] = run_immediately
-            scheduled_call["background_tasks"] = background_tasks or []
-            scheduled_call["resolved_schedule_time"] = (
-                schedule_time_provider() if schedule_time_provider is not None else None
-            )
-            task()
+        class FakeScheduler:
+            def __init__(self, schedule_time, schedule_time_provider=None):
+                scheduled_call["schedule_time"] = schedule_time
+                scheduled_call["resolved_schedule_time"] = (
+                    schedule_time_provider() if schedule_time_provider is not None else None
+                )
+                self.task = None
+
+            def add_background_task(self, *args, **kwargs):
+                raise AssertionError("unexpected background task")
+
+            def _add_market_close_watcher(self, *args, **kwargs):
+                raise AssertionError("unexpected post-close watcher")
+
+            def set_daily_task(self, task, run_immediately=False):
+                scheduled_call["run_immediately"] = run_immediately
+                self.task = task
+
+            def run(self):
+                self.task()
 
         with patch("main.parse_arguments", return_value=args), \
              patch("main.get_config", return_value=config), \
@@ -123,7 +130,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
              patch("main.setup_logging"), \
              patch("main.run_full_analysis") as run_full_analysis, \
              patch("main.logger.warning") as warning_log, \
-             patch("src.scheduler.run_with_schedule", side_effect=fake_run_with_schedule):
+             patch("src.scheduler.Scheduler", FakeScheduler):
             exit_code = main.main()
 
         self.assertEqual(exit_code, 0)
@@ -132,7 +139,6 @@ class MainScheduleModeTestCase(unittest.TestCase):
             {
                 "schedule_time": "18:00",
                 "run_immediately": True,
-                "background_tasks": [],
                 "resolved_schedule_time": "18:00",
             },
         )
@@ -147,18 +153,25 @@ class MainScheduleModeTestCase(unittest.TestCase):
         runtime_config = self._make_config(schedule_enabled=True, schedule_time="09:30")
         scheduled_call = {}
 
-        def fake_run_with_schedule(
-            task,
-            schedule_time,
-            run_immediately,
-            background_tasks=None,
-            schedule_time_provider=None,
-        ):
-            scheduled_call["schedule_time"] = schedule_time
-            scheduled_call["resolved_schedule_time"] = (
-                schedule_time_provider() if schedule_time_provider is not None else None
-            )
-            task()
+        class FakeScheduler:
+            def __init__(self, schedule_time, schedule_time_provider=None):
+                scheduled_call["schedule_time"] = schedule_time
+                scheduled_call["resolved_schedule_time"] = (
+                    schedule_time_provider() if schedule_time_provider is not None else None
+                )
+                self.task = None
+
+            def add_background_task(self, *args, **kwargs):
+                raise AssertionError("unexpected background task")
+
+            def _add_market_close_watcher(self, *args, **kwargs):
+                raise AssertionError("unexpected post-close watcher")
+
+            def set_daily_task(self, task, run_immediately=False):
+                self.task = task
+
+            def run(self):
+                self.task()
 
         with patch("main.parse_arguments", return_value=args), \
              patch("main.get_config", return_value=startup_config), \
@@ -166,7 +179,7 @@ class MainScheduleModeTestCase(unittest.TestCase):
              patch("main._build_schedule_time_provider", return_value=lambda: "09:30"), \
              patch("main.setup_logging"), \
              patch("main.run_full_analysis") as run_full_analysis, \
-             patch("src.scheduler.run_with_schedule", side_effect=fake_run_with_schedule):
+             patch("src.scheduler.Scheduler", FakeScheduler):
             exit_code = main.main()
 
         self.assertEqual(exit_code, 0)
