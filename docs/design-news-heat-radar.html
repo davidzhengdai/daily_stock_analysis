@@ -47,6 +47,7 @@
                                   │
              ┌────────────────────┼─────────────────────┐
              ▼                    ▼                      ▼
+ _run_post_close_market_scanner  _run_post_close_gold_digger  _run_post_close_heat_radar
        MarketScanner         GoldDigger           NewsHeatRadar
        (20-40 min)           (15-25 min)          (5-10 min)
              │                    │                      │
@@ -181,7 +182,7 @@ UNIQUE (ticker, source, source_run_id)  -- 同一扫描结果幂等
 <p><code>--schedule</code> 模式下，若 <code>POST_CLOSE_SCAN_ENABLED=true</code>（默认），自动调用 <code>_add_market_close_watcher</code>；<code>POST_CLOSE_SCAN_MARKETS</code> 控制触发范围（us,cn / 只填 us / 只填 cn）。</p>
 
 <h3>5.3 _run_post_close_scan</h3>
-<p>启动 Scanner + GoldDigger + HeatRadar 三个后台线程（fire-and-forget），返回后立即完成。各扫描在自己线程中完成后回调 DiscoveryService 写入淘金列表。并发安全：SQLite WAL 模式 + DatabaseManager 写重试。</p>
+<p>按任务源分别启动 Scanner、GoldDigger、HeatRadar 三个后台任务（fire-and-forget），返回后立即完成。每个任务有独立 try/except，单个来源启动失败不会阻断其他来源；各扫描在自己线程中完成后回调 DiscoveryService 写入淘金列表。并发安全：SQLite WAL 模式 + DatabaseManager 写重试。</p>
 
 <h2>6. AutoTrade 接入</h2>
 

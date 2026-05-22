@@ -1097,52 +1097,69 @@ def _run_heat_radar_cli(config, args) -> int:
         time.sleep(10)
 
 
-def _run_post_close_scan(config, markets: list) -> None:
-    """盘后触发：Scanner + GoldDigger + HeatRadar 各自后台运行，结果写入淘金列表。"""
-    import os
+def _run_post_close_market_scanner(config, markets: list) -> None:
+    """Start post-close MarketScanner for the given market window."""
     from src.schemas.scanner import ScanConfig
-    from src.schemas.gold_digger import DigConfig
-    from src.schemas.news_heat_radar import HeatConfig
     from src.services.market_scanner import get_market_scanner
+
+    scan_cfg = ScanConfig(
+        markets=markets,
+        top_n=getattr(config, "scanner_top_n", 10),
+        min_market_cap_m=getattr(config, "scanner_min_market_cap_m", 500.0),
+        min_avg_volume=getattr(config, "scanner_min_avg_volume", 500_000),
+    )
+    scan_id = get_market_scanner().start_scan(scan_config=scan_cfg)
+    logger.info("[PostClose][Scanner] 已启动: scan_id=%s", scan_id)
+
+
+def _run_post_close_gold_digger(config, markets: list) -> None:
+    """Start post-close GoldDigger for the given market window."""
+    from src.schemas.gold_digger import DigConfig
     from src.services.gold_digger import get_gold_digger
+
+    dig_cfg = DigConfig(markets=markets, top_n=10)
+    run_id = get_gold_digger().start_dig(dig_cfg)
+    logger.info("[PostClose][GoldDigger] 已启动: run_id=%s", run_id)
+
+
+def _run_post_close_heat_radar(config, markets: list) -> None:
+    """Start post-close NewsHeatRadar for the given market window."""
+    from src.schemas.news_heat_radar import HeatConfig
     from src.services.news_heat_radar import get_news_heat_radar
 
+    if not getattr(config, "heat_radar_enabled", True):
+        logger.info("[PostClose][HeatRadar] 已禁用，跳过")
+        return
+
+    heat_cfg = HeatConfig(
+        markets=markets,
+        top_n=getattr(config, "heat_radar_top_n", 10),
+        ttl_days=getattr(config, "heat_radar_ttl_days", 5),
+        model=getattr(config, "heat_radar_model", "") or "",
+    )
+    run_id = get_news_heat_radar().start_heat_scan(heat_cfg)
+    logger.info("[PostClose][HeatRadar] 已启动: run_id=%s", run_id)
+
+
+def _run_post_close_scan(config, markets: list) -> None:
+    """盘后触发：按任务源分别启动 Scanner / GoldDigger / HeatRadar。"""
     markets_str = ",".join(markets)
-    logger.info("[PostClose] 盘后扫描启动，市场=%s", markets_str)
+    logger.info("[PostClose] 盘后淘金任务启动，市场=%s", markets_str)
 
     try:
-        scan_cfg = ScanConfig(
-            markets=markets,
-            top_n=getattr(config, "scanner_top_n", 10),
-            min_market_cap_m=getattr(config, "scanner_min_market_cap_m", 500.0),
-            min_avg_volume=getattr(config, "scanner_min_avg_volume", 500_000),
-        )
-        scan_id = get_market_scanner().start_scan(scan_config=scan_cfg)
-        logger.info("[PostClose] Scanner 已启动: scan_id=%s", scan_id)
+        _run_post_close_market_scanner(config, markets)
     except Exception as exc:
-        logger.warning("[PostClose] Scanner 启动失败: %s", exc)
+        logger.warning("[PostClose][Scanner] 启动失败: %s", exc)
 
     try:
-        dig_cfg = DigConfig(markets=markets, top_n=10)
-        run_id = get_gold_digger().start_dig(dig_cfg)
-        logger.info("[PostClose] GoldDigger 已启动: run_id=%s", run_id)
+        _run_post_close_gold_digger(config, markets)
     except Exception as exc:
-        logger.warning("[PostClose] GoldDigger 启动失败: %s", exc)
+        logger.warning("[PostClose][GoldDigger] 启动失败: %s", exc)
 
     try:
-        if not getattr(config, "heat_radar_enabled", True):
-            logger.info("[PostClose] HeatRadar 已禁用，跳过")
-            return
-        heat_cfg = HeatConfig(
-            markets=markets,
-            top_n=getattr(config, "heat_radar_top_n", 10),
-            ttl_days=getattr(config, "heat_radar_ttl_days", 5),
-            model=getattr(config, "heat_radar_model", "") or "",
-        )
-        run_id = get_news_heat_radar().start_heat_scan(heat_cfg)
-        logger.info("[PostClose] HeatRadar 已启动: run_id=%s", run_id)
+        _run_post_close_heat_radar(config, markets)
     except Exception as exc:
-        logger.warning("[PostClose] HeatRadar 启动失败: %s", exc)
+        logger.warning("[PostClose][HeatRadar] 启动失败: %s", exc)
 
 
 def main() -> int:
