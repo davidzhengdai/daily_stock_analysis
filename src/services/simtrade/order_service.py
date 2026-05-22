@@ -128,6 +128,8 @@ class OrderService:
         reason: Optional[str] = None,
         stop_loss_pct: Optional[float] = None,
         take_profit_pct: Optional[float] = None,
+        stop_loss_price: Optional[float] = None,
+        take_profit_price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """
         提交一笔模拟委托。
@@ -237,6 +239,8 @@ class OrderService:
                 acct,
                 stop_loss_pct=stop_loss_pct,
                 take_profit_pct=take_profit_pct,
+                stop_loss_price=stop_loss_price,
+                take_profit_price=take_profit_price,
             )
 
         return order
@@ -253,6 +257,8 @@ class OrderService:
         acct: Dict[str, Any],
         stop_loss_pct: Optional[float] = None,
         take_profit_pct: Optional[float] = None,
+        stop_loss_price: Optional[float] = None,
+        take_profit_price: Optional[float] = None,
     ) -> Dict[str, Any]:
         """完成一笔成交：更新委托状态、调整现金、更新持仓。"""
         # 更新委托
@@ -283,6 +289,8 @@ class OrderService:
             fill_qty,
             stop_loss_pct=stop_loss_pct,
             take_profit_pct=take_profit_pct,
+            stop_loss_price=stop_loss_price,
+            take_profit_price=take_profit_price,
         )
         return order
 
@@ -294,6 +302,8 @@ class OrderService:
         fill_qty: int,
         stop_loss_pct: Optional[float] = None,
         take_profit_pct: Optional[float] = None,
+        stop_loss_price: Optional[float] = None,
+        take_profit_price: Optional[float] = None,
     ) -> None:
         code = order['code']
         side = order['side']
@@ -312,8 +322,14 @@ class OrderService:
             new_qty = old_qty + fill_qty
             new_total_cost = old_total_cost + fill_price * fill_qty
             new_avg_cost = new_total_cost / new_qty if new_qty > 0 else 0.0
-            stop_loss_price = round(new_avg_cost * (1 - stop_loss_pct / 100), 3)
-            take_profit_price = round(new_avg_cost * (1 + take_profit_pct / 100), 3)
+            default_stop_loss_price = round(new_avg_cost * (1 - stop_loss_pct / 100), 3)
+            default_take_profit_price = round(new_avg_cost * (1 + take_profit_pct / 100), 3)
+            resolved_stop_loss_price = default_stop_loss_price
+            resolved_take_profit_price = default_take_profit_price
+            if stop_loss_price is not None and 0 < stop_loss_price < new_avg_cost:
+                resolved_stop_loss_price = round(float(stop_loss_price), 3)
+            if take_profit_price is not None and take_profit_price > new_avg_cost:
+                resolved_take_profit_price = round(float(take_profit_price), 3)
             self.repo.upsert_position(
                 account_id, code,
                 name=name, market=market, currency=currency,
@@ -323,8 +339,8 @@ class OrderService:
                 unrealized_pnl=round((fill_price - new_avg_cost) * new_qty, 2),
                 unrealized_pnl_pct=round((fill_price / new_avg_cost - 1) * 100, 2) if new_avg_cost > 0 else 0.0,
                 realized_pnl=pos['realized_pnl'] if pos else 0.0,
-                stop_loss_price=stop_loss_price,
-                take_profit_price=take_profit_price,
+                stop_loss_price=resolved_stop_loss_price,
+                take_profit_price=resolved_take_profit_price,
             )
         elif side == 'sell':
             if pos is None:

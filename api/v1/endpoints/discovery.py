@@ -49,6 +49,7 @@ def list_discovery(
     source: Optional[str] = Query(None, description="来源过滤: scanner | gold_digger | heat_radar"),
     market: Optional[str] = Query(None, description="市场过滤: CN | US"),
     limit: int = Query(50, ge=1, le=200),
+    refresh: bool = Query(False, description="返回前刷新实时价格"),
 ) -> JSONResponse:
     try:
         from src.services.discovery_service import DiscoveryService
@@ -58,6 +59,11 @@ def list_discovery(
         if market:
             items = [i for i in items if i.get("market", "").upper() == market.upper()]
         items = items[:limit]
+        if refresh and items:
+            from src.services.realtime_quote_service import RealtimeQuoteService
+            quotes = RealtimeQuoteService().get_quotes(item.get("ticker", "") for item in items)
+            for item in items:
+                item["quote"] = quotes.get((item.get("ticker") or "").upper())
         return JSONResponse({"items": items, "count": len(items)})
     except Exception as exc:
         logger.exception("列出淘金列表失败: %s", exc)

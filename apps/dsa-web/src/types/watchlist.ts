@@ -1,9 +1,28 @@
+export interface RealtimeQuote {
+  code?: string;
+  name?: string;
+  source?: string;
+  price?: number;
+  changePct?: number;
+  changeAmount?: number;
+  volume?: number;
+  amount?: number;
+  volumeRatio?: number;
+  turnoverRate?: number;
+  openPrice?: number;
+  high?: number;
+  low?: number;
+  preClose?: number;
+  fetchedAt?: string;
+}
+
 export interface WatchlistItem {
   code: string;
   name: string;
   addedAt: string | null;
   notes: string;
   lastAnalyzedAt: string | null;
+  quote?: RealtimeQuote | null;
 }
 
 export interface WatchlistListResponse {

@@ -1,4 +1,9 @@
+from datetime import date, timedelta
+
+import pandas as pd
+
 from src.services.simtrade.signal_service import SignalService
+from src.storage import DatabaseManager
 
 
 def test_parse_llm_response_handles_empty_response():
@@ -25,3 +30,80 @@ def test_parse_risk_flags_accepts_string_and_list():
         "price_mismatch",
         "max_position",
     ]
+
+
+def test_get_stock_data_refreshes_stale_daily_cache(monkeypatch):
+    DatabaseManager.reset_instance()
+    db = DatabaseManager(db_url="sqlite:///:memory:")
+    try:
+        code = "V"
+        stale_day = date.today() - timedelta(days=7)
+        fresh_day = date.today()
+        db.save_daily_data(
+            pd.DataFrame([
+                {
+                    "date": stale_day,
+                    "open": 100.0,
+                    "high": 101.0,
+                    "low": 99.0,
+                    "close": 100.0,
+                    "volume": 1000.0,
+                    "amount": 100000.0,
+                    "pct_chg": 0.0,
+                    "ma5": 100.0,
+                    "ma10": 100.0,
+                    "ma20": 100.0,
+                    "volume_ratio": 1.0,
+                }
+            ]),
+            code,
+            "test-stale",
+        )
+
+        class FakeFetcherManager:
+            def get_daily_data(self, stock_code, days=120):
+                assert stock_code == code
+                assert days == 120
+                return pd.DataFrame([
+                    {
+                        "date": stale_day,
+                        "open": 100.0,
+                        "high": 101.0,
+                        "low": 99.0,
+                        "close": 100.0,
+                        "volume": 1000.0,
+                        "amount": 100000.0,
+                        "pct_chg": 0.0,
+                        "ma5": 100.0,
+                        "ma10": 100.0,
+                        "ma20": 100.0,
+                        "volume_ratio": 1.0,
+                    },
+                    {
+                        "date": fresh_day,
+                        "open": 105.0,
+                        "high": 108.0,
+                        "low": 104.0,
+                        "close": 107.0,
+                        "volume": 1200.0,
+                        "amount": 128400.0,
+                        "pct_chg": 7.0,
+                        "ma5": 104.0,
+                        "ma10": 102.0,
+                        "ma20": 101.0,
+                        "volume_ratio": 1.2,
+                    },
+                ]), "FakeFetcher"
+
+        import data_provider.base as base_module
+
+        monkeypatch.setattr(base_module, "DataFetcherManager", FakeFetcherManager)
+
+        data = SignalService()._get_stock_data(code)
+
+        assert data is not None
+        assert data["date"] == fresh_day
+        assert data["close"] == 107.0
+        assert data["data_source"] == "simtrade:FakeFetcher"
+    finally:
+        DatabaseManager.reset_instance()

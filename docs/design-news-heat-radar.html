@@ -205,6 +205,7 @@ watchlist += [item for item in _discovery if item['code'] not in watchlist_codes
   <tr><td>止盈百分比</td><td>15.0%</td><td>DISCOVERY_AUTO_TRADE_TAKE_PROFIT_PCT</td></tr>
 </table>
 <p>仓位计算：<code>qty = floor(cash × pos_pct% / entry_price)</code>，对齐到手数（CN=100股，US=1股）。</p>
+<p>若 <code>DISCOVERY_DYNAMIC_EXIT_LEVELS_ENABLED=true</code>，AutoTrade 会优先使用 <code>SignalService</code> 结合技术位与 LLM 分析输出的绝对止损/止盈价；系统校验止损价必须低于入场价、止盈价必须高于入场价，否则回退到固定百分比。</p>
 
 <h3>6.3 SignalService trade_context 参数</h3>
 <p><code>generate_signal(code, market, name, trade_context="discovery_short_term")</code></p>
@@ -242,6 +243,7 @@ watchlist += [item for item in _discovery if item['code'] not in watchlist_codes
   <tr><td>POST_CLOSE_SCAN_ENABLED</td><td>true</td><td>盘后自动触发开关</td></tr>
   <tr><td>POST_CLOSE_SCAN_MARKETS</td><td>us,cn</td><td>触发市场范围</td></tr>
   <tr><td>DISCOVERY_AUTO_TRADE_ENABLED</td><td>true</td><td>淘金列表自动买卖开关</td></tr>
+  <tr><td>DISCOVERY_DYNAMIC_EXIT_LEVELS_ENABLED</td><td>false</td><td>是否启用 AI/技术分析动态止损止盈</td></tr>
   <tr><td>DISCOVERY_AUTO_TRADE_POSITION_PCT</td><td>10.0</td><td>仓位占可用资金%</td></tr>
   <tr><td>DISCOVERY_AUTO_TRADE_STOP_LOSS_PCT</td><td>5.0</td><td>止损%（距入场价）</td></tr>
   <tr><td>DISCOVERY_AUTO_TRADE_TAKE_PROFIT_PCT</td><td>15.0</td><td>止盈%（距入场价）</td></tr>

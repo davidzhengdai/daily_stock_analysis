@@ -948,6 +948,15 @@ while True:
   避免美股开盘时反复请求 A 股实时权限，或 A 股开盘时反复请求闭市美股行情。
 </div>
 
+<div class="callout info">
+  <strong>技术指标刷新策略</strong>
+  自动交易生成 AI 信号前必须读取最新可用日线技术指标。若本地 <code>stock_daily</code>
+  缓存缺失或最新交易日距离当前日期超过 3 天，系统会先同步调用统一
+  <code>DataFetcherManager.get_daily_data()</code> 刷新最近 <code>SIMTRADE_DAILY_REFRESH_DAYS</code>
+  个交易日，再基于新的 MA5 / MA10 / MA20、量比和 5 日涨跌生成技术预评分与 AI Prompt。
+  刷新后仍无有效日线时才跳过该股票信号。
+</div>
+
 <h3>6.2 每日快照计算</h3>
 <pre><code>def take_daily_snapshot():
     today = date.today().isoformat()
@@ -1155,10 +1164,12 @@ while True:
 <table>
   <thead><tr><th>数据</th><th>刷新方式</th><th>频率</th></tr></thead>
   <tbody>
-    <tr><td>账户权益、持仓浮盈</td><td>轮询 GET /account + GET /positions</td><td>30 秒</td></tr>
-    <tr><td>AI 信号动态</td><td>轮询 GET /signals</td><td>60 秒</td></tr>
-    <tr><td>订单状态</td><td>操作后即时刷新 + 30s 轮询</td><td>30 秒</td></tr>
-    <tr><td>权益曲线</td><td>页面加载时一次性拉取</td><td>进入 Overview Tab 时</td></tr>
+    <tr><td>开市持仓实时价、浮盈浮亏</td><td>GET /positions?refresh=true</td><td>5 秒</td></tr>
+    <tr><td>自选股 / 淘金列表实时价</td><td>页面可见或聚焦时刷新，低频轮询兜底</td><td>最小间隔 5 秒，兜底 60 秒</td></tr>
+    <tr><td>账户权益、订单、AI 信号、自动交易状态</td><td>轮询 GET /account /orders /signals /auto-trade/status</td><td>60 秒，操作后即时刷新</td></tr>
+    <tr><td>扫描 / 沙里淘金任务进度</td><td>后台任务状态轮询</td><td>5 秒</td></tr>
+    <tr><td>日线技术指标</td><td>信号生成前检查本地缓存，缺失或超过 3 天则同步刷新</td><td>按交易决策触发，默认拉取最近 120 个交易日</td></tr>
+    <tr><td>权益曲线 / 快照历史</td><td>分钟级仪表盘刷新；快照每日幂等写入</td><td>60 秒读取，日级落库</td></tr>
   </tbody>
 </table>
 
@@ -1186,7 +1197,7 @@ while True:
       <td>3</td>
       <td><strong>动态止损/止盈</strong> <span class="tag tag-ai">AI</span></td>
       <td><code>signal_service → SimulatedPosition</code></td>
-      <td>LLM 根据 MA 支撑/压力位建议绝对价格，写入持仓的 <code>stop_loss_price / take_profit_price</code></td>
+      <td>LLM 根据 MA 支撑/压力位建议绝对价格；淘金列表自动交易在 <code>DISCOVERY_DYNAMIC_EXIT_LEVELS_ENABLED=true</code> 时优先写入持仓的 <code>stop_loss_price / take_profit_price</code>，否则使用固定百分比</td>
     </tr>
     <tr>
       <td>4</td>
@@ -1242,6 +1253,11 @@ while True:
       <td>自动交易调度间隔（分钟），服务启动时读取，修改需重启</td>
     </tr>
     <tr>
+      <td><code>SIMTRADE_DAILY_REFRESH_DAYS</code> <span class="tag tag-cfg">cfg</span></td>
+      <td><code>120</code></td>
+      <td>自动交易信号生成前刷新日线技术指标时拉取的最近交易日数量</td>
+    </tr>
+    <tr>
       <td><code>SIMTRADE_LLM_MODEL</code> <span class="tag tag-cfg">cfg</span></td>
       <td>继承 <code>LITELLM_MODEL</code></td>
       <td>信号生成专用 LLM，未设置则使用全局 <code>LITELLM_MODEL</code>；
@@ -1268,6 +1284,8 @@ SIMTRADE_USD_CNY_RATE=7.25
 SIMTRADE_AUTO_TRADE_INTERVAL_MINUTES=5
 # LLM model for signal generation; falls back to LITELLM_MODEL if unset
 # SIMTRADE_LLM_MODEL=
+# Enable AI/technical dynamic stop-loss and take-profit levels for discovery AutoTrade
+# DISCOVERY_DYNAMIC_EXIT_LEVELS_ENABLED=false
 # Cooldown after auto stop-loss / loss sell before buying the same stock again
 SIMTRADE_STOP_LOSS_COOLDOWN_MINUTES=240
 # Maximum age for auto pending orders before cancellation

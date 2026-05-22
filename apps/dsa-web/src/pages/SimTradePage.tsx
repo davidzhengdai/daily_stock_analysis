@@ -28,6 +28,7 @@ import type {
   TradeHistoryItem,
 } from '../types/simtrade';
 import { cn } from '../utils/cn';
+import { REFRESH_POLICY_MS } from '../utils/refreshPolicy';
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 
@@ -57,8 +58,6 @@ const STATUS_LABEL: Record<string, string> = {
   expired: '已过期',
   rejected: '已拒绝',
 };
-
-const LIVE_POSITION_REFRESH_MS = 5_000;
 
 const MODE_LABEL: Record<string, string> = {
   conservative: '保守',
@@ -1051,7 +1050,7 @@ const AutoTradeTab: React.FC<{
         pollRef.current = null;
         setRunning(false);
       });
-    }, 2000);
+    }, REFRESH_POLICY_MS.jobStatus);
   };
 
   const handleSaveSettings = async () => {
@@ -1548,13 +1547,12 @@ const SimTradePage: React.FC = () => {
 
   useEffect(() => {
     void fetchAll();
-    // Poll every 60s when auto-trading is active
-    const id = setInterval(() => void fetchAll(), 60_000);
+    const id = setInterval(() => void fetchAll(), REFRESH_POLICY_MS.tradingDashboard);
     return () => clearInterval(id);
   }, [fetchAll]);
 
   useEffect(() => {
-    const id = setInterval(() => void refreshLivePositions(), LIVE_POSITION_REFRESH_MS);
+    const id = setInterval(() => void refreshLivePositions(), REFRESH_POLICY_MS.livePosition);
     return () => clearInterval(id);
   }, [refreshLivePositions]);
 

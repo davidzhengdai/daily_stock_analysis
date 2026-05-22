@@ -13,6 +13,7 @@ import {
   PageHeader,
   SectionCard,
 } from '../components/common';
+import { REFRESH_POLICY_MS } from '../utils/refreshPolicy';
 
 const INPUT_CLS =
   'h-9 rounded-lg border border-border/60 bg-input px-3 text-sm text-foreground placeholder:text-secondary-text focus:outline-none focus:ring-1 focus:ring-cyan/50 disabled:opacity-50 transition-colors';
@@ -30,6 +31,31 @@ function formatDate(iso: string | null): string {
   }
 }
 
+function formatPrice(value?: number | null): string {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3).replace(/\.?0+$/, '') : '—';
+}
+
+function formatChange(value?: number | null): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value >= 0 ? '+' : ''}${value.toFixed(2)}%` : '—';
+}
+
+function formatTime(value?: string | null): string {
+  if (!value) return '—';
+  try {
+    return new Date(value).toLocaleTimeString();
+  } catch {
+    return value;
+  }
+}
+
+function latestQuoteFetchedAt(items: WatchlistItem[]): string | null {
+  const timestamps = items
+    .map((item) => item.quote?.fetchedAt)
+    .filter((value): value is string => Boolean(value));
+  if (timestamps.length === 0) return null;
+  return timestamps.sort().at(-1) ?? null;
+}
+
 const WatchlistPage: React.FC = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<WatchlistItem[]>([]);
@@ -43,6 +69,7 @@ const WatchlistPage: React.FC = () => {
   const [suggestionPanelStyle, setSuggestionPanelStyle] = useState<React.CSSProperties | null>(null);
   const [selectedCodes, setSelectedCodes] = useState<Set<string>>(new Set());
   const [feedback, setFeedback] = useState<{ variant: 'success' | 'danger'; message: string } | null>(null);
+  const [lastPriceRefreshAt, setLastPriceRefreshAt] = useState<string | null>(null);
   const feedbackTimer = useRef<number | null>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
 
@@ -57,22 +84,45 @@ const WatchlistPage: React.FC = () => {
     }, 4000);
   }, []);
 
-  const loadItems = useCallback(async () => {
-    setIsLoading(true);
+  const loadItems = useCallback(async (silent = false, refreshQuotes = false) => {
+    if (!silent) setIsLoading(true);
     try {
-      const res = await watchlistApi.listAll();
+      const res = await watchlistApi.listAll({ refresh: refreshQuotes });
       setItems(res.items);
+      if (refreshQuotes) {
+        setLastPriceRefreshAt(latestQuoteFetchedAt(res.items) ?? new Date().toISOString());
+      }
     } catch {
-      showFeedback('danger', '加载自选股列表失败');
+      if (!silent) showFeedback('danger', '加载自选股列表失败');
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
   }, [showFeedback]);
 
   useEffect(() => {
     document.title = '自选股 - DSA';
-    void loadItems();
+    let lastRefresh = Date.now();
+    void (async () => {
+      await loadItems();
+      void loadItems(true, true);
+    })();
+    const refreshIfVisible = () => {
+      if (document.hidden) return;
+      const now = Date.now();
+      if (now - lastRefresh < REFRESH_POLICY_MS.realtimeQuoteMinGap) return;
+      lastRefresh = now;
+      void loadItems(true, true);
+    };
+    const handleVisibilityChange = () => {
+      if (!document.hidden) refreshIfVisible();
+    };
+    const timer = window.setInterval(refreshIfVisible, REFRESH_POLICY_MS.realtimeQuoteFallback);
+    window.addEventListener('focus', refreshIfVisible);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshIfVisible);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (feedbackTimer.current !== null) {
         window.clearTimeout(feedbackTimer.current);
       }
@@ -283,10 +333,10 @@ const WatchlistPage: React.FC = () => {
                 size="md"
                 isLoading={isLoading}
                 loadingText="刷新中"
-                onClick={() => void loadItems()}
+                onClick={() => void loadItems(false, true)}
               >
                 <RefreshCw className="h-4 w-4" aria-hidden="true" />
-                刷新
+                刷新价格
               </Button>
             </>
           }
@@ -416,7 +466,7 @@ const WatchlistPage: React.FC = () => {
         {/* 自选股列表 */}
         <SectionCard
           title="已关注股票"
-          subtitle={`共 ${items.length} 只`}
+          subtitle={`共 ${items.length} 只${lastPriceRefreshAt ? ` · 行情数据 ${formatTime(lastPriceRefreshAt)} 更新` : ''}`}
         >
           {isLoading && items.length === 0 ? (
             <div className="flex items-center justify-center py-8 text-secondary-text text-sm">
@@ -455,6 +505,26 @@ const WatchlistPage: React.FC = () => {
                   {/* 名称 */}
                   <span className="text-sm text-foreground flex-1 min-w-0 truncate">
                     {item.name || <span className="text-secondary-text">—</span>}
+                  </span>
+
+                  {/* 实时价格 */}
+                  <div className="hidden lg:flex w-32 flex-shrink-0 flex-col items-end">
+                    <span className="font-mono text-sm font-semibold text-foreground">
+                      {formatPrice(item.quote?.price)}
+                    </span>
+                    <span className={`text-xs ${
+                      (item.quote?.changePct ?? 0) > 0
+                        ? 'text-emerald-400'
+                        : (item.quote?.changePct ?? 0) < 0
+                          ? 'text-rose-400'
+                          : 'text-secondary-text'
+                    }`}>
+                      {formatChange(item.quote?.changePct)}
+                    </span>
+                  </div>
+
+                  <span className="hidden xl:block text-xs text-secondary-text flex-shrink-0 w-28 text-right">
+                    {item.quote?.source ? `${item.quote.source} · ${formatTime(item.quote.fetchedAt)}` : '—'}
                   </span>
 
                   {/* 添加时间 */}

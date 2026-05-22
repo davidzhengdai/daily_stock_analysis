@@ -4,6 +4,24 @@ export type DiscoveryStatus = 'active' | 'expired' | 'rejected' | string;
 
 export type DiscoveryEventAction = 'added' | 'expired' | 'rejected' | string;
 
+export interface RealtimeQuote {
+  code?: string;
+  name?: string;
+  source?: string;
+  price?: number;
+  changePct?: number;
+  changeAmount?: number;
+  volume?: number;
+  amount?: number;
+  volumeRatio?: number;
+  turnoverRate?: number;
+  openPrice?: number;
+  high?: number;
+  low?: number;
+  preClose?: number;
+  fetchedAt?: string;
+}
+
 export interface DiscoveryItem {
   id: number;
   ticker: string;
@@ -22,6 +40,7 @@ export interface DiscoveryItem {
   status: DiscoveryStatus;
   rejectedAt: string | null;
   allowAutoTrade: boolean;
+  quote?: RealtimeQuote | null;
 }
 
 export interface DiscoveryEvent {

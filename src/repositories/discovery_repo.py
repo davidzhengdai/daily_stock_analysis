@@ -91,7 +91,7 @@ class DiscoveryRepo:
                 allow_auto_trade=True,
             )
             session.add(item)
-            session.refresh(item)
+            session.flush()
             self._add_event(
                 session,
                 item=item,
@@ -107,8 +107,6 @@ class DiscoveryRepo:
                     "expires_at": expires_at.isoformat(),
                 },
             )
-            session.commit()
-            session.refresh(item)
             return item.to_dict()
 
         try:

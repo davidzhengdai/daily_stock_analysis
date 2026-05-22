@@ -562,6 +562,7 @@ class TestDiscoveryFieldsRegistered(unittest.TestCase):
             "HEAT_RADAR_ENABLED",
             "POST_CLOSE_SCAN_ENABLED",
             "DISCOVERY_AUTO_TRADE_ENABLED",
+            "DISCOVERY_DYNAMIC_EXIT_LEVELS_ENABLED",
         ):
             self.assertIn(key, field_keys)
             field = get_field_definition(key)

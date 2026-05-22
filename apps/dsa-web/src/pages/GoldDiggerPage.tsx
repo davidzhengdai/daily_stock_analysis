@@ -28,6 +28,7 @@ import { FavoriteStockButton } from '../components/watchlist/FavoriteStockButton
 import type { DigReport, GoldPick, DigMeta, InvestmentTheme } from '../types/goldDigger';
 import { getParsedApiError, createParsedApiError } from '../api/error';
 import type { ParsedApiError } from '../api/error';
+import { REFRESH_POLICY_MS } from '../utils/refreshPolicy';
 import { cn } from '../utils/cn';
 
 // ---------------------------------------------------------------------------
@@ -490,7 +491,7 @@ const GoldDiggerPage: React.FC = () => {
           removeStoredId(ACTIVE_GOLD_DIGGER_RUN_STORAGE_KEY);
         }
       }
-    }, 5000);
+    }, REFRESH_POLICY_MS.taskProgress);
   }, [loadResult, loadHistory]);
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);

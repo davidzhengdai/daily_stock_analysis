@@ -11,8 +11,10 @@ export const watchlistApi = {
   /**
    * 获取全部自选股列表。
    */
-  listAll: async (): Promise<WatchlistListResponse> => {
-    const response = await apiClient.get<Record<string, unknown>>('/api/v1/watchlist/');
+  listAll: async (options: { refresh?: boolean } = {}): Promise<WatchlistListResponse> => {
+    const response = await apiClient.get<Record<string, unknown>>('/api/v1/watchlist/', {
+      params: { refresh: options.refresh || undefined },
+    });
     return toCamelCase<WatchlistListResponse>(response.data);
   },
 

@@ -400,6 +400,8 @@ class SignalService:
                 'realtime_price': round(realtime_price, 4) if realtime_price else None,
                 'daily_price': round(daily_price, 4) if daily_price else None,
                 'daily_date': data_date.isoformat() if data_date else None,
+                'daily_data_source': stock_data.get('data_source'),
+                'daily_data_updated_at': stock_data.get('data_updated_at'),
                 'recent_loss_sell_order_id': recent_loss_order.get('id') if recent_loss_order else None,
             }, ensure_ascii=False),
             status='pending',
@@ -466,7 +468,76 @@ class SignalService:
         return round(max(0.0, min(1.0, score)), 3)
 
     def _get_stock_data(self, code: str) -> Optional[Dict[str, Any]]:
-        """获取最近一个交易日数据。"""
+        """获取最近一个交易日数据，缓存缺失或过期时先同步刷新。"""
+        stock_data = self._read_stock_data_from_cache(code)
+        if stock_data and not self._is_daily_data_stale(stock_data.get('date')):
+            return stock_data
+
+        if stock_data:
+            logger.warning(
+                "[SignalService] %s 日线数据过期，最新日期=%s，尝试刷新后再生成信号",
+                code,
+                stock_data.get('date'),
+            )
+        else:
+            logger.info("[SignalService] %s 本地日线数据缺失，尝试刷新后再生成信号", code)
+
+        if self._refresh_stock_data(code):
+            stock_data = self._read_stock_data_from_cache(code)
+
+        if not stock_data:
+            return None
+
+        if self._is_daily_data_stale(stock_data.get('date')):
+            logger.warning(
+                "[SignalService] %s 日线数据刷新后仍过期，最新日期=%s，跳过自动交易信号",
+                code,
+                stock_data.get('date'),
+            )
+            return None
+
+        return stock_data
+
+    @staticmethod
+    def _is_daily_data_stale(data_date: Any) -> bool:
+        return bool(data_date and (date.today() - data_date).days > 3)
+
+    def _refresh_stock_data(self, code: str) -> bool:
+        """Fetch recent daily bars and persist them for technical analysis."""
+        try:
+            from data_provider.base import DataFetcherManager
+            from src.storage import DatabaseManager
+
+            days = _parse_positive_int_env('SIMTRADE_DAILY_REFRESH_DAYS', 120)
+            df, source = DataFetcherManager().get_daily_data(code, days=days)
+            if df is None or df.empty:
+                logger.warning("[SignalService] %s 日线刷新未返回数据", code)
+                return False
+            DatabaseManager.get_instance().save_daily_data(
+                df,
+                code,
+                data_source=f"simtrade:{source}",
+            )
+            latest_date = None
+            if 'date' in df.columns:
+                try:
+                    latest_date = df['date'].max()
+                except Exception:
+                    latest_date = None
+            logger.info(
+                "[SignalService] %s 日线刷新完成，source=%s, rows=%d, latest=%s",
+                code,
+                source,
+                len(df),
+                latest_date,
+            )
+            return True
+        except Exception as exc:
+            logger.warning("[SignalService] %s 日线刷新失败: %s", code, exc)
+            return False
+
+    def _read_stock_data_from_cache(self, code: str) -> Optional[Dict[str, Any]]:
+        """Read recent daily bars from local cache."""
         try:
             from src.storage import DatabaseManager, StockDaily
             from sqlalchemy import select, desc
@@ -481,13 +552,6 @@ class SignalService:
                 if not rows:
                     return None
                 latest = rows[0]
-                if latest.date and (date.today() - latest.date).days > 3:
-                    logger.warning(
-                        "[SignalService] %s 日线数据过期，最新日期=%s，跳过自动交易信号",
-                        code,
-                        latest.date,
-                    )
-                    return None
                 change_5d = 0.0
                 if len(rows) >= 5 and rows[4].close and latest.close:
                     change_5d = (latest.close / rows[4].close - 1) * 100
@@ -499,6 +563,8 @@ class SignalService:
                     'ma20': latest.ma20,
                     'volume_ratio': latest.volume_ratio,
                     'change_5d': round(change_5d, 2),
+                    'data_source': latest.data_source,
+                    'data_updated_at': latest.updated_at.isoformat() if latest.updated_at else None,
                 }
         except Exception as exc:
             logger.debug("[SignalService] 数据获取失败 %s: %s", code, exc)

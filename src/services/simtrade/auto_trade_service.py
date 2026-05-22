@@ -28,6 +28,13 @@ logger = logging.getLogger(__name__)
 _DEFAULT_INTERVAL_MINUTES = 5
 
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() not in ("0", "false", "no", "off")
+
+
 # -------------------------------------------------------
 # Market hours helpers
 # -------------------------------------------------------
@@ -388,6 +395,9 @@ class AutoTradeService:
             trade_context = item.get('_trade_context', 'watchlist')
             discovery_stop_loss_pct = None
             discovery_take_profit_pct = None
+            dynamic_exit_levels = _env_bool("DISCOVERY_DYNAMIC_EXIT_LEVELS_ENABLED", False)
+            dynamic_stop_loss_price = None
+            dynamic_take_profit_price = None
             try:
                 signal = signal_svc.generate_signal(code, market, name, trade_context=trade_context)
                 result['signals_generated'] += 1
@@ -400,7 +410,7 @@ class AutoTradeService:
                         _tp_pct = float(os.getenv('DISCOVERY_AUTO_TRADE_TAKE_PROFIT_PCT', '15.0'))
                         discovery_stop_loss_pct = _sl_pct
                         discovery_take_profit_pct = _tp_pct
-                        _entry = signal.get('suggested_price') or 0.0
+                        _entry = signal.get('suggested_price') or signal.get('price_at_signal') or 0.0
                         if _entry > 0 and _pos_pct > 0:
                             _acct_fresh = self.repo.get_or_create_account()
                             _cash = (
@@ -411,9 +421,20 @@ class AutoTradeService:
                             _raw = int(_cash * _pos_pct / 100 / _entry)
                             _qty = max(lot, (_raw // lot) * lot)
                             signal['suggested_qty'] = _qty
-                        if _sl_pct > 0 and _entry > 0:
+                        if dynamic_exit_levels:
+                            try:
+                                _ai_sl = float(signal.get('stop_loss') or 0)
+                                _ai_tp = float(signal.get('take_profit') or 0)
+                            except (TypeError, ValueError):
+                                _ai_sl = 0.0
+                                _ai_tp = 0.0
+                            if _entry > 0 and 0 < _ai_sl < _entry:
+                                dynamic_stop_loss_price = _ai_sl
+                            if _entry > 0 and _ai_tp > _entry:
+                                dynamic_take_profit_price = _ai_tp
+                        if _sl_pct > 0 and _entry > 0 and dynamic_stop_loss_price is None:
                             signal['stop_loss'] = round(_entry * (1 - _sl_pct / 100), 4)
-                        if _tp_pct > 0 and _entry > 0:
+                        if _tp_pct > 0 and _entry > 0 and dynamic_take_profit_price is None:
                             signal['take_profit'] = round(_entry * (1 + _tp_pct / 100), 4)
                         logger.debug(
                             "[AutoTrade] 淘金列表买入参数覆盖 %s: qty=%s sl=%.4f tp=%.4f",
@@ -439,6 +460,8 @@ class AutoTradeService:
                             ai_signal_id=signal['id'],
                             stop_loss_pct=discovery_stop_loss_pct,
                             take_profit_pct=discovery_take_profit_pct,
+                            stop_loss_price=dynamic_stop_loss_price,
+                            take_profit_price=dynamic_take_profit_price,
                         )
                         # 标记信号已执行
                         self.repo.update_signal(signal['id'], status='executed', order_id=order['id'])

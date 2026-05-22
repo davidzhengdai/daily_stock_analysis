@@ -28,6 +28,7 @@ import { FavoriteStockButton } from '../components/watchlist/FavoriteStockButton
 import type { ScanReport, StockPick, ScanMeta, ScanStatusResponse } from '../types/scanner';
 import { getParsedApiError, createParsedApiError } from '../api/error';
 import type { ParsedApiError } from '../api/error';
+import { REFRESH_POLICY_MS } from '../utils/refreshPolicy';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -721,7 +722,7 @@ const ScannerPage: React.FC = () => {
     };
 
     void poll();
-    pollRef.current = setInterval(() => { void poll(); }, 5000);
+    pollRef.current = setInterval(() => { void poll(); }, REFRESH_POLICY_MS.taskProgress);
     return () => stopPoll();
   }, [runningScanId, stopPoll, loadLatest, loadHistory]);
 

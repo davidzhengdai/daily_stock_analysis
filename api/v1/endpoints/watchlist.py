@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -54,6 +54,7 @@ class WatchlistItem(BaseModel):
     added_at: Optional[str]
     notes: str
     last_analyzed_at: Optional[str]
+    quote: Optional[Dict[str, Any]] = None
 
 
 class WatchlistListResponse(BaseModel):
@@ -108,10 +109,17 @@ def _internal_error(msg: str, exc: Exception) -> HTTPException:
     response_model=WatchlistListResponse,
     summary="获取自选股列表",
 )
-def list_watchlist() -> WatchlistListResponse:
+def list_watchlist(
+    refresh: bool = Query(False, description="返回前刷新实时价格"),
+) -> WatchlistListResponse:
     service = WatchlistService()
     try:
         items = service.list_all()
+        if refresh and items:
+            from src.services.realtime_quote_service import RealtimeQuoteService
+            quotes = RealtimeQuoteService().get_quotes(item.get("code", "") for item in items)
+            for item in items:
+                item["quote"] = quotes.get((item.get("code") or "").upper())
         return WatchlistListResponse(
             items=[WatchlistItem(**item) for item in items],
             total=len(items),

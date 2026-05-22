@@ -10,6 +10,7 @@ export interface DiscoveryListParams {
   source?: string;
   market?: string;
   limit?: number;
+  refresh?: boolean;
 }
 
 export interface DiscoveryHistoryParams {
@@ -25,6 +26,7 @@ export const discoveryApi = {
         source: params.source || undefined,
         market: params.market || undefined,
         limit: params.limit ?? 100,
+        refresh: params.refresh || undefined,
       },
     });
     return toCamelCase<DiscoveryListResponse>(res.data);

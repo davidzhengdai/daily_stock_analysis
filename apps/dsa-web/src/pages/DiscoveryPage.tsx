@@ -21,6 +21,7 @@ import { discoveryApi } from '../api/discovery';
 import { createParsedApiError, getParsedApiError } from '../api/error';
 import type { ParsedApiError } from '../api/error';
 import type { DiscoveryEvent, DiscoveryItem } from '../types/discovery';
+import { REFRESH_POLICY_MS } from '../utils/refreshPolicy';
 
 const sourceLabels: Record<string, string> = {
   scanner: '扫股',
@@ -41,6 +42,31 @@ function formatDateTime(value?: string | null): string {
   } catch {
     return value;
   }
+}
+
+function formatPrice(value?: number | null): string {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(3).replace(/\.?0+$/, '') : '--';
+}
+
+function formatChange(value?: number | null): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value >= 0 ? '+' : ''}${value.toFixed(2)}%` : '--';
+}
+
+function formatTime(value?: string | null): string {
+  if (!value) return '--';
+  try {
+    return new Date(value).toLocaleTimeString();
+  } catch {
+    return value;
+  }
+}
+
+function latestQuoteFetchedAt(items: DiscoveryItem[]): string | null {
+  const timestamps = items
+    .map((item) => item.quote?.fetchedAt)
+    .filter((value): value is string => Boolean(value));
+  if (timestamps.length === 0) return null;
+  return timestamps.sort().at(-1) ?? null;
 }
 
 function sourceLabel(source?: string): string {
@@ -91,6 +117,22 @@ const DiscoveryCard: React.FC<{
 
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div>
+          <p className="text-xs text-muted-text">实时价</p>
+          <p className="mt-1 font-mono text-foreground">{formatPrice(item.quote?.price)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-text">涨跌幅</p>
+          <p className={`mt-1 font-mono ${
+            (item.quote?.changePct ?? 0) > 0
+              ? 'text-emerald-400'
+              : (item.quote?.changePct ?? 0) < 0
+                ? 'text-rose-400'
+                : 'text-foreground'
+          }`}>
+            {formatChange(item.quote?.changePct)}
+          </p>
+        </div>
+        <div>
           <p className="text-xs text-muted-text">市场</p>
           <p className="mt-1 text-foreground">{item.market || '--'}</p>
         </div>
@@ -122,6 +164,9 @@ const DiscoveryCard: React.FC<{
 
       <div className="mt-auto flex items-center justify-between border-t border-border/50 pt-3 text-xs text-muted-text">
         <span>加入：{formatDateTime(item.addedAt)}</span>
+        <span className="hidden text-right sm:inline">
+          行情：{item.quote?.source ? `${item.quote.source} · ${formatTime(item.quote.fetchedAt)}` : '--'}
+        </span>
         <Button
           type="button"
           variant="settings-secondary"
@@ -162,31 +207,59 @@ const DiscoveryPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [error, setError] = useState<ParsedApiError | null>(null);
+  const [lastPriceRefreshAt, setLastPriceRefreshAt] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (silent = false, refreshQuotes = false) => {
+    if (!silent) setLoading(true);
+    if (!silent) setError(null);
     try {
       const [listResp, historyResp] = await Promise.all([
-        discoveryApi.list({ source, market, limit: 120 }),
+        discoveryApi.list({ source, market, limit: 120, refresh: refreshQuotes }),
         discoveryApi.history({ limit: 160 }),
       ]);
       setItems(listResp.items);
       setEvents(historyResp.events);
+      if (refreshQuotes) {
+        setLastPriceRefreshAt(latestQuoteFetchedAt(listResp.items) ?? new Date().toISOString());
+      }
     } catch (err) {
       const parsed = getParsedApiError(err);
-      setError(parsed.message ? parsed : createParsedApiError({
-        title: '加载失败',
-        message: '加载淘金列表失败',
-        rawMessage: String(err),
-      }));
+      if (!silent) {
+        setError(parsed.message ? parsed : createParsedApiError({
+          title: '加载失败',
+          message: '加载淘金列表失败',
+          rawMessage: String(err),
+        }));
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [market, source]);
 
   useEffect(() => {
-    void load();
+    let lastRefresh = Date.now();
+    void (async () => {
+      await load();
+      void load(true, true);
+    })();
+    const refreshIfVisible = () => {
+      if (document.hidden) return;
+      const now = Date.now();
+      if (now - lastRefresh < REFRESH_POLICY_MS.realtimeQuoteMinGap) return;
+      lastRefresh = now;
+      void load(true, true);
+    };
+    const handleVisibilityChange = () => {
+      if (!document.hidden) refreshIfVisible();
+    };
+    const timer = window.setInterval(refreshIfVisible, REFRESH_POLICY_MS.realtimeQuoteFallback);
+    window.addEventListener('focus', refreshIfVisible);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refreshIfVisible);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [load]);
 
   const rejectItem = useCallback(async (item: DiscoveryItem) => {
@@ -216,9 +289,9 @@ const DiscoveryPage: React.FC = () => {
       <PageHeader
         eyebrow="Discovery"
         title="淘金列表"
-        description="查看 Scanner、沙里淘金和热点雷达加入的候选股票，并追踪加入、过期和移出的原因。"
+        description={`查看 Scanner、沙里淘金和热点雷达加入的候选股票，并追踪加入、过期和移出的原因。${lastPriceRefreshAt ? `行情数据 ${formatTime(lastPriceRefreshAt)} 更新` : ''}`}
         actions={
-          <Button type="button" variant="settings-primary" onClick={() => void load()} disabled={loading}>
+          <Button type="button" variant="settings-primary" onClick={() => void load(false, true)} disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             刷新
           </Button>
