@@ -5,6 +5,7 @@
 GET  /api/v1/discovery/           — 列出活跃条目（可按 source/market 过滤）
 POST /api/v1/discovery/{id}/reject — 标记拒绝
 GET  /api/v1/discovery/stats      — 按来源和状态统计
+GET  /api/v1/discovery/history    — 淘金列表变更历史
 GET  /api/v1/discovery/runs       — HeatRadar 历史运行列表
 POST /api/v1/discovery/heat-scan  — 触发一次热点雷达扫描（异步）
 GET  /api/v1/discovery/heat-scan/{run_id}/status — 查询扫描进度
@@ -75,6 +76,29 @@ def discovery_stats() -> JSONResponse:
         return JSONResponse({"stats": stats})
     except Exception as exc:
         logger.exception("获取淘金列表统计失败: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get(
+    "/history",
+    summary="淘金列表变更历史",
+    description="返回淘金列表加入、过期、拒绝等变更事件，包含原因和来源信息。",
+)
+def discovery_history(
+    ticker: Optional[str] = Query(None, description="按股票代码过滤"),
+    item_id: Optional[int] = Query(None, description="按淘金条目 ID 过滤"),
+    limit: int = Query(100, ge=1, le=500),
+) -> JSONResponse:
+    try:
+        from src.services.discovery_service import DiscoveryService
+        events = DiscoveryService().list_history(
+            ticker=ticker,
+            item_id=item_id,
+            limit=limit,
+        )
+        return JSONResponse({"events": events, "count": len(events)})
+    except Exception as exc:
+        logger.exception("获取淘金列表历史失败: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
 

@@ -216,6 +216,7 @@ watchlist += [item for item in _discovery if item['code'] not in watchlist_codes
 <table>
   <tr><th>Method</th><th>Path</th><th>说明</th></tr>
   <tr><td>GET</td><td>/</td><td>列出活跃条目（支持 source / market / limit 过滤）</td></tr>
+  <tr><td>GET</td><td>/history</td><td>列出淘金列表加入、过期、拒绝等变更事件及原因</td></tr>
   <tr><td>GET</td><td>/stats</td><td>按来源和状态统计数量</td></tr>
   <tr><td>POST</td><td>/{id}/reject</td><td>标记拒绝（AutoTrade 将不再处理）</td></tr>
   <tr><td>GET</td><td>/runs</td><td>热点雷达历史运行列表（HeatMeta）</td></tr>
@@ -226,6 +227,7 @@ watchlist += [item for item in _discovery if item['code'] not in watchlist_codes
 
 <h2>8. 配置项速查</h2>
 <p>以下配置可通过 <strong>Web 系统设置 → 淘金雷达</strong> 分组维护；也可直接写入 <code>.env</code>。</p>
+<p>当前淘金候选和变更历史可在 <strong>Web → 淘金列表</strong> 页面查看；历史事件来自 <code>discovery_events</code> 表，用于说明候选为何加入、为何过期或被移出。</p>
 <table>
   <tr><th>环境变量</th><th>默认值</th><th>说明</th></tr>
   <tr><td>HEAT_RADAR_ENABLED</td><td>true</td><td>热点雷达主开关</td></tr>

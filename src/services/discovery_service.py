@@ -198,3 +198,12 @@ class DiscoveryService:
 
     def stats(self) -> Dict[str, Any]:
         return self.repo.stats()
+
+    def list_history(
+        self,
+        *,
+        ticker: Optional[str] = None,
+        item_id: Optional[int] = None,
+        limit: int = 100,
+    ) -> List[dict]:
+        return self.repo.list_history(ticker=ticker, item_id=item_id, limit=limit)

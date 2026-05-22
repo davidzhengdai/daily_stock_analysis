@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { BarChart3, Bell, BriefcaseBusiness, Gem, Home, LogOut, MessageSquareQuote, Newspaper, ScanSearch, Settings2, Star, TrendingUp } from 'lucide-react';
+import { BarChart3, Bell, BriefcaseBusiness, Gem, Home, LogOut, MessageSquareQuote, Newspaper, Radar, ScanSearch, Settings2, Star, TrendingUp } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAgentChatStore } from '../../stores/agentChatStore';
@@ -31,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'sim-trade', label: '模拟交易', to: '/sim-trade', icon: TrendingUp },
   { key: 'scanner', label: '扫股', to: '/scanner', icon: ScanSearch },
   { key: 'gold-digger', label: '沙里淘金', to: '/gold-digger', icon: Gem },
+  { key: 'discovery', label: '淘金列表', to: '/discovery', icon: Radar },
   { key: 'sentinel', label: '情报中心', to: '/sentinel', icon: Newspaper },
   { key: 'backtest', label: '回测', to: '/backtest', icon: BarChart3 },
   { key: 'alerts', label: '告警', to: '/alerts', icon: Bell },

@@ -22,6 +22,7 @@ const AlertsPage = lazy(() => import('./pages/AlertsPage'));
 const WatchlistPage = lazy(() => import('./pages/WatchlistPage'));
 const ScannerPage = lazy(() => import('./pages/ScannerPage'));
 const GoldDiggerPage = lazy(() => import('./pages/GoldDiggerPage'));
+const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage'));
 const SentinelPage = lazy(() => import('./pages/SentinelPage'));
 const SimTradePage = lazy(() => import('./pages/SimTradePage'));
 
@@ -87,6 +88,7 @@ const AppContent: React.FC = () => {
         <Route path="/watchlist" element={<WatchlistPage />} />
         <Route path="/scanner" element={<ScannerPage />} />
         <Route path="/gold-digger" element={<GoldDiggerPage />} />
+        <Route path="/discovery" element={<DiscoveryPage />} />
         <Route path="/sentinel" element={<SentinelPage />} />
         <Route path="/sim-trade" element={<SimTradePage />} />
         <Route path="/settings" element={<SettingsPage />} />

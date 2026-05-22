@@ -9,9 +9,9 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import desc, func, select
 
-from src.storage import DatabaseManager, DiscoveryItem
+from src.storage import DatabaseManager, DiscoveryEvent, DiscoveryItem
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,10 @@ _MARKET_NORM: Dict[str, str] = {
 
 def _normalize_market(market: str) -> str:
     return _MARKET_NORM.get(market, market.upper())
+
+
+def _json_details(value: Dict[str, Any]) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str)
 
 
 class DiscoveryRepo:
@@ -87,6 +91,22 @@ class DiscoveryRepo:
                 allow_auto_trade=True,
             )
             session.add(item)
+            session.refresh(item)
+            self._add_event(
+                session,
+                item=item,
+                action="added",
+                reason=self._build_add_reason(item),
+                details={
+                    "score": score,
+                    "confidence": confidence,
+                    "sector": sector or "",
+                    "themes": json.loads(themes_json) if themes_json else [],
+                    "trade_horizon": trade_horizon,
+                    "ttl_days": ttl_days,
+                    "expires_at": expires_at.isoformat(),
+                },
+            )
             session.commit()
             session.refresh(item)
             return item.to_dict()
@@ -102,13 +122,26 @@ class DiscoveryRepo:
         now = datetime.utcnow()
 
         def _write(session):
-            result = session.execute(
-                update(DiscoveryItem)
-                .where(DiscoveryItem.status == "active", DiscoveryItem.expires_at < now)
-                .values(status="expired")
-            )
+            rows = session.execute(
+                select(DiscoveryItem).where(
+                    DiscoveryItem.status == "active",
+                    DiscoveryItem.expires_at < now,
+                )
+            ).scalars().all()
+            for item in rows:
+                item.status = "expired"
+                self._add_event(
+                    session,
+                    item=item,
+                    action="expired",
+                    reason=f"TTL 到期，{item.source} 来源的候选已超过有效期。",
+                    details={
+                        "expires_at": item.expires_at.isoformat() if item.expires_at else None,
+                        "source": item.source,
+                    },
+                )
             session.commit()
-            return result.rowcount
+            return len(rows)
 
         try:
             return self.db._run_write_transaction("discovery_expire", _write) or 0
@@ -126,6 +159,16 @@ class DiscoveryRepo:
                 return False
             item.status = "rejected"
             item.rejected_at = datetime.utcnow()
+            self._add_event(
+                session,
+                item=item,
+                action="rejected",
+                reason="用户手动拒绝该淘金候选，AutoTrade 将不再处理。",
+                details={
+                    "rejected_at": item.rejected_at.isoformat(),
+                    "previous_status": "active",
+                },
+            )
             session.commit()
             return True
 
@@ -197,3 +240,59 @@ class DiscoveryRepo:
             for source, status, cnt in rows:
                 result.setdefault(source, {})[status] = cnt
             return result
+
+    def list_history(
+        self,
+        *,
+        ticker: Optional[str] = None,
+        item_id: Optional[int] = None,
+        limit: int = 100,
+    ) -> List[dict]:
+        """返回淘金列表变更历史，按时间倒序。"""
+        limit = max(1, min(int(limit), 500))
+        with self.db.get_session() as session:
+            stmt = select(DiscoveryEvent)
+            if ticker:
+                stmt = stmt.where(DiscoveryEvent.ticker == ticker)
+            if item_id is not None:
+                stmt = stmt.where(DiscoveryEvent.item_id == item_id)
+            rows = session.execute(
+                stmt.order_by(desc(DiscoveryEvent.created_at)).limit(limit)
+            ).scalars().all()
+            return [r.to_dict() for r in rows]
+
+    @staticmethod
+    def _build_add_reason(item: DiscoveryItem) -> str:
+        source_label = {
+            "scanner": "Scanner 全市场扫描",
+            "gold_digger": "沙里淘金",
+            "heat_radar": "热点雷达",
+        }.get(item.source, item.source)
+        parts = [f"由{source_label}加入淘金列表"]
+        if item.sector:
+            parts.append(f"板块：{item.sector}")
+        if item.thesis:
+            parts.append(f"理由：{item.thesis}")
+        return "；".join(parts)
+
+    @staticmethod
+    def _add_event(
+        session,
+        *,
+        item: DiscoveryItem,
+        action: str,
+        reason: str,
+        details: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        session.add(DiscoveryEvent(
+            item_id=item.id,
+            ticker=item.ticker,
+            name=item.name,
+            market=item.market,
+            source=item.source,
+            source_run_id=item.source_run_id,
+            action=action,
+            reason=reason,
+            details=_json_details(details or {}),
+            created_at=datetime.utcnow(),
+        ))

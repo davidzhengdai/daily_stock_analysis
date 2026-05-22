@@ -835,6 +835,48 @@ class DiscoveryItem(Base):
         }
 
 
+class DiscoveryEvent(Base):
+    """淘金列表变更事件：记录加入、过期、拒绝等原因。"""
+
+    __tablename__ = 'discovery_events'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    item_id = Column(Integer, ForeignKey('discovery_list.id'), nullable=True, index=True)
+    ticker = Column(String(20), nullable=False, index=True)
+    name = Column(String(100), default="")
+    market = Column(String(8), nullable=False)
+    source = Column(String(20), nullable=False, index=True)
+    source_run_id = Column(String(64), default="")
+    action = Column(String(20), nullable=False, index=True)  # added|expired|rejected
+    reason = Column(Text, default="")
+    details = Column(Text, default="{}")
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    __table_args__ = (
+        Index('ix_discovery_event_ticker_time', 'ticker', 'created_at'),
+        Index('ix_discovery_event_action_time', 'action', 'created_at'),
+    )
+
+    def to_dict(self) -> Dict[str, Any]:
+        try:
+            details = json.loads(self.details) if self.details else {}
+        except Exception:
+            details = {}
+        return {
+            'id': self.id,
+            'item_id': self.item_id,
+            'ticker': self.ticker,
+            'name': self.name,
+            'market': self.market,
+            'source': self.source,
+            'source_run_id': self.source_run_id,
+            'action': self.action,
+            'reason': self.reason,
+            'details': details,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class SimulatedAccount(Base):
     """模拟交易账户。支持多货币资金管理与 AI 自动交易配置。"""
 
