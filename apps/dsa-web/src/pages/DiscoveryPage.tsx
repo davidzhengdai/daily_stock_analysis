@@ -69,6 +69,12 @@ function latestQuoteFetchedAt(items: DiscoveryItem[]): string | null {
   return timestamps.sort().at(-1) ?? null;
 }
 
+function quoteSourceLabel(item: DiscoveryItem): string {
+  if (!item.quote?.source) return '--';
+  const status = item.quote.isCached ? '缓存' : '实时';
+  return `${item.quote.source} · ${status} · ${formatTime(item.quote.fetchedAt)}`;
+}
+
 function sourceLabel(source?: string): string {
   return sourceLabels[source || ''] || source || '--';
 }
@@ -165,7 +171,7 @@ const DiscoveryCard: React.FC<{
       <div className="mt-auto flex items-center justify-between border-t border-border/50 pt-3 text-xs text-muted-text">
         <span>加入：{formatDateTime(item.addedAt)}</span>
         <span className="hidden text-right sm:inline">
-          行情：{item.quote?.source ? `${item.quote.source} · ${formatTime(item.quote.fetchedAt)}` : '--'}
+          行情：{quoteSourceLabel(item)}
         </span>
         <Button
           type="button"

@@ -20,6 +20,9 @@ export interface RealtimeQuote {
   low?: number;
   preClose?: number;
   fetchedAt?: string;
+  isCached?: boolean;
+  marketOpen?: boolean;
+  cacheUpdatedAt?: string;
 }
 
 export interface DiscoveryItem {

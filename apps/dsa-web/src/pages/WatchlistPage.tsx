@@ -56,6 +56,12 @@ function latestQuoteFetchedAt(items: WatchlistItem[]): string | null {
   return timestamps.sort().at(-1) ?? null;
 }
 
+function quoteSourceLabel(item: WatchlistItem): string {
+  if (!item.quote?.source) return '—';
+  const status = item.quote.isCached ? '缓存' : '实时';
+  return `${item.quote.source} · ${status} · ${formatTime(item.quote.fetchedAt)}`;
+}
+
 const WatchlistPage: React.FC = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<WatchlistItem[]>([]);
@@ -524,7 +530,7 @@ const WatchlistPage: React.FC = () => {
                   </div>
 
                   <span className="hidden xl:block text-xs text-secondary-text flex-shrink-0 w-28 text-right">
-                    {item.quote?.source ? `${item.quote.source} · ${formatTime(item.quote.fetchedAt)}` : '—'}
+                    {quoteSourceLabel(item)}
                   </span>
 
                   {/* 添加时间 */}

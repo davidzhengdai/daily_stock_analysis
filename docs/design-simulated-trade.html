@@ -1165,7 +1165,7 @@ while True:
   <thead><tr><th>数据</th><th>刷新方式</th><th>频率</th></tr></thead>
   <tbody>
     <tr><td>开市持仓实时价、浮盈浮亏</td><td>GET /positions?refresh=true</td><td>5 秒</td></tr>
-    <tr><td>自选股 / 淘金列表实时价</td><td>页面可见或聚焦时刷新，低频轮询兜底</td><td>最小间隔 5 秒，兜底 60 秒</td></tr>
+    <tr><td>自选股 / 淘金列表实时价</td><td>页面可见或聚焦时刷新开市市场；闭市市场读取最近报价缓存</td><td>最小间隔 5 秒，兜底 60 秒</td></tr>
     <tr><td>账户权益、订单、AI 信号、自动交易状态</td><td>轮询 GET /account /orders /signals /auto-trade/status</td><td>60 秒，操作后即时刷新</td></tr>
     <tr><td>扫描 / 沙里淘金任务进度</td><td>后台任务状态轮询</td><td>5 秒</td></tr>
     <tr><td>日线技术指标</td><td>信号生成前检查本地缓存，缺失或超过 3 天则同步刷新</td><td>按交易决策触发，默认拉取最近 120 个交易日</td></tr>

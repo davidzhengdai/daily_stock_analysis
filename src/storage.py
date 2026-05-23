@@ -139,6 +139,30 @@ class StockDaily(Base):
         }
 
 
+class RealtimeQuoteCache(Base):
+    """Last successful realtime quote for list display fallback."""
+
+    __tablename__ = 'realtime_quote_cache'
+
+    code = Column(String(20), primary_key=True)
+    quote_json = Column(Text, nullable=False)
+    fetched_at = Column(DateTime, nullable=False, index=True)
+    source = Column(String(50))
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self) -> Dict[str, Any]:
+        try:
+            payload = json.loads(self.quote_json or "{}")
+        except Exception:
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        payload.setdefault('code', self.code)
+        payload.setdefault('source', self.source)
+        payload.setdefault('fetched_at', self.fetched_at.isoformat() if self.fetched_at else None)
+        return payload
+
+
 class NewsIntel(Base):
     """
     新闻情报数据模型
