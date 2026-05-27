@@ -25,6 +25,7 @@ x-common: &common
     - ../logs:/app/logs
     - ../reports:/app/reports
     - ../strategies:/app/strategies:ro
+    - ../litellm_config.yaml:/app/litellm_config.yaml:ro
     # 如需覆盖前端静态资源，可挂载本地 static 目录
     # - ../static:/app/static:ro
 

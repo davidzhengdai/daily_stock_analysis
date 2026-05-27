@@ -234,10 +234,19 @@ def get_news(
     )
     items = _items_payload(payload)
     if items is not None:
+        if not items:
+            try:
+                _, store = _get_store_and_config()
+                rows = store.get_recent(hours=hours, priority_min=priority_min, limit=limit)
+                return [_row_to_news_item(r) for r in rows]
+            except Exception as exc:
+                logger.warning("sentinel /news fallback error: %s", exc)
         return [SentinelNewsItem(**item) for item in items if isinstance(item, dict)]
     try:
         _, store = _get_store_and_config()
         rows = store.get_recent_classified(hours=hours, priority_min=priority_min, limit=limit)
+        if not rows:
+            rows = store.get_recent(hours=hours, priority_min=priority_min, limit=limit)
         return [_row_to_news_item(r) for r in rows]
     except Exception as exc:
         logger.warning("sentinel /news error: %s", exc)

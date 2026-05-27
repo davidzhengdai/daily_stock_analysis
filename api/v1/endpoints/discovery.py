@@ -13,7 +13,7 @@ GET  /api/v1/discovery/heat-scan/{run_id}/result  — 获取扫描结果
 """
 
 import logging
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -34,6 +34,32 @@ class HeatScanRequest(BaseModel):
     theme_count: int = Field(default=8, ge=3, le=15)
     max_stocks_per_sector: int = Field(default=3, ge=1, le=5)
     model: str = Field(default="")
+
+
+def _dedupe_discovery_items(items: List[dict]) -> List[dict]:
+    """按股票和市场合并活跃候选，保留分数最高、更新时间更近的一条。"""
+    deduped: Dict[Tuple[str, str], dict] = {}
+    for item in items:
+        ticker = str(item.get("ticker") or "").strip().upper()
+        market = str(item.get("market") or "").strip().upper()
+        key = (ticker, market)
+        if not ticker:
+            continue
+        current = deduped.get(key)
+        if current is None:
+            deduped[key] = item
+            continue
+        item_score = float(item.get("score") or 0)
+        current_score = float(current.get("score") or 0)
+        if item_score > current_score:
+            deduped[key] = item
+        elif item_score == current_score and str(item.get("added_at") or "") > str(current.get("added_at") or ""):
+            deduped[key] = item
+    return sorted(
+        deduped.values(),
+        key=lambda value: (float(value.get("score") or 0), str(value.get("added_at") or "")),
+        reverse=True,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -58,6 +84,7 @@ def list_discovery(
             items = [i for i in items if i.get("source") == source]
         if market:
             items = [i for i in items if i.get("market", "").upper() == market.upper()]
+        items = _dedupe_discovery_items(items)
         items = items[:limit]
         if refresh and items:
             from src.services.realtime_quote_service import RealtimeQuoteService

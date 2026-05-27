@@ -302,6 +302,8 @@ def _get_news(query: dict) -> dict:
     priority_min = _int_param(query, "priority_min", 3, 1, 5)
     limit = _int_param(query, "limit", 50, 1, 200)
     rows = store.get_recent_classified(hours=hours, priority_min=priority_min, limit=limit)
+    if not rows:
+        rows = store.get_recent(hours=hours, priority_min=priority_min, limit=limit)
     return {"items": [_row_to_news(r) for r in rows]}
 
 

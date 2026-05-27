@@ -218,7 +218,7 @@ const NewsCard: React.FC<{ item: SentinelNewsItem }> = ({ item }) => (
   <div className="rounded-xl border border-border/50 bg-card/60 p-4 hover:bg-card/80 transition-colors">
     <div className="mb-2 flex flex-wrap items-start gap-2">
       <Badge variant={priorityVariant(item.priority)} size="sm">
-        P{item.priority ?? '?'}
+        {item.priority == null ? '未分类' : `P${item.priority}`}
       </Badge>
       {item.category && <Badge variant="default" size="sm">{item.category}</Badge>}
       {item.marketScope && <Badge variant="default" size="sm">{item.marketScope}</Badge>}
@@ -356,7 +356,7 @@ const SentinelPage: React.FC = () => {
           <AnalysisCard analysis={latestAnalysis} />
 
           {/* News feed */}
-          <SectionCard title="近期高优先级新闻">
+          <SectionCard title="近期优先新闻">
             {/* Priority filter */}
             <div className="mb-4 flex flex-wrap gap-2">
               {PRIORITY_OPTIONS.map((opt) => (
