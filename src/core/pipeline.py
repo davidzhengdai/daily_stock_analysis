@@ -2111,7 +2111,13 @@ class StockAnalysisPipeline:
                 logger.warning(
                     f"[{code}] 分析未成功: {result.error_message or '未知错误'}"
                 )
-            
+            else:
+                logger.warning(f"[{code}] 分析返回空结果")
+
+            # 增量保存：每分析完一只股票立即追加到报告
+            if result and result.success:
+                self._save_single_stock_report_incremental(result, report_type)
+
             return result
             
         except Exception as e:
@@ -2396,6 +2402,53 @@ class StockAnalysisPipeline:
             logger.info(f"决策仪表盘日报已保存: {filepath}")
         except Exception as e:
             logger.error(f"保存本地报告失败: {e}")
+
+    def _save_single_stock_report_incremental(
+        self,
+        result: AnalysisResult,
+        report_type: ReportType = ReportType.SIMPLE,
+    ) -> None:
+        """增量保存单只股票分析报告（避免中断丢失）"""
+        try:
+            # 生成单股报告
+            single_report = self.notifier.generate_single_stock_report(result)
+
+            # 构建文件名
+            from pathlib import Path
+            from datetime import datetime
+
+            date_str = datetime.now().strftime('%Y%m%d')
+            filename = f"report_{date_str}.md"
+            reports_dir = Path(__file__).parent.parent.parent / 'reports'
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            filepath = reports_dir / filename
+
+            # 如果文件不存在，先写入标题和摘要头部
+            if not filepath.exists():
+                header_date = datetime.now().strftime('%Y-%m-%d')
+                # 生成包含该股票的摘要头部
+                header_lines = [
+                    f"# 🎯 {header_date} Decision Dashboard Report",
+                    "",
+                    f"> Analyzed **1** stocks",
+                    "",
+                    "## 📊 Analysis Summary",
+                    "",
+                ]
+                header = "\n".join(header_lines)
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(header)
+                    f.write("\n\n---\n\n")
+                    f.write(single_report)
+                logger.info(f"[{result.code}] 报告已创建: {filepath}")
+            else:
+                # 追加到现有文件
+                with open(filepath, 'a', encoding='utf-8') as f:
+                    f.write("\n\n---\n\n")
+                    f.write(single_report)
+                logger.info(f"[{result.code}] 报告已追加")
+        except Exception as e:
+            logger.error(f"[{result.code}] 增量保存报告失败: {e}")
 
     def _send_notifications(
         self,

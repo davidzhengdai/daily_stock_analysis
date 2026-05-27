@@ -836,12 +836,12 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
     @staticmethod
     def _describe_turnover(total_amount: float) -> str:
         if total_amount >= 15000:
-            return "高活跃度"
+            return "High Activity"
         if total_amount >= 9000:
-            return "中等活跃"
+            return "Moderate Activity"
         if total_amount > 0:
-            return "缩量观望"
-        return "暂无数据"
+            return "Low Volume Watch"
+        return "No Data"
 
     def _build_market_light_scores(self, overview: MarketOverview) -> Dict[str, Any]:
         """Build the canonical Market Light scores used by reports and alerts."""
@@ -963,14 +963,14 @@ Lagging: {bottom_sectors_text if bottom_sectors_text else "N/A"}"""
 - 涨停: {overview.limit_up_count} 家 | 跌停: {overview.limit_down_count} 家
 - 两市成交额: {overview.total_amount:.0f} 亿元"""
             else:
-                stats_block = "## 市场概况\n（该市场暂无涨跌家数等统计）"
+                stats_block = "## Market Overview\n(No advance/decline stats available for this market)"
 
             if self.profile.has_sector_rankings:
-                sector_block = f"""## 板块表现
-领涨: {top_sectors_text if top_sectors_text else "暂无数据"}
-领跌: {bottom_sectors_text if bottom_sectors_text else "暂无数据"}"""
+                sector_block = f"""## Sector Performance
+Top Gainers: {top_sectors_text if top_sectors_text else "No data"}
+Top Losers: {bottom_sectors_text if bottom_sectors_text else "No data"}"""
             else:
-                sector_block = "## 板块表现\n（该市场暂无板块涨跌数据）"
+                sector_block = "## Sector Performance\n(No sector ranking data for this market)"
 
         data_no_indices_hint = (
             "注意：由于行情数据获取失败，请主要根据【市场新闻】进行定性分析和总结，不要编造具体的指数点位。"

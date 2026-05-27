@@ -1019,12 +1019,62 @@ class NotificationService(
             for r in sorted_results:
                 _, signal_emoji, _ = self._get_signal_level(r)
                 display_name = self._get_display_name(r, report_language)
-                report_lines.append(
+                # 提取dashboard数据用于摘要显示
+                dashboard = r.dashboard if hasattr(r, 'dashboard') and r.dashboard else {}
+                core = dashboard.get('core_conclusion', {}) if dashboard else {}
+                battle = dashboard.get('battle_plan', {}) if dashboard else {}
+                intel = dashboard.get('intelligence', {}) if dashboard else {}
+
+                # 时间敏感性
+                time_sense_raw = core.get('time_sensitivity', '') if core else ''
+                time_sense = self._TIME_SENSITIVITY_NAMES.get(time_sense_raw, time_sense_raw)
+                time_summary = f"⏰{time_sense}" if time_sense else ""
+
+                # 持仓建议（简化为空仓/持仓）
+                pos_advice = core.get('position_advice', {}) if core else {}
+                pos_summary = ""
+                if pos_advice:
+                    no_pos = pos_advice.get('no_position', '')
+                    has_pos = pos_advice.get('has_position', '')
+                    pos_parts = []
+                    if no_pos:
+                        pos_parts.append(f"🆕NoPos:{no_pos}")
+                    if has_pos:
+                        pos_parts.append(f"💼Holding:{has_pos}")
+                    if pos_parts:
+                        pos_summary = " | ".join(pos_parts)
+
+                # 短期展望
+                short_outlook = getattr(r, 'short_term_outlook', '') or intel.get('short_term_outlook', '')
+                outlook_summary = f"📈Short:{short_outlook}" if short_outlook else ""
+
+                # 狙击点位
+                sniper = battle.get('sniper_points', {}) if battle else {}
+                ideal_buy = sniper.get('ideal_buy', '') if sniper else ''
+                stop_loss = sniper.get('stop_loss', '') if sniper else ''
+                points_parts = []
+                if ideal_buy:
+                    points_parts.append(f"🎯{labels.get('ideal_buy_label', 'Ideal Buy')}:{ideal_buy}")
+                if stop_loss:
+                    points_parts.append(f"🛑{labels.get('stop_loss_label', 'Stop Loss')}:{stop_loss}")
+                points_summary = " | ".join(points_parts) if points_parts else ""
+
+                # 构建完整摘要行
+                parts = [
                     f"{signal_emoji} **{display_name}({r.code})**: "
-                    f"{localize_operation_advice(r.operation_advice, report_language)} | "
-                    f"{labels['score_label']} {r.sentiment_score} | "
-                    f"{localize_trend_prediction(r.trend_prediction, report_language)}"
-                )
+                    f"{localize_operation_advice(r.operation_advice, report_language)}",
+                    f"{labels['score_label']}{r.sentiment_score}",
+                ]
+                if time_summary:
+                    parts.append(time_summary)
+                if pos_summary:
+                    parts.append(pos_summary)
+                if points_summary:
+                    parts.append(points_summary)
+                if outlook_summary:
+                    parts.append(outlook_summary)
+
+                report_lines.append(" | ".join(parts))
             report_lines.extend([
                 "",
                 "---",
@@ -1081,7 +1131,8 @@ class NotificationService(
                 # ========== 核心结论 ==========
                 core = dashboard.get('core_conclusion', {}) if dashboard else {}
                 one_sentence = core.get('one_sentence', result.analysis_summary)
-                time_sense = core.get('time_sensitivity', labels['default_time_sensitivity'])
+                time_sense_raw = core.get('time_sensitivity', labels['default_time_sensitivity'])
+                time_sense = self._TIME_SENSITIVITY_NAMES.get(time_sense_raw, time_sense_raw)
                 pos_advice = core.get('position_advice', {})
                 
                 report_lines.extend([
@@ -1133,7 +1184,8 @@ class NotificationService(
                         ])
                     # 价格位置
                     if price_data:
-                        bias_status = price_data.get('bias_status', 'N/A')
+                        bias_status_raw = price_data.get('bias_status', 'N/A')
+                        bias_status = self._BIAS_STATUS_NAMES.get(bias_status_raw, bias_status_raw)
                         report_lines.extend([
                             f"| {labels['price_metrics_label']} | {labels['current_price_label']} |",
                             "|---------|------|",
@@ -1148,8 +1200,10 @@ class NotificationService(
                         ])
                     # 量能分析
                     if vol_data:
+                        raw_vol_status = vol_data.get('volume_status', '')
+                        vol_status = self._VOLUME_STATUS_NAMES.get(raw_vol_status, raw_vol_status)
                         report_lines.extend([
-                            f"**{labels['volume_label']}**: {labels['volume_ratio_label']} {vol_data.get('volume_ratio', 'N/A')} ({vol_data.get('volume_status', '')}) | "
+                            f"**{labels['volume_label']}**: {labels['volume_ratio_label']} {vol_data.get('volume_ratio', 'N/A')} ({vol_status}) | "
                             f"{labels['turnover_rate_label']} {vol_data.get('turnover_rate', 'N/A')}%",
                             f"💡 *{vol_data.get('volume_meaning', '')}*",
                             "",
@@ -1200,8 +1254,10 @@ class NotificationService(
                     # 仓位策略
                     position = battle.get('position_strategy', {})
                     if position:
+                        suggested_pos_raw = position.get('suggested_position', 'N/A')
+                        suggested_pos = self._translate_position_size(suggested_pos_raw)
                         report_lines.extend([
-                            f"**💰 {labels['suggested_position_label']}**: {position.get('suggested_position', 'N/A')}",
+                            f"**💰 {labels['suggested_position_label']}**: {suggested_pos}",
                             f"- {labels['entry_plan_label']}: {position.get('entry_plan', 'N/A')}",
                             f"- {labels['risk_control_label']}: {position.get('risk_control', 'N/A')}",
                             "",
@@ -1670,15 +1726,15 @@ class NotificationService(
         evidence = getattr(result, 'news_evidence', []) or []
         if evidence:
             lines.extend([
-                "### 🧾 新闻证据",
+                "### 🧾 News Evidence",
                 "",
             ])
             for item in evidence[:5]:
                 title = item.get('title', '')
                 source = item.get('source') or item.get('provider') or ''
                 url = item.get('url', '')
-                suffix = f"（{source}）" if source else ""
-                lines.append(f"- {title}{suffix}" + (f"：{url}" if url else ""))
+                suffix = f" ({source})" if source else ""
+                lines.append(f"- {title}{suffix}" + (f": {url}" if url else ""))
             lines.append("")
         
         # 狙击点位
@@ -1733,6 +1789,59 @@ class NotificationService(
         "fallback": {"zh": "降级兜底", "en": "Fallback"},
     }
 
+    # Board type mapping (from Chinese data sources)
+    _BOARD_TYPE_NAMES = {
+        "行业": "Sector",
+        "概念": "Concept",
+        "地域": "Region",
+        "风格": "Style",
+        "指数": "Index",
+    }
+
+    # Volume status mapping (from LLM Chinese output)
+    _VOLUME_STATUS_NAMES = {
+        "缩量": "Contracting",
+        "缩量回调": "Pullback",
+        "缩量上涨": "Rising on Low Volume",
+        "缩量下跌": "Falling on Low Volume",
+        "放量": "Expanding",
+        "放量上涨": "Rising on High Volume",
+        "放量下跌": "Falling on High Volume",
+        "量能正常": "Normal",
+        "平量": "Flat",
+    }
+
+    # Time sensitivity mapping (from LLM Chinese output)
+    _TIME_SENSITIVITY_NAMES = {
+        "立即行动": "Act Now",
+        "今日内": "Today",
+        "本周内": "This Week",
+        "不急": "Not Urgent",
+    }
+
+    # Bias status mapping (from LLM Chinese output)
+    _BIAS_STATUS_NAMES = {
+        "安全": "Safe",
+        "警戒": "Caution",
+        "危险": "Danger",
+    }
+
+    # Position size unit mapping (from LLM Chinese output like "3-5成")
+    @staticmethod
+    def _translate_position_size(text: str) -> str:
+        """Translate Chinese position size (成) to percentage (e.g., '3-5成' -> '30-50%')."""
+        if not text:
+            return text
+        import re
+        # Pattern: X-Y成 or X-Y 成 -> X0-Y0%
+        result = re.sub(r'(\d+)\s*-\s*(\d+)\s*成', r'\g<1>0-\g<2>0%', text)
+        # Translate common Chinese words in position advice
+        result = result.replace("维持", "Maintain")
+        result = result.replace("减仓", "Reduce")
+        result = result.replace("加仓", "Add")
+        result = result.replace("空仓", "None")
+        return result
+
     def _get_source_display_name(self, source: Any, language: Optional[str]) -> str:
         raw_source = str(source or "N/A")
         mapping = self._SOURCE_DISPLAY_NAMES.get(raw_source)
@@ -1773,18 +1882,18 @@ class NotificationService(
         lines.append("")
 
     _CURRENCY_SUFFIX = {
-        "USD": "美元",
-        "HKD": "港元",
-        "CNY": "元",
-        "RMB": "元",
-        "CNH": "元",
+        "USD": " USD",
+        "HKD": " HKD",
+        "CNY": " CNY",
+        "RMB": " CNY",
+        "CNH": " CNH",
     }
 
     @classmethod
     def _format_amount_cn(cls, value: Any, currency: Optional[str] = None) -> str:
-        """Format absolute amounts in 亿/万 + currency suffix; returns N/A on non-numeric.
+        """Format absolute amounts in B/M/K + currency suffix; returns N/A on non-numeric.
 
-        ``currency`` accepts ``USD``/``HKD``/``CNY``; unknown values fall back to 元.
+        ``currency`` accepts ``USD``/``HKD``/``CNY``; unknown values fall back to CNY.
         """
         try:
             amount = float(value)
@@ -1794,12 +1903,14 @@ class NotificationService(
             return "N/A"
         sign = "-" if amount < 0 else ""
         abs_amount = abs(amount)
-        suffix = cls._CURRENCY_SUFFIX.get((currency or "").upper(), "元")
-        if abs_amount >= 1e8:
-            return f"{sign}{abs_amount / 1e8:.2f} 亿{suffix}"
-        if abs_amount >= 1e4:
-            return f"{sign}{abs_amount / 1e4:.2f} 万{suffix}"
-        return f"{sign}{abs_amount:.0f} {suffix}"
+        suffix = cls._CURRENCY_SUFFIX.get((currency or "").upper(), " CNY")
+        if abs_amount >= 1e9:
+            return f"{sign}{abs_amount / 1e9:.2f}B{suffix}"
+        if abs_amount >= 1e6:
+            return f"{sign}{abs_amount / 1e6:.2f}M{suffix}"
+        if abs_amount >= 1e3:
+            return f"{sign}{abs_amount / 1e3:.2f}K{suffix}"
+        return f"{sign}{abs_amount:.0f}{suffix}"
 
     @staticmethod
     def _format_percent(value: Any) -> str:
@@ -1816,8 +1927,8 @@ class NotificationService(
             return "N/A"
         if amount != amount:  # NaN
             return "N/A"
-        suffix = cls._CURRENCY_SUFFIX.get((currency or "").upper(), "元")
-        return f"{amount:.4f} {suffix}"
+        suffix = cls._CURRENCY_SUFFIX.get((currency or "").upper(), " CNY")
+        return f"{amount:.4f}{suffix}"
 
     @staticmethod
     def _format_text(value: Any) -> str:
@@ -2003,7 +2114,8 @@ class NotificationService(
             name = str(raw.get("name") or "").strip()
             if not name:
                 continue
-            board_type = self._format_text(raw.get("type"))
+            raw_type = raw.get("type", "")
+            board_type = self._BOARD_TYPE_NAMES.get(raw_type, self._format_text(raw_type))
             status_text, change_pct = sector_signals.get(name, (None, None))
             prepared.append((name, board_type, status_text, change_pct))
 

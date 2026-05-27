@@ -3349,23 +3349,23 @@ Rules:
         """格式化成交量显示"""
         if volume is None:
             return 'N/A'
-        if volume >= 1e8:
-            return f"{volume / 1e8:.2f} 亿股"
-        elif volume >= 1e4:
-            return f"{volume / 1e4:.2f} 万股"
+        if volume >= 1e9:
+            return f"{volume / 1e9:.2f}B"  # Billion
+        elif volume >= 1e6:
+            return f"{volume / 1e6:.2f}M"  # Million
         else:
-            return f"{volume:.0f} 股"
+            return f"{volume:.0f}K"
     
     def _format_amount(self, amount: Optional[float]) -> str:
-        """格式化成交额显示"""
+        """Format amount display"""
         if amount is None:
             return 'N/A'
-        if amount >= 1e8:
-            return f"{amount / 1e8:.2f} 亿元"
-        elif amount >= 1e4:
-            return f"{amount / 1e4:.2f} 万元"
+        if amount >= 1e9:
+            return f"{amount / 1e9:.2f}B"
+        elif amount >= 1e6:
+            return f"{amount / 1e6:.2f}M"
         else:
-            return f"{amount:.0f} 元"
+            return f"{amount:.0f}K"
 
     def _format_percent(self, value: Optional[float]) -> str:
         """格式化百分比显示"""
@@ -3508,6 +3508,67 @@ Rules:
         """Delegate to module-level apply_placeholder_fill."""
         apply_placeholder_fill(result, missing_fields)
 
+    def _coerce_parsed_response_dict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Coerce and normalize parsed JSON response dict.
+
+        Ensures numeric fields are properly typed and removes None values
+        that might cause downstream validation issues.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        # Deep copy to avoid mutating original
+        result = dict(data)
+
+        # Coerce numeric fields at top level
+        numeric_fields = [
+            "sentiment_score", "confidence_score", "trend_score",
+            "current_price", "ma5", "ma10", "ma20",
+            "volume_ratio", "turnover_rate", "profit_ratio", "avg_cost",
+            "support_level", "resistance_level", "bias_ma5",
+        ]
+        for field in numeric_fields:
+            if field in result and result[field] is not None:
+                result[field] = _coerce_numeric_value(result[field])
+
+        # Coerce nested dashboard numeric fields
+        dashboard = result.get("dashboard")
+        if isinstance(dashboard, dict):
+            data_perspective = dashboard.get("data_perspective")
+            if isinstance(data_perspective, dict):
+                # price_position
+                price_pos = data_perspective.get("price_position")
+                if isinstance(price_pos, dict):
+                    for field in ["current_price", "ma5", "ma10", "ma20", "bias_ma5", "support_level", "resistance_level"]:
+                        if field in price_pos and price_pos[field] is not None:
+                            price_pos[field] = _coerce_numeric_value(price_pos[field])
+                # volume_analysis
+                vol_analysis = data_perspective.get("volume_analysis")
+                if isinstance(vol_analysis, dict):
+                    for field in ["volume_ratio", "turnover_rate"]:
+                        if field in vol_analysis and vol_analysis[field] is not None:
+                            vol_analysis[field] = _coerce_numeric_value(vol_analysis[field])
+                # chip_structure
+                chip_struct = data_perspective.get("chip_structure")
+                if isinstance(chip_struct, dict):
+                    for field in ["profit_ratio", "avg_cost", "concentration"]:
+                        if field in chip_struct and chip_struct[field] is not None:
+                            chip_struct[field] = _coerce_numeric_value(chip_struct[field])
+            # trend_status
+            trend_status = data_perspective.get("trend_status") if isinstance(data_perspective, dict) else None
+            if isinstance(trend_status, dict) and "trend_score" in trend_status:
+                trend_status["trend_score"] = _coerce_numeric_value(trend_status["trend_score"])
+
+        return result
+
+    def _get_first_present(self, data: Dict[str, Any], *keys: str) -> Optional[Any]:
+        """Get first non-empty value from dict for given keys."""
+        for key in keys:
+            value = data.get(key)
+            if value is not None and str(value).strip():
+                return value
+        return None
+
     def _parse_response(
         self, 
         response_text: str, 
@@ -3562,11 +3623,16 @@ Rules:
                     name = ai_stock_name
 
                 # 解析所有字段，使用默认值防止缺失
+                # 核心指标
+                sentiment_score = data.get('sentiment_score', 50)
+                trend_prediction = data.get('trend_prediction', '震荡')
+                operation_advice = data.get('operation_advice', '持有')
+                confidence_level = data.get('confidence_level', '中')
                 # 解析 decision_type，如果没有则根据 operation_advice 推断
                 decision_type = data.get('decision_type', '')
                 if not decision_type:
                     decision_type = infer_decision_type_from_advice(str(operation_advice), default='hold')
-                
+
                 return AnalysisResult(
                     code=code,
                     name=name,

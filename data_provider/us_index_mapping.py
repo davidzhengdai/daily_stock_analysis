@@ -17,29 +17,29 @@ import re
 _US_STOCK_PATTERN = re.compile(r'^[A-Z]{1,5}(\.[A-Z])?$')
 
 
-# 用户输入 -> (Yahoo Finance 符号, 中文名称)
+# 用户输入 -> (Yahoo Finance 符号, 英文名称)
 US_INDEX_MAPPING = {
-    # 标普 500
-    'SPX': ('^GSPC', '标普500指数'),
-    '^GSPC': ('^GSPC', '标普500指数'),
-    'GSPC': ('^GSPC', '标普500指数'),
-    # 道琼斯工业平均指数
-    'DJI': ('^DJI', '道琼斯工业指数'),
-    '^DJI': ('^DJI', '道琼斯工业指数'),
-    'DJIA': ('^DJI', '道琼斯工业指数'),
-    # 纳斯达克综合指数
-    'IXIC': ('^IXIC', '纳斯达克综合指数'),
-    '^IXIC': ('^IXIC', '纳斯达克综合指数'),
-    'NASDAQ': ('^IXIC', '纳斯达克综合指数'),
-    # 纳斯达克 100
-    'NDX': ('^NDX', '纳斯达克100指数'),
-    '^NDX': ('^NDX', '纳斯达克100指数'),
-    # VIX 波动率指数
-    'VIX': ('^VIX', 'VIX恐慌指数'),
-    '^VIX': ('^VIX', 'VIX恐慌指数'),
-    # 罗素 2000
-    'RUT': ('^RUT', '罗素2000指数'),
-    '^RUT': ('^RUT', '罗素2000指数'),
+    # S&P 500
+    'SPX': ('^GSPC', 'S&P 500'),
+    '^GSPC': ('^GSPC', 'S&P 500'),
+    'GSPC': ('^GSPC', 'S&P 500'),
+    # Dow Jones Industrial Average
+    'DJI': ('^DJI', 'Dow Jones Industrial'),
+    '^DJI': ('^DJI', 'Dow Jones Industrial'),
+    'DJIA': ('^DJI', 'Dow Jones Industrial'),
+    # NASDAQ Composite
+    'IXIC': ('^IXIC', 'NASDAQ Composite'),
+    '^IXIC': ('^IXIC', 'NASDAQ Composite'),
+    'NASDAQ': ('^IXIC', 'NASDAQ Composite'),
+    # NASDAQ 100
+    'NDX': ('^NDX', 'NASDAQ 100'),
+    '^NDX': ('^NDX', 'NASDAQ 100'),
+    # VIX Volatility Index
+    'VIX': ('^VIX', 'VIX'),
+    '^VIX': ('^VIX', 'VIX'),
+    # Russell 2000
+    'RUT': ('^RUT', 'Russell 2000'),
+    '^RUT': ('^RUT', 'Russell 2000'),
 }
 
 
