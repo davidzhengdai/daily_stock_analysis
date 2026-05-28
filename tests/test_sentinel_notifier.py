@@ -4,7 +4,7 @@ import json
 import pytest
 from unittest.mock import MagicMock, call
 
-from src.services.sentinel.notifier import SentinelNotifier, _MOOD_EMOJI
+from src.services.sentinel.notifier import SentinelNotifier, _MOOD_EMOJI, _is_supported_stock_lead_code
 from src.services.sentinel.config import SentinelConfig
 
 
@@ -171,6 +171,26 @@ class TestDispatchCycleAnalysis:
         assert triggered == []
         assert triggered_stocks == []
 
+    def test_does_not_trigger_unsupported_market_lead(self):
+        triggered_stocks = []
+        cfg = _make_config(trigger_confidence=0.7)
+        leads = [
+            {"code": "005930.KS", "name": "三星电子", "reason": "AI memory demand", "confidence": 0.9},
+            {"code": "EQIX", "name": "Equinix", "reason": "data center demand", "confidence": 0.8},
+        ]
+
+        n = SentinelNotifier(
+            cfg,
+            notify_fn=lambda *a, **kw: True,
+            trigger_fn=lambda c: triggered_stocks.append(c),
+        )
+        store = MagicMock()
+        result = _make_cycle_result(stock_leads=leads)
+        triggered = n.dispatch_cycle_analysis(result, store)
+
+        assert triggered == ["EQIX"]
+        assert triggered_stocks == ["EQIX"]
+
     def test_updates_db_with_triggered_stocks(self):
         cfg = _make_config(trigger_confidence=0.7)
         leads = [{"code": "600519", "name": "茅台", "reason": "涨价", "confidence": 0.9}]
@@ -184,6 +204,16 @@ class TestDispatchCycleAnalysis:
         args = store.update_cycle_triggered_stocks.call_args[0]
         assert args[0] == 7
         assert "600519" in args[1]
+
+
+class TestSupportedStockLeadCode:
+    @pytest.mark.parametrize("code", ["600519", "SH600519", "600519.SH", "HK00700", "00700.HK", "AAPL", "BRK.B"])
+    def test_accepts_supported_markets(self, code):
+        assert _is_supported_stock_lead_code(code) is True
+
+    @pytest.mark.parametrize("code", ["005930.KS", "000660.KS", "7203.T", "BMW.DE", "", "12AB34"])
+    def test_rejects_unsupported_markets(self, code):
+        assert _is_supported_stock_lead_code(code) is False
 
 
 class TestDispatchBreakingAlerts:

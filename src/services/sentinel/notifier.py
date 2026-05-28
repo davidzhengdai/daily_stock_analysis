@@ -14,6 +14,7 @@ parameters allow offline unit-testing without any real services.
 """
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Callable, List, Optional
 
@@ -29,6 +30,22 @@ _MOOD_EMOJI = {
     "乐观": "🟢",
     "极度乐观": "💚",
 }
+
+_A_SHARE_LEAD_RE = re.compile(r"^(?:\d{6}|(?:SH|SZ|BJ)\d{6}|\d{6}\.(?:SH|SZ|SS|BJ))$")
+_HK_LEAD_RE = re.compile(r"^(?:HK\d{1,5}|\d{1,5}\.HK|\d{5})$")
+_US_LEAD_RE = re.compile(r"^[A-Z]{1,5}(?:\.(?:US|[A-Z]))?$")
+
+
+def _is_supported_stock_lead_code(code: str) -> bool:
+    """Return True for Sentinel auto-analysis markets: A-share, HK, and US."""
+    normalized = (code or "").strip().upper()
+    if not normalized:
+        return False
+    return bool(
+        _A_SHARE_LEAD_RE.fullmatch(normalized)
+        or _HK_LEAD_RE.fullmatch(normalized)
+        or _US_LEAD_RE.fullmatch(normalized)
+    )
 
 
 class SentinelNotifier:
@@ -59,10 +76,17 @@ class SentinelNotifier:
         triggered: List[str] = []
 
         stock_leads = result.get("stock_leads") or []
-        confident_leads = [
-            s for s in stock_leads
-            if isinstance(s, dict) and float(s.get("confidence", 0)) >= self._config.trigger_confidence
-        ]
+        confident_leads = []
+        for lead in stock_leads:
+            if not isinstance(lead, dict):
+                continue
+            if float(lead.get("confidence", 0)) < self._config.trigger_confidence:
+                continue
+            code = str(lead.get("code", "")).strip()
+            if not _is_supported_stock_lead_code(code):
+                logger.info("SentinelNotifier: skipped unsupported stock lead %s", code)
+                continue
+            confident_leads.append(lead)
 
         # Send digest notification (always, even if no stock leads)
         content = self._format_digest(result, confident_leads)

@@ -96,6 +96,16 @@ class TestBuildPrompt:
         prompt = analyzer._build_prompt(rows, 12)
         assert "2" in prompt
 
+    def test_prompt_limits_stock_leads_to_supported_markets(self):
+        cfg = _make_config()
+        analyzer = ComprehensiveAnalyzer(cfg)
+        rows = [_make_row(title="AI memory demand lifts Samsung and SK Hynix")]
+        prompt = analyzer._build_prompt(rows, 12)
+
+        assert "只允许 A 股、港股、美股代码" in prompt
+        assert "005930.KS" in prompt
+        assert "不要写入 stock_leads" in prompt
+
 
 class TestParseResponse:
     def setup_method(self):
