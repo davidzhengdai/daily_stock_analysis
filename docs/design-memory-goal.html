@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Design: Persistent Memory & Research Goal System</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #64748b;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: var(--bg);
+            color: var(--text);
+        }
+        h1 { border-bottom: 3px solid var(--primary); padding-bottom: 10px; }
+        h2 { color: var(--primary); margin-top: 30px; }
+        h3 { color: var(--secondary); }
+        .card {
+            background: var(--card);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th { background: #f1f5f9; font-weight: 600; }
+        code {
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+        }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        .tag {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .tag-high { background: #fee2e2; color: #991b1b; }
+        .tag-medium { background: #fef3c7; color: #92400e; }
+        .tag-low { background: #d1fae5; color: #065f46; }
+        .mermaid { background: white; padding: 20px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <h1>Design: Persistent Memory & Research Goal System</h1>
+    <p><strong>Source:</strong> Adapted from <a href="https://github.com/HKUDS/Vibe-Trading">Vibe-Trading</a> (MIT License)</p>
+    <p><strong>Original Files:</strong></p>
+    <ul>
+        <li><code>agent/src/memory/persistent.py</code> - Persistent Memory</li>
+        <li><code>agent/src/goal/models.py</code> - Goal Data Models</li>
+        <li><code>agent/src/goal/store.py</code> - Goal Storage Layer</li>
+    </ul>
+    <p><strong>Adaptations:</strong> Path prefix changed from <code>.vibe-trading</code> to <code>.daily-stock-analysis</code>; Memory types adapted for stock analysis domain; Simplified for single-user deployment</p>
+    <p><strong>Date:</strong> 2026-05-27</p>
+
+    <div class="card">
+        <h2>1. Overview</h2>
+        <p>This design introduces two core capabilities to the stock analysis system:</p>
+        <ul>
+            <li><strong>Persistent Memory:</strong> File-based cross-session storage for watchlists, preferences, and alert rules</li>
+            <li><strong>Research Goal:</strong> Multi-session analysis lifecycle with state tracking and evidence accumulation</li>
+        </ul>
+    </div>
+
+    <h2>2. Persistent Memory System</h2>
+    
+    <div class="card">
+        <h3>2.1 Storage Layout</h3>
+        <pre>~/.daily-stock-analysis/
+├── memory/
+│   ├── INDEX.md              # Auto-generated memory index
+│   ├── watchlist.md          # Stock watchlist with tags
+│   ├── sector_preferences.md # Preferred sectors
+│   ├── alert_rules.md        # Custom alert conditions
+│   └── analysis_notes.md     # Historical analysis notes
+└── goals/
+    ├── active/
+    │   └── goal_20250527_001_aapl.json
+    └── completed/
+        └── goal_20250526_002_nvda.json</pre>
+    </div>
+
+    <div class="card">
+        <h3>2.2 Memory Entry Format</h3>
+        <pre>---
+title: "AAPL Technical Watch"
+type: watchlist
+created_at: 2026-05-27T10:00:00Z
+modified_at: 2026-05-27T14:30:00Z
+tags: [tech, swing-trade, ma-breakout]
+---
+
+## Entry Criteria
+- Price above MA20
+- Volume > 1.5x average
+- RSI not overbought (>70)
+
+## Exit Plan
+- Stop loss: -8%
+- Take profit: +15%</pre>
+    </div>
+
+    <div class="card">
+        <h3>2.3 Core API</h3>
+        <table>
+            <tr>
+                <th>Method</th>
+                <th>Description</th>
+                <th>Priority</th>
+            </tr>
+            <tr>
+                <td><code>Memory.add(title, body, type, tags)</code></td>
+                <td>Create new memory entry</td>
+                <td><span class="tag tag-high">High</span></td>
+            </tr>
+            <tr>
+                <td><code>Memory.search(query, type, limit)</code></td>
+                <td>Full-text search with ranking</td>
+                <td><span class="tag tag-high">High</span></td>
+            </tr>
+            <tr>
+                <td><code>Memory.get(title)</code></td>
+                <td>Retrieve specific entry</td>
+                <td><span class="tag tag-medium">Medium</span></td>
+            </tr>
+            <tr>
+                <td><code>Memory.update(title, body)</code></td>
+                <td>Update existing entry</td>
+                <td><span class="tag tag-medium">Medium</span></td>
+            </tr>
+            <tr>
+                <td><code>Memory.delete(title)</code></td>
+                <td>Remove entry</td>
+                <td><span class="tag tag-low">Low</span></td>
+            </tr>
+            <tr>
+                <td><code>Memory.list(type)</code></td>
+                <td>List all entries of type</td>
+                <td><span class="tag tag-medium">Medium</span></td>
+            </tr>
+        </table>
+    </div>
+
+    <h2>3. Research Goal System</h2>
+
+    <div class="card">
+        <h3>3.1 Goal Lifecycle</h3>
+        <pre>created → active → [paused] → [completed | cancelled | failed]
+                ↓
+         evidence accumulation
+                ↓
+         criteria evaluation</pre>
+    </div>
+
+    <div class="card">
+        <h3>3.2 Goal Structure</h3>
+        <pre>{
+  "id": "goal_20250527_001_aapl",
+  "symbol": "AAPL",
+  "title": "Verify AAPL breakout above $195",
+  "status": "active",
+  "created_at": "2026-05-27T10:00:00Z",
+  "modified_at": "2026-05-27T16:00:00Z",
+  "criteria": [
+    {"id": 1, "desc": "Price closes above $195", "weight": 0.4, "status": "pending"},
+    {"id": 2, "desc": "Volume > 1.5x 20-day avg", "weight": 0.3, "status": "met"},
+    {"id": 3, "desc": "RSI < 70 (not overbought)", "weight": 0.3, "status": "met"}
+  ],
+  "evidence": [
+    {"date": "2026-05-27", "close": 193.5, "volume_ratio": 1.8, "rsi": 65}
+  ],
+  "current_analysis": "Price approaching resistance, volume building...",
+  "next_check": "2026-05-28T09:30:00Z"
+}</pre>
+    </div>
+
+    <div class="card">
+        <h3>3.3 Goal API</h3>
+        <table>
+            <tr>
+                <th>Method</th>
+                <th>Description</th>
+                <th>Priority</th>
+            </tr>
+            <tr>
+                <td><code>Goal.create(symbol, title, criteria)</code></td>
+                <td>Create new research goal</td>
+                <td><span class="tag tag-high">High</span></td>
+            </tr>
+            <tr>
+                <td><code>Goal.add_evidence(goal_id, evidence)</code></td>
+                <td>Add analysis evidence</td>
+                <td><span class="tag tag-high">High</span></td>
+            </tr>
+            <tr>
+                <td><code>Goal.update_criteria(goal_id, criteria_id, status)</code></td>
+                <td>Update criteria status</td>
+                <td><span class="tag tag-high">High</span></td>
+            </tr>
+            <tr>
+                <td><code>Goal.get_active(symbol)</code></td>
+                <td>Get active goals for symbol</td>
+                <td><span class="tag tag-medium">Medium</span></td>
+            </tr>
+            <tr>
+                <td><code>Goal.list(status)</code></td>
+                <td>List goals by status</td>
+                <td><span class="tag tag-medium">Medium</span></td>
+            </tr>
+            <tr>
+                <td><code>Goal.complete(goal_id, summary)</code></td>
+                <td>Mark goal as completed</td>
+                <td><span class="tag tag-medium">Medium</span></td>
+            </tr>
+            <tr>
+                <td><code>Goal.cancel(goal_id, reason)</code></td>
+                <td>Cancel active goal</td>
+                <td><span class="tag tag-low">Low</span></td>
+            </tr>
+        </table>
+    </div>
+
+    <h2>4. Integration Points</h2>
+
+    <div class="card">
+        <h3>4.1 Pipeline Integration</h3>
+        <ul>
+            <li>Analysis results auto-added as evidence to active goals</li>
+            <li>Goal criteria auto-evaluated after each analysis</li>
+            <li>Memory watchlist drives default stock selection</li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h3>4.2 CLI Commands</h3>
+        <pre># Memory commands
+python main.py --memory-add "AAPL Swing" --type watchlist --tags "tech,ma-breakout"
+python main.py --memory-search "breakout"
+python main.py --memory-list --type watchlist
+
+# Goal commands
+python main.py --goal-create AAPL --title "Verify breakout" --criteria "price>195,volume>1.5x"
+python main.py --goal-list --status active
+python main.py --goal-complete goal_20250527_001_aapl --summary "Breakout confirmed"</pre>
+    </div>
+
+    <h2>5. Implementation Notes</h2>
+
+    <div class="card">
+        <h3>5.1 Key Design Decisions</h3>
+        <table>
+            <tr>
+                <th>Decision</th>
+                <th>Rationale</th>
+            </tr>
+            <tr>
+                <td>File-based storage</td>
+                <td>Zero dependencies, human-readable, git-friendly</td>
+            </tr>
+            <tr>
+                <td>YAML frontmatter</td>
+                <td>Standard format, easy parsing, metadata separation</td>
+            </tr>
+            <tr>
+                <td>Auto-generated index</td>
+                <td>O(1) lookup without external DB</td>
+            </tr>
+            <tr>
+                <td>Token-level search</td>
+                <td>Supports CJK characters natively</td>
+            </tr>
+            <tr>
+                <td>Goal ID format</td>
+                <td>goal_YYYYMMDD_NNN_symbol for easy sorting</td>
+            </tr>
+        </table>
+    </div>
+
+    <h2>6. Files to Modify/Create</h2>
+
+    <div class="card">
+        <h3>New Files</h3>
+        <ul>
+            <li><code>src/memory/persistent.py</code> - Core memory implementation</li>
+            <li><code>src/goal/manager.py</code> - Goal lifecycle management</li>
+            <li><code>src/goal/models.py</code> - Goal data structures</li>
+            <li><code>src/cli/memory_commands.py</code> - Memory CLI interface</li>
+            <li><code>src/cli/goal_commands.py</code> - Goal CLI interface</li>
+        </ul>
+
+        <h3>Modified Files</h3>
+        <ul>
+            <li><code>main.py</code> - Add CLI arguments</li>
+            <li><code>src/core/pipeline.py</code> - Integrate with goals</li>
+        </ul>
+    </div>
+</body>
+</html>

@@ -493,6 +493,228 @@ def parse_arguments() -> argparse.Namespace:
         help='强制回测（即使已有回测结果也重新计算）'
     )
 
+    # === Memory Commands ===
+    memory_group = parser.add_argument_group('Memory Commands', '持久化记忆管理')
+    memory_group.add_argument(
+        '--memory-add',
+        type=str,
+        metavar='TITLE',
+        help='添加记忆条目（需提供 --memory-body）'
+    )
+    memory_group.add_argument(
+        '--memory-body',
+        type=str,
+        help='记忆条目的内容（Markdown 格式）'
+    )
+    memory_group.add_argument(
+        '--memory-type',
+        type=str,
+        default='note',
+        choices=['watchlist', 'preference', 'alert_rule', 'note', 'sector_pref'],
+        help='记忆类型（默认: note）'
+    )
+    memory_group.add_argument(
+        '--memory-tags',
+        type=str,
+        help='标签列表，逗号分隔（如: tech,swing-trade）'
+    )
+    memory_group.add_argument(
+        '--memory-search',
+        type=str,
+        metavar='QUERY',
+        help='搜索记忆条目'
+    )
+    memory_group.add_argument(
+        '--memory-list',
+        action='store_true',
+        help='列出所有记忆条目'
+    )
+    memory_group.add_argument(
+        '--memory-type-filter',
+        type=str,
+        help='按类型过滤记忆列表'
+    )
+
+    # === Goal Commands ===
+    goal_group = parser.add_argument_group('Goal Commands', '研究目标管理')
+    goal_group.add_argument(
+        '--goal-create',
+        type=str,
+        metavar='SYMBOL',
+        help='为指定股票创建研究目标（需提供 --goal-title）'
+    )
+    goal_group.add_argument(
+        '--goal-title',
+        type=str,
+        help='研究目标标题'
+    )
+    goal_group.add_argument(
+        '--goal-criteria',
+        type=str,
+        help='目标条件，分号分隔（如: "价格>195;成交量>1.5x;RSI<70"）'
+    )
+    goal_group.add_argument(
+        '--goal-list',
+        action='store_true',
+        help='列出所有研究目标'
+    )
+    goal_group.add_argument(
+        '--goal-status-filter',
+        type=str,
+        default='active',
+        choices=['active', 'completed', 'cancelled', 'all'],
+        help='按状态过滤目标列表（默认: active）'
+    )
+    goal_group.add_argument(
+        '--goal-complete',
+        type=str,
+        metavar='GOAL_ID',
+        help='完成指定的研究目标'
+    )
+    goal_group.add_argument(
+        '--goal-summary',
+        type=str,
+        help='目标完成摘要'
+    )
+    goal_group.add_argument(
+        '--goal-cancel',
+        type=str,
+        metavar='GOAL_ID',
+        help='取消指定的研究目标'
+    )
+    goal_group.add_argument(
+        '--goal-reason',
+        type=str,
+        help='取消原因'
+    )
+    goal_group.add_argument(
+        '--goal-due',
+        action='store_true',
+        help='列出所有需要检查的目标'
+    )
+
+    # === Watchlist + Memory Integration ===
+    watchlist_mem_group = parser.add_argument_group('Watchlist + Memory', '自选股笔记集成')
+    watchlist_mem_group.add_argument(
+        '--watchlist-note',
+        type=str,
+        metavar='CODE',
+        help='给指定股票添加分析笔记（需提供 --note-title 和 --note-body）'
+    )
+    watchlist_mem_group.add_argument(
+        '--note-title',
+        type=str,
+        help='笔记标题'
+    )
+    watchlist_mem_group.add_argument(
+        '--note-body',
+        type=str,
+        help='笔记内容（Markdown 格式）'
+    )
+    watchlist_mem_group.add_argument(
+        '--watchlist-with-notes',
+        action='store_true',
+        help='显示自选股列表及其关联笔记摘要'
+    )
+    watchlist_mem_group.add_argument(
+        '--search-watchlist-notes',
+        type=str,
+        metavar='QUERY',
+        help='在自选股笔记中搜索'
+    )
+    watchlist_mem_group.add_argument(
+        '--sync-watchlist-to-memory',
+        action='store_true',
+        help='同步自选股到记忆系统'
+    )
+
+    # === Goal Alert Commands ===
+    goal_alert_group = parser.add_argument_group('Goal Alerts', '目标监控提醒')
+    goal_alert_group.add_argument(
+        '--goal-alert',
+        action='store_true',
+        help='生成目标提醒报告'
+    )
+    goal_alert_group.add_argument(
+        '--goal-alert-hours',
+        type=int,
+        default=24,
+        help='提醒阈值：超过多少小时未检查（默认24）'
+    )
+    goal_alert_group.add_argument(
+        '--goal-check',
+        action='store_true',
+        help='检查需要关注的目标（同 --goal-due，更详细的输出）'
+    )
+
+    # === Hypothesis Registry Commands ===
+    hypothesis_group = parser.add_argument_group('Hypothesis Registry', '研究假设管理')
+    hypothesis_group.add_argument(
+        '--hypothesis-create',
+        type=str,
+        metavar='TITLE',
+        help='创建新的研究假设（需提供 --hypothesis-thesis）'
+    )
+    hypothesis_group.add_argument(
+        '--hypothesis-thesis',
+        type=str,
+        help='假设的核心理论/观点'
+    )
+    hypothesis_group.add_argument(
+        '--hypothesis-status',
+        type=str,
+        default='exploring',
+        choices=['exploring', 'testing', 'validated', 'rejected', 'monitoring'],
+        help='假设状态（默认: exploring）'
+    )
+    hypothesis_group.add_argument(
+        '--hypothesis-list',
+        action='store_true',
+        help='列出所有研究假设'
+    )
+    hypothesis_group.add_argument(
+        '--hypothesis-status-filter',
+        type=str,
+        help='按状态过滤假设列表'
+    )
+    hypothesis_group.add_argument(
+        '--hypothesis-search',
+        type=str,
+        metavar='QUERY',
+        help='搜索研究假设'
+    )
+    hypothesis_group.add_argument(
+        '--hypothesis-update',
+        type=str,
+        metavar='HYPOTHESIS_ID',
+        help='更新假设状态（需提供 --hypothesis-new-status）'
+    )
+    hypothesis_group.add_argument(
+        '--hypothesis-new-status',
+        type=str,
+        choices=['exploring', 'testing', 'validated', 'rejected', 'monitoring'],
+        help='新的假设状态'
+    )
+
+    # === Skill System Commands ===
+    skill_group = parser.add_argument_group('Skill System', '技能管理')
+    skill_group.add_argument(
+        '--skill-list',
+        action='store_true',
+        help='列出所有可用技能'
+    )
+    skill_group.add_argument(
+        '--skill-show',
+        type=str,
+        metavar='SKILL_NAME',
+        help='显示技能详细内容'
+    )
+    skill_group.add_argument(
+        '--skill-category',
+        type=str,
+        help='按类别过滤技能列表'
+    )
+
     return parser.parse_args()
 
 
@@ -1236,6 +1458,342 @@ def main() -> int:
         result = run_notification_diagnostics(config)
         print(format_notification_diagnostics(result))
         return 0 if result.ok else 1
+
+    # === Memory Commands ===
+    if getattr(args, "memory_add", None):
+        from src.memory import get_memory
+        memory = get_memory()
+        tags = [t.strip() for t in args.memory_tags.split(",")] if getattr(args, "memory_tags", None) else []
+        path = memory.add(
+            title=args.memory_add,
+            body=getattr(args, "memory_body", ""),
+            memory_type=getattr(args, "memory_type", "note"),
+            tags=tags
+        )
+        print(f"✓ Memory added: {path}")
+        return 0
+
+    if getattr(args, "memory_search", None):
+        from src.memory import get_memory
+        memory = get_memory()
+        results = memory.search(args.memory_search, limit=10)
+        if results:
+            print(f"Found {len(results)} results for '{args.memory_search}':")
+            for entry, score in results:
+                print(f"  • {entry.title} ({entry.memory_type}) - relevance: {score:.2f}")
+                if entry.description:
+                    print(f"    {entry.description[:60]}...")
+        else:
+            print(f"No results found for '{args.memory_search}'")
+        return 0
+
+    if getattr(args, "memory_list", False):
+        from src.memory import get_memory
+        memory = get_memory()
+        entries = memory.list_all(getattr(args, "memory_type_filter", None))
+        if entries:
+            print(f"Memory entries ({len(entries)} total):")
+            for entry in entries[:20]:
+                tags = ", ".join(entry.tags) if entry.tags else "no tags"
+                print(f"  • [{entry.memory_type}] {entry.title} (tags: {tags})")
+        else:
+            print("No memory entries found")
+        return 0
+
+    # === Goal Commands ===
+    if getattr(args, "goal_create", None):
+        from src.goal import get_goal_manager
+        manager = get_goal_manager()
+        criteria_list = []
+        if getattr(args, "goal_criteria", None):
+            for c in args.goal_criteria.split(";"):
+                c = c.strip()
+                if c:
+                    criteria_list.append({"desc": c, "weight": 1.0})
+        goal = manager.create(
+            symbol=args.goal_create,
+            title=getattr(args, "goal_title", f"Research {args.goal_create}"),
+            criteria=criteria_list or None
+        )
+        print(f"✓ Goal created: {goal.id}")
+        print(f"  Symbol: {goal.symbol}")
+        print(f"  Title: {goal.title}")
+        if goal.criteria:
+            print(f"  Criteria ({len(goal.criteria)}):")
+            for c in goal.criteria:
+                print(f"    - {c.description}")
+        return 0
+
+    if getattr(args, "goal_list", False):
+        from src.goal import get_goal_manager, GoalStatus
+        manager = get_goal_manager()
+        status_filter = getattr(args, "goal_status_filter", "active")
+        if status_filter == "all":
+            goals = manager.list_by_status()
+        else:
+            goals = manager.list_by_status(GoalStatus(status_filter))
+        if goals:
+            print(f"Goals ({status_filter}, {len(goals)} total):")
+            for g in goals:
+                progress = f"{g.progress*100:.0f}%" if g.criteria else "N/A"
+                print(f"  • {g.id} [{g.status.value}] {g.symbol}: {g.title} (progress: {progress})")
+        else:
+            print(f"No {status_filter} goals found")
+        return 0
+
+    if getattr(args, "goal_complete", None):
+        from src.goal import get_goal_manager
+        manager = get_goal_manager()
+        summary = getattr(args, "goal_summary", "Completed")
+        if manager.complete(args.goal_complete, summary):
+            print(f"✓ Goal completed: {args.goal_complete}")
+        else:
+            print(f"✗ Goal not found or already completed: {args.goal_complete}")
+            return 1
+        return 0
+
+    if getattr(args, "goal_cancel", None):
+        from src.goal import get_goal_manager
+        manager = get_goal_manager()
+        reason = getattr(args, "goal_reason", "Cancelled by user")
+        if manager.cancel(args.goal_cancel, reason):
+            print(f"✓ Goal cancelled: {args.goal_cancel}")
+        else:
+            print(f"✗ Goal not found or already inactive: {args.goal_cancel}")
+            return 1
+        return 0
+
+    if getattr(args, "goal_due", False):
+        from src.goal import get_goal_manager
+        manager = get_goal_manager()
+        due_goals = manager.get_due_for_check()
+        if due_goals:
+            print(f"Goals due for check ({len(due_goals)}):")
+            for g in due_goals:
+                print(f"  • {g.id} - {g.symbol}: {g.title}")
+        else:
+            print("No goals due for check")
+        return 0
+
+    # === Goal Alert Commands ===
+    if getattr(args, "goal_alert", False):
+        from src.integrations import get_goal_alert_service
+        service = get_goal_alert_service()
+        hours = getattr(args, "goal_alert_hours", 24)
+        report = service.generate_alert_report(hours_threshold=hours)
+        print(report)
+        return 0
+
+    if getattr(args, "goal_check", False):
+        from src.integrations import get_goal_alert_service
+        service = get_goal_alert_service()
+        hours = getattr(args, "goal_alert_hours", 24)
+        alerts = service.check_and_notify(hours_threshold=hours)
+        
+        if alerts["has_alerts"]:
+            print(f"⚠️  Found {alerts['alert_count']} goals needing attention:")
+            for item in alerts["due_goals"]:
+                priority_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(item["priority"], "⚪")
+                print(f"\n{priority_emoji} {item['symbol']}: {item['title']}")
+                print(f"   Progress: {item['progress_pct']:.0f}% | Overdue: {item['hours_overdue']:.1f}h")
+                if item['latest_analysis']:
+                    print(f"   Latest: {item['latest_analysis'][:80]}...")
+        else:
+            print("✅ All goals up-to-date!")
+        return 0
+
+    # === Watchlist + Memory Integration Commands ===
+    if getattr(args, "watchlist_note", None):
+        from src.integrations import get_watchlist_memory_integration
+        integration = get_watchlist_memory_integration()
+        
+        code = args.watchlist_note
+        title = getattr(args, "note_title", "")
+        body = getattr(args, "note_body", "")
+        
+        if not title or not body:
+            print("Error: --watchlist-note requires --note-title and --note-body")
+            return 1
+        
+        path = integration.add_note_to_stock(code, title, body)
+        print(f"✓ Note added to {code}: {path}")
+        return 0
+
+    if getattr(args, "watchlist_with_notes", False):
+        from src.integrations import get_watchlist_memory_integration
+        integration = get_watchlist_memory_integration()
+        
+        items = integration.get_watchlist_with_notes()
+        if items:
+            print(f"Watchlist ({len(items)} stocks):")
+            for item in items:
+                code = item.get("code", "")
+                name = item.get("name", "")
+                notes_count = item.get("notes_count", 0)
+                
+                note_indicator = f"📝 {notes_count} notes" if notes_count > 0 else "📝 0 notes"
+                print(f"\n• {code} - {name} ({note_indicator})")
+                
+                if item.get("latest_note"):
+                    latest = item["latest_note"]
+                    print(f"  Latest: {latest['title']}")
+                
+                if item.get("notes_preview"):
+                    for p in item["notes_preview"]:
+                        print(f"    - {p['date']}: {p['title']}")
+        else:
+            print("Watchlist is empty")
+        return 0
+
+    if getattr(args, "search_watchlist_notes", None):
+        from src.integrations import get_watchlist_memory_integration
+        integration = get_watchlist_memory_integration()
+        
+        query = args.search_watchlist_notes
+        results = integration.search_notes_across_watchlist(query)
+        
+        if results:
+            print(f"Found {len(results)} notes matching '{query}':")
+            for r in results:
+                print(f"\n• [{r['stock_code']}] {r['title']}")
+                print(f"  {r['body'][:100]}...")
+        else:
+            print(f"No notes found matching '{query}'")
+        return 0
+
+    if getattr(args, "sync_watchlist_to_memory", False):
+        from src.integrations import get_watchlist_memory_integration
+        integration = get_watchlist_memory_integration()
+        
+        stats = integration.sync_watchlist_to_memory()
+        print(f"Sync complete:")
+        print(f"  Total stocks: {stats['total']}")
+        print(f"  Created: {stats['created']}")
+        print(f"  Existing: {stats['existing']}")
+        return 0
+
+    # === Hypothesis Registry Commands ===
+    if getattr(args, "hypothesis_create", None):
+        from src.hypotheses import get_registry
+        registry = get_registry()
+        
+        thesis = getattr(args, "hypothesis_thesis", "")
+        if not thesis:
+            print("Error: --hypothesis-create requires --hypothesis-thesis")
+            return 1
+        
+        hyp = registry.create(
+            title=args.hypothesis_create,
+            thesis=thesis,
+            status=getattr(args, "hypothesis_status", "exploring"),
+        )
+        print(f"✓ Hypothesis created: {hyp.hypothesis_id}")
+        print(f"  Title: {hyp.title}")
+        print(f"  Status: {hyp.status}")
+        return 0
+
+    if getattr(args, "hypothesis_list", False):
+        from src.hypotheses import get_registry
+        registry = get_registry()
+        
+        status_filter = getattr(args, "hypothesis_status_filter", None)
+        hypotheses = registry.search(status=status_filter, limit=100) if status_filter else registry.list()
+        
+        if hypotheses:
+            print(f"Hypotheses ({len(hypotheses)} total):")
+            for hyp in hypotheses:
+                status_emoji = {
+                    "exploring": "🔍",
+                    "testing": "🧪",
+                    "validated": "✅",
+                    "rejected": "❌",
+                    "monitoring": "📊",
+                }.get(hyp.status, "❓")
+                print(f"  {status_emoji} [{hyp.status}] {hyp.title}")
+                print(f"     ID: {hyp.hypothesis_id}")
+                print(f"     Thesis: {hyp.thesis[:60]}...")
+        else:
+            print("No hypotheses found")
+        return 0
+
+    if getattr(args, "hypothesis_search", None):
+        from src.hypotheses import get_registry
+        registry = get_registry()
+        
+        results = registry.search(query=args.hypothesis_search, limit=10)
+        if results:
+            print(f"Found {len(results)} hypotheses matching '{args.hypothesis_search}':")
+            for hyp in results:
+                print(f"  • [{hyp.status}] {hyp.title}")
+                print(f"    {hyp.thesis[:80]}...")
+        else:
+            print(f"No hypotheses found matching '{args.hypothesis_search}'")
+        return 0
+
+    if getattr(args, "hypothesis_update", None):
+        from src.hypotheses import get_registry
+        registry = get_registry()
+        
+        new_status = getattr(args, "hypothesis_new_status")
+        if not new_status:
+            print("Error: --hypothesis-update requires --hypothesis-new-status")
+            return 1
+        
+        try:
+            hyp = registry.update(args.hypothesis_update, status=new_status)
+            print(f"✓ Updated hypothesis: {hyp.hypothesis_id}")
+            print(f"  New status: {hyp.status}")
+        except KeyError:
+            print(f"✗ Hypothesis not found: {args.hypothesis_update}")
+            return 1
+        return 0
+
+    # === Skill System Commands (Unified) ===
+    if getattr(args, "skill_list", False):
+        from src.unified_skills import get_unified_registry, SkillType
+        registry = get_unified_registry()
+        
+        category_filter = getattr(args, "skill_category", None)
+        
+        # Show unified skill list
+        exec_skills = registry.list_all(SkillType.EXECUTION)
+        learn_skills = registry.list_all(SkillType.LEARNING)
+        
+        print(f"Unified Skills Registry ({len(exec_skills)} execution + {len(learn_skills)} learning = {len(exec_skills) + len(learn_skills)} total)")
+        print("\n" + "=" * 60)
+        
+        if exec_skills:
+            print(f"\n## Execution Skills ({len(exec_skills)}) - from strategies/*.yaml")
+            if category_filter:
+                exec_skills = [s for s in exec_skills if s.category == category_filter]
+            for skill in sorted(exec_skills, key=lambda s: s.default_priority, reverse=True):
+                aliases = f" (aliases: {', '.join(skill.aliases)})" if skill.aliases else ""
+                print(f"  • [{skill.category}] {skill.name}: {skill.description[:50]}... (priority: {skill.default_priority}){aliases}")
+        
+        if learn_skills:
+            print(f"\n## Learning Skills ({len(learn_skills)}) - from skills_library/*")
+            if category_filter:
+                learn_skills = [s for s in learn_skills if s.category == category_filter]
+            for skill in sorted(learn_skills, key=lambda s: s.name):
+                print(f"  • [{skill.category}] {skill.name}: {skill.description[:60]}...")
+        
+        print("\n" + "=" * 60)
+        print("\nUse --skill-show <name> to view skill details")
+        return 0
+
+    if getattr(args, "skill_show", None):
+        from src.unified_skills import get_unified_registry
+        registry = get_unified_registry()
+        
+        skill = registry.get(args.skill_show)
+        if not skill:
+            print(f"✗ Skill not found: {args.skill_show}")
+            return 1
+        
+        # Format skill for display
+        formatted = registry.format_for_agent(skill)
+        print(formatted)
+        return 0
 
     if args.scanner and args.gold_digger:
         logger.error("--scanner 与 --gold-digger 不能同时使用，请分两次运行。")

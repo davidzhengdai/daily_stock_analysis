@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unified Skills Registry - 统一策略注册表</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #64748b;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+            --code-bg: #f1f5f9;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: var(--bg);
+            color: var(--text);
+        }
+        h1 { border-bottom: 3px solid var(--primary); padding-bottom: 10px; }
+        h2 { color: var(--primary); margin-top: 30px; }
+        h3 { color: var(--secondary); }
+        .card {
+            background: var(--card);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+        th { background: #f1f5f9; font-weight: 600; }
+        code {
+            background: var(--code-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+        }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        .tag {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .tag-exec { background: #dbeafe; color: #1e40af; }
+        .tag-learn { background: #d1fae5; color: #065f46; }
+        .arch-diagram {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Consolas', monospace;
+            white-space: pre;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Unified Skills Registry</h1>
+    <p><strong>统一策略注册表</strong> - 整合现有执行型策略与 Vibe-Trading 学习型技能</p>
+    <p><strong>Date:</strong> 2026-05-27</p>
+
+    <div class="card">
+        <h2>1. 背景与目标</h2>
+        <p>项目原本有两套策略/技能系统：</p>
+        <ul>
+            <li><strong>现有策略</strong> (<code>strategies/*.yaml</code>): 执行型策略，Agent 调用工具执行</li>
+            <li><strong>Vibe-Trading</strong> (<code>skills_library/*/SKILL.md</code>): 学习型技能，提供分析方法</li>
+        </ul>
+        <p><strong>Unified Skills Registry</strong> 将两者整合为统一的注册表，支持协同工作。</p>
+    </div>
+
+    <div class="card">
+        <h2>2. 两种策略对比</h2>
+        <table>
+            <tr>
+                <th>特性</th>
+                <th>Execution Skills</th>
+                <th>Learning Skills</th>
+            </tr>
+            <tr>
+                <td><strong>来源</strong></td>
+                <td><code>strategies/*.yaml</code></td>
+                <td><code>skills_library/*/SKILL.md</code></td>
+            </tr>
+            <tr>
+                <td><strong>格式</strong></td>
+                <td>YAML</td>
+                <td>Markdown + YAML frontmatter</td>
+            </tr>
+            <tr>
+                <td><strong>类型</strong></td>
+                <td><span class="tag tag-exec">Execution</span></td>
+                <td><span class="tag tag-learn">Learning</span></td>
+            </tr>
+            <tr>
+                <td><strong>用途</strong></td>
+                <td>Agent 执行策略，调用工具</td>
+                <td>提供分析方法，供 LLM 参考</td>
+            </tr>
+            <tr>
+                <td><strong>关键字段</strong></td>
+                <td>instructions, required_tools, aliases, priority</td>
+                <td>description, category, body (详细说明)</td>
+            </tr>
+            <tr>
+                <td><strong>示例</strong></td>
+                <td>dragon_head.yaml (龙头策略)</td>
+                <td>technical-basic/SKILL.md (技术指标)</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>3. 统一注册表架构</h2>
+        <div class="arch-diagram">
+┌─────────────────────────────────────────────────────────────┐
+│              Unified Skills Registry                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────────────┐    ┌─────────────────────────────┐│
+│  │  Execution Skills   │    │    Learning Skills          ││
+│  │  (strategies/*.yaml)│    │  (skills_library/*/SKILL.md)││
+│  ├─────────────────────┤    ├─────────────────────────────┤│
+│  │ • dragon_head       │    │ • technical-basic           ││
+│  │ • ma_golden_cross   │    │ • sector-rotation           ││
+│  │ • shrink_pullback   │    │ • factor-research           ││
+│  │ • ... (20+ total)   │    │ • ... (77 total)            ││
+│  └─────────────────────┘    └─────────────────────────────┘│
+│            │                         │                      │
+│            └──────────┬──────────────┘                      │
+│                       │                                      │
+│              ┌────────▼─────────┐                           │
+│              │ UnifiedSkill     │                           │
+│              │ ───────────────  │                           │
+│              │ name             │                           │
+│              │ display_name     │                           │
+│              │ description      │                           │
+│              │ skill_type       │  (Execution/Learning)     │
+│              │ category         │                           │
+│              │ ... (merged)     │                           │
+│              └──────────────────┘                           │
+│                       │                                      │
+│              ┌────────▼─────────┐                           │
+│              │ Unified API    │                           │
+│              │ ───────────────  │                           │
+│              │ get(name)        │                           │
+│              │ list_all(type)   │                           │
+│              │ search(query)    │                           │
+│              │ get_by_category()│                           │
+│              └──────────────────┘                           │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>4. 代码实现</h2>
+        <h3>4.1 核心类</h3>
+        <pre>src/unified_skills/registry.py
+
+class SkillType(Enum):
+    EXECUTION = "execution"   # 现有策略
+    LEARNING = "learning"     # Vibe-Trading
+
+@dataclass
+class UnifiedSkill:
+    name: str
+    display_name: str
+    description: str
+    skill_type: SkillType
+    category: str
+    
+    # Execution 特有
+    instructions: str
+    required_tools: List[str]
+    aliases: List[str]
+    default_priority: int
+    
+    # Learning 特有
+    body: str
+    metadata: Dict
+
+class UnifiedSkillRegistry:
+    def _load_execution_skills(self): ...  # 加载 strategies/*.yaml
+    def _load_learning_skills(self): ...   # 加载 skills_library/*
+    def get(self, name): ...
+    def search(self, query): ...</pre>
+
+        <h3>4.2 使用示例</h3>
+        <pre># 获取统一注册表
+from src.unified_skills import get_unified_registry, SkillType
+
+registry = get_unified_registry()
+
+# 列出所有执行型策略
+exec_skills = registry.list_all(SkillType.EXECUTION)
+
+# 列出所有学习型技能
+learn_skills = registry.list_all(SkillType.LEARNING)
+
+# 按名称或别名获取
+skill = registry.get("dragon_head")  # 或 "龙头"
+
+# 搜索
+results = registry.search("momentum")</pre>
+    </div>
+
+    <div class="card">
+        <h2>5. CLI 命令</h2>
+        <pre># 列出统一注册表中的所有技能
+python main.py --skill-list
+
+# 按类别过滤
+python main.py --skill-list --skill-category trend
+
+# 查看技能详情（自动识别 Execution 或 Learning）
+python main.py --skill-show dragon_head
+python main.py --skill-show technical-basic
+
+# 输出示例：
+# Unified Skills Registry (22 execution + 77 learning = 99 total)
+# ============================================================
+# 
+# ## Execution Skills (22) - from strategies/*.yaml
+#   • [trend] dragon_head: 板块轮动中识别龙头股... (priority: 80)
+#   • [pattern] shrink_pullback: 缩量回踩策略... (priority: 75)
+#   ...
+# 
+# ## Learning Skills (77) - from skills_library/*
+#   • [strategy] technical-basic: Core technical indicator collection...
+#   • [analysis] sector-rotation: Industry rotation analysis...
+#   ...</pre>
+    </div>
+
+    <div class="card">
+        <h2>6. 文件结构</h2>
+        <pre>src/
+├── unified_skills/              # 新增：统一注册表
+│   ├── __init__.py
+│   └── registry.py
+├── agent/skills/                # 现有：执行器（不变）
+├── skills_library/              # Vibe-Trading：学习型技能
+│   ├── technical-basic/
+│   ├── sector-rotation/
+│   └── ... (77 skills)
+└── ...
+
+strategies/                      # 现有：执行型策略
+├── dragon_head.yaml
+├── shrink_pullback.yaml
+└── ... (20+ yaml files)</pre>
+    </div>
+
+    <div class="card">
+        <h2>7. 集成优势</h2>
+        <table>
+            <tr>
+                <th>场景</th>
+                <th>原有方案</th>
+                <th>统一注册表</th>
+            </tr>
+            <tr>
+                <td>策略查询</td>
+                <td>需要分别查询两个系统</td>
+                <td>一个命令查询所有</td>
+            </tr>
+            <tr>
+                <td>Agent 使用</td>
+                <td>只能使用 Execution 策略</td>
+                <td>可同时参考 Learning 技能</td>
+            </tr>
+            <tr>
+                <td>策略发现</td>
+                <td>容易遗漏某类策略</td>
+                <td>统一视图，一目了然</td>
+            </tr>
+            <tr>
+                <td>扩展性</td>
+                <td>两套系统各自维护</td>
+                <td>统一接口，便于扩展</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>8. 后续扩展</h2>
+        <ul>
+            <li><strong>Agent 集成</strong>：让 Agent 可以同时使用 Execution 策略和 Learning 技能</li>
+            <li><strong>策略推荐</strong>：根据市场状态自动推荐相关策略</li>
+            <li><strong>策略组合</strong>：支持多个 Execution 策略组合使用</li>
+            <li><strong>用户自定义</strong>：支持用户添加自定义策略到统一注册表</li>
+        </ul>
+    </div>
+
+</body>
+</html>

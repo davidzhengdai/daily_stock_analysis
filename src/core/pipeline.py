@@ -2117,6 +2117,9 @@ class StockAnalysisPipeline:
             # 增量保存：每分析完一只股票立即追加到报告
             if result and result.success:
                 self._save_single_stock_report_incremental(result, report_type)
+                
+                # Goal 集成：检查并更新相关的研究目标
+                self._update_goals_with_analysis(result)
 
             return result
             
@@ -2971,3 +2974,118 @@ class StockAnalysisPipeline:
         if report_type == ReportType.BRIEF and hasattr(self.notifier, "generate_brief_report"):
             return self.notifier.generate_brief_report(results)
         return self.notifier.generate_dashboard_report(results)
+
+    def _update_goals_with_analysis(self, result: AnalysisResult) -> None:
+        """Update active goals with analysis evidence.
+        
+        This method checks for active research goals for the analyzed stock
+        and adds the analysis results as evidence. It also evaluates criteria
+        based on the analysis data.
+        
+        Args:
+            result: Analysis result from stock analysis
+        """
+        try:
+            from src.goal import get_goal_manager
+            
+            manager = get_goal_manager()
+            active_goals = manager.get_active_for_symbol(result.code)
+            
+            if not active_goals:
+                return
+                
+            logger.info(f"[{result.code}] Found {len(active_goals)} active goal(s) to update")
+            
+            # Build evidence data from analysis result
+            evidence_data = {
+                "symbol": result.code,
+                "name": result.name,
+                "score": result.sentiment_score,
+                "decision": result.decision_type.value if hasattr(result.decision_type, 'value') else str(result.decision_type),
+                "advice": result.operation_advice,
+                "confidence": result.confidence_level,
+            }
+            
+            # Add technical indicators if available
+            if result.dashboard:
+                dashboard = result.dashboard
+                if 'intelligence' in dashboard:
+                    intel = dashboard['intelligence']
+                    evidence_data['short_term'] = intel.get('short_term_outlook', '')
+                    evidence_data['medium_term'] = intel.get('medium_term_outlook', '')
+                    
+                if 'sniper_points' in dashboard:
+                    sniper = dashboard['sniper_points']
+                    evidence_data['ideal_buy'] = sniper.get('ideal_buy', '')
+                    evidence_data['stop_loss'] = sniper.get('stop_loss', '')
+                    
+                if 'core_conclusion' in dashboard:
+                    core = dashboard['core_conclusion']
+                    evidence_data['one_sentence'] = core.get('one_sentence', '')
+            
+            # Add to each goal
+            for goal in active_goals:
+                # Add evidence
+                summary = f"Analysis: Score={result.sentiment_score}, Advice={result.operation_advice}"
+                manager.add_evidence(
+                    goal.id,
+                    evidence_data,
+                    source="analysis",
+                    summary=summary
+                )
+                
+                # Update goal analysis text
+                analysis_text = evidence_data.get('one_sentence', '') or evidence_data.get('short_term', '')
+                if analysis_text:
+                    manager.update_analysis(goal.id, analysis_text)
+                
+                # Auto-evaluate criteria based on analysis
+                self._auto_evaluate_criteria(manager, goal, result, evidence_data)
+                
+                logger.debug(f"Updated goal {goal.id} with analysis evidence")
+                
+        except Exception as e:
+            # Log but don't fail the analysis
+            logger.warning(f"Failed to update goals for {result.code}: {e}")
+    
+    def _auto_evaluate_criteria(
+        self,
+        manager,
+        goal,
+        result: AnalysisResult,
+        evidence_data: Dict[str, Any]
+    ) -> None:
+        """Auto-evaluate goal criteria based on analysis data."""
+        for criterion in goal.criteria:
+            desc_lower = criterion.description.lower()
+            
+            # Price criteria evaluation
+            if "price" in desc_lower or "价格" in desc_lower:
+                # Check if price condition is met (simplified)
+                if ">" in desc_lower and "ideal_buy" in evidence_data:
+                    # This would need actual price comparison logic
+                    pass
+                    
+            # Volume criteria evaluation
+            elif "volume" in desc_lower or "成交量" in desc_lower or "量能" in desc_lower:
+                # Check volume ratio if available
+                if result.dashboard and 'volume_analysis' in result.dashboard:
+                    vol_data = result.dashboard['volume_analysis']
+                    vol_ratio = vol_data.get('volume_ratio', 0)
+                    if vol_ratio > 1.5:  # Volume expansion threshold
+                        manager.update_criteria(goal.id, criterion.id, "met", auto_complete=False)
+                        
+            # RSI/Technical criteria
+            elif "rsi" in desc_lower or "overbought" in desc_lower or "超买" in desc_lower:
+                # RSI criteria would need RSI value in evidence
+                pass
+                
+            # Score-based criteria
+            elif "score" in desc_lower or "评分" in desc_lower:
+                if ">" in desc_lower:
+                    try:
+                        threshold = float(''.join(c for c in desc_lower.split(">")[1] if c.isdigit() or c == '.'))
+                        if result.sentiment_score >= threshold:
+                            manager.update_criteria(goal.id, criterion.id, "met", auto_complete=False)
+                    except (IndexError, ValueError):
+                        pass
