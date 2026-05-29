@@ -84,7 +84,7 @@ function signalRiskFlags(signal: SimSignal): string[] {
 
 type PositionSortKey =
   | 'code' | 'name' | 'market' | 'qty'
-  | 'avg_cost' | 'last_price' | 'market_value' | 'unrealized_pnl_pct'
+  | 'avg_cost' | 'last_price' | 'market_value' | 'unrealized_pnl' | 'unrealized_pnl_pct'
   | 'stop_loss_price' | 'take_profit_price';
 
 type SortDir = 'asc' | 'desc';
@@ -97,7 +97,10 @@ function getPositionSortValue(row: SimPosition, key: PositionSortKey): string | 
 }
 
 function sortPositions(rows: SimPosition[], key: PositionSortKey, dir: SortDir): SimPosition[] {
+  const marketOrder = (market: string) => (market === 'CN' ? 0 : market === 'US' ? 1 : 2);
   return [...rows].sort((a, b) => {
+    const marketCmp = marketOrder(a.market) - marketOrder(b.market);
+    if (marketCmp !== 0) return marketCmp;
     const av = getPositionSortValue(a, key);
     const bv = getPositionSortValue(b, key);
     if (av == null && bv == null) return 0;
@@ -122,7 +125,8 @@ const OVERVIEW_COLS: ColDef[] = [
   { label: '成本价', key: 'avg_cost' },
   { label: '现价', key: 'last_price' },
   { label: '当前总价', key: 'market_value' },
-  { label: '浮动盈亏', key: 'unrealized_pnl_pct' },
+  { label: '盈亏比例', key: 'unrealized_pnl_pct' },
+  { label: '盈亏金额', key: 'unrealized_pnl' },
   { label: '止损', key: 'stop_loss_price' },
   { label: '止盈', key: 'take_profit_price' },
 ];
@@ -134,7 +138,8 @@ const MANUAL_COLS: ColDef[] = [
   { label: '成本', key: 'avg_cost' },
   { label: '现价', key: 'last_price' },
   { label: '当前总价', key: 'market_value' },
-  { label: '浮动 P&L', key: 'unrealized_pnl_pct' },
+  { label: '盈亏比例', key: 'unrealized_pnl_pct' },
+  { label: '盈亏金额', key: 'unrealized_pnl' },
   { label: '止损', key: 'stop_loss_price' },
   { label: '止盈', key: 'take_profit_price' },
 ];
@@ -383,52 +388,71 @@ const PositionsTable: React.FC<{ positions: SimPosition[]; variant: 'overview' |
   };
 
   const cols = variant === 'overview' ? OVERVIEW_COLS : MANUAL_COLS;
-  const sorted = sortPositions(positions, sortKey, sortDir);
+  const marketGroups = (['CN', 'US'] as const)
+    .map((market) => ({
+      market,
+      label: market === 'CN' ? 'A 股持仓' : '美股持仓',
+      rows: sortPositions(positions.filter((p) => p.market === market), sortKey, sortDir),
+    }))
+    .filter((group) => group.rows.length > 0);
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border text-secondary-text text-xs">
-            {cols.map(({ label, key }) => (
-              <th
-                key={key}
-                onClick={() => handleSort(key)}
-                className="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-foreground whitespace-nowrap"
-              >
-                {label}
-                <SortIndicator active={sortKey === key} dir={sortDir} />
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((p) => (
-            <tr key={p.id} className="border-b border-border/50 hover:bg-hover/50">
-              <td className="px-3 py-2 font-mono font-medium">{p.code}</td>
-              {variant === 'overview'
-                ? <td className="px-3 py-2 text-secondary-text">{p.name ?? '—'}</td>
-                : <td className="px-3 py-2 text-secondary-text text-xs">{p.market}</td>
-              }
-              <td className="px-3 py-2 tabular-nums">{p.qty}</td>
-              <td className="px-3 py-2 tabular-nums">{fmt(p.avg_cost, 3)}</td>
-              <td className="px-3 py-2 tabular-nums">{fmt(p.last_price, 3)}</td>
-              <td className="px-3 py-2 tabular-nums whitespace-nowrap">
-                {p.currency} {fmt(p.last_price * p.qty)}
-              </td>
-              <td className={cn('px-3 py-2 tabular-nums font-medium', pnlColor(p.unrealized_pnl))}>
-                {fmtPct(p.unrealized_pnl_pct)}
-              </td>
-              <td className={cn('px-3 py-2 tabular-nums text-xs', variant === 'manual' ? '' : '', 'text-red-400')}>
-                {p.stop_loss_price ? fmt(p.stop_loss_price, 3) : '—'}
-              </td>
-              <td className={cn('px-3 py-2 tabular-nums text-xs', 'text-emerald-400')}>
-                {p.take_profit_price ? fmt(p.take_profit_price, 3) : '—'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-4">
+      {marketGroups.map((group) => (
+        <div key={group.market} className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-medium text-secondary-text">{group.label}</p>
+            <span className="text-xs text-secondary-text">{group.rows.length} 只</span>
+          </div>
+          <div className="rounded-xl border border-border bg-card overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-secondary-text text-xs">
+                  {cols.map(({ label, key }) => (
+                    <th
+                      key={key}
+                      onClick={() => handleSort(key)}
+                      className="px-3 py-2 text-left font-medium cursor-pointer select-none hover:text-foreground whitespace-nowrap"
+                    >
+                      {label}
+                      <SortIndicator active={sortKey === key} dir={sortDir} />
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {group.rows.map((p) => (
+                  <tr key={p.id} className="border-b border-border/50 hover:bg-hover/50">
+                    <td className="px-3 py-2 font-mono font-medium">{p.code}</td>
+                    {variant === 'overview'
+                      ? <td className="px-3 py-2 text-secondary-text">{p.name ?? '—'}</td>
+                      : <td className="px-3 py-2 text-secondary-text text-xs">{p.market}</td>
+                    }
+                    <td className="px-3 py-2 tabular-nums">{p.qty}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmt(p.avg_cost, 3)}</td>
+                    <td className="px-3 py-2 tabular-nums">{fmt(p.last_price, 3)}</td>
+                    <td className="px-3 py-2 tabular-nums whitespace-nowrap">
+                      {p.currency} {fmt(p.last_price * p.qty)}
+                    </td>
+                    <td className={cn('px-3 py-2 tabular-nums font-medium', pnlColor(p.unrealized_pnl))}>
+                      {fmtPct(p.unrealized_pnl_pct)}
+                    </td>
+                    <td className={cn('px-3 py-2 tabular-nums font-medium whitespace-nowrap', pnlColor(p.unrealized_pnl))}>
+                      {fmtMoneyDelta(p.unrealized_pnl, p.currency === 'USD' ? '$' : '¥')}
+                    </td>
+                    <td className={cn('px-3 py-2 tabular-nums text-xs', variant === 'manual' ? '' : '', 'text-red-400')}>
+                      {p.stop_loss_price ? fmt(p.stop_loss_price, 3) : '—'}
+                    </td>
+                    <td className={cn('px-3 py-2 tabular-nums text-xs', 'text-emerald-400')}>
+                      {p.take_profit_price ? fmt(p.take_profit_price, 3) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </div>
   );
 };

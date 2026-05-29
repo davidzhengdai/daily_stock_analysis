@@ -36,6 +36,8 @@ def _positive_int_env(name: str, default: int) -> int:
 
 _AUTO_PENDING_ORDER_MAX_AGE_MINUTES = _positive_int_env('SIMTRADE_AUTO_PENDING_ORDER_MAX_AGE_MINUTES', 30)
 _CLOSED_MARKET_REFRESH_MINUTES = _positive_int_env('SIMTRADE_CLOSED_MARKET_REFRESH_MINUTES', 120)
+_TAKE_PROFIT_HOLD_TECH_SCORE = 0.72
+_TAKE_PROFIT_SENTINEL_HOLD_TECH_SCORE = 0.55
 
 
 def _is_market_open(market: str) -> bool:
@@ -481,10 +483,20 @@ class OrderService:
             if pos['stop_loss_price'] and current_price <= pos['stop_loss_price']:
                 reason = f"止损触发 (价格 {current_price:.3f} ≤ 止损线 {pos['stop_loss_price']:.3f})"
             elif pos['take_profit_price'] and current_price >= pos['take_profit_price']:
-                reason = f"止盈触发 (价格 {current_price:.3f} ≥ 止盈线 {pos['take_profit_price']:.3f})"
+                take_profit_review = self._review_take_profit_hold(pos, current_price)
+                if take_profit_review['action'] == 'hold':
+                    logger.info(
+                        "[SimTrade] %s 止盈线已触达但继续持有: %s",
+                        pos['code'],
+                        take_profit_review['reason'],
+                    )
+                    continue
+                reason = (
+                    f"止盈触发 (价格 {current_price:.3f} ≥ 止盈线 {pos['take_profit_price']:.3f})；"
+                    f"复核: {take_profit_review['reason']}"
+                )
             if reason:
                 try:
-                    acct = self.repo.get_account(account_id)
                     self.place_order(
                         code=pos['code'],
                         market=pos['market'],
@@ -501,6 +513,56 @@ class OrderService:
                 except Exception as exc:
                     logger.warning("[SimTrade] 止损/止盈下单失败 %s: %s", pos['code'], exc)
         return triggered
+
+    def _review_take_profit_hold(self, pos: Dict[str, Any], current_price: float) -> Dict[str, str]:
+        """Decide whether a take-profit hit should sell immediately or keep riding."""
+        try:
+            from src.services.simtrade.signal_service import SignalService
+
+            signal_svc = SignalService(repo=self.repo)
+            stock_data = signal_svc._read_stock_data_from_cache(pos['code']) or {}
+            ma5 = float(stock_data.get('ma5') or current_price)
+            ma10 = float(stock_data.get('ma10') or current_price)
+            ma20 = float(stock_data.get('ma20') or current_price)
+            volume_ratio = float(stock_data.get('volume_ratio') or 1.0)
+            change_5d = float(stock_data.get('change_5d') or 0.0)
+            technical_score = signal_svc._compute_technical_score(
+                current_price,
+                ma5,
+                ma10,
+                ma20,
+                volume_ratio,
+                change_5d,
+            )
+            _, news_bias = signal_svc._get_sentiment(pos['code'])
+            return self._decide_take_profit_action(
+                technical_score=technical_score,
+                news_bias=news_bias,
+                current_price=current_price,
+                ma5=ma5,
+                change_5d=change_5d,
+            )
+        except Exception as exc:
+            logger.debug("[SimTrade] 止盈复核失败 %s: %s", pos.get('code'), exc)
+            return {'action': 'sell', 'reason': '复核不可用，执行既定止盈'}
+
+    @staticmethod
+    def _decide_take_profit_action(
+        *,
+        technical_score: float,
+        news_bias: str,
+        current_price: float,
+        ma5: float,
+        change_5d: float,
+    ) -> Dict[str, str]:
+        above_ma5 = current_price >= ma5 if ma5 > 0 else True
+        if news_bias == 'negative':
+            return {'action': 'sell', 'reason': 'Sentinel 近期新闻偏负面，止盈落袋'}
+        if news_bias == 'positive' and above_ma5 and technical_score >= _TAKE_PROFIT_SENTINEL_HOLD_TECH_SCORE:
+            return {'action': 'hold', 'reason': 'Sentinel 近期新闻偏正面且技术未破位，继续持有'}
+        if news_bias in ('neutral', 'unknown') and above_ma5 and technical_score >= _TAKE_PROFIT_HOLD_TECH_SCORE and change_5d >= 0:
+            return {'action': 'hold', 'reason': '无明确新闻催化，但趋势仍强，继续持有'}
+        return {'action': 'sell', 'reason': '止盈后趋势或消息优势不足，执行卖出'}
 
     def liquidate_all_positions(self, account_id: int) -> List[str]:
         """以市价卖出所有持仓，返回已提交清仓委托的股票代码列表。"""

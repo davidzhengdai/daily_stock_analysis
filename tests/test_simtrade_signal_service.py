@@ -3,6 +3,7 @@ from datetime import date, timedelta
 import pandas as pd
 
 from src.services.simtrade.signal_service import SignalService
+from src.services.simtrade.order_service import OrderService
 from src.storage import DatabaseManager
 
 
@@ -60,6 +61,68 @@ def test_clamp_us_position_size_limits_adds_and_low_price_buys():
         has_position=False,
         risk_flags=["low_price_us_stock"],
     ) == 2.0
+
+
+def test_context_weight_profile_uses_technical_when_news_is_absent():
+    assert SignalService._context_weight_profile("neutral") == {
+        "technical": 0.70,
+        "sentinel": 0.15,
+        "risk": 0.15,
+    }
+    assert SignalService._context_weight_profile("unknown") == {
+        "technical": 0.70,
+        "sentinel": 0.15,
+        "risk": 0.15,
+    }
+
+
+def test_context_weight_profile_uses_sentinel_when_news_has_direction():
+    assert SignalService._context_weight_profile("positive") == {
+        "technical": 0.35,
+        "sentinel": 0.50,
+        "risk": 0.15,
+    }
+    assert SignalService._context_weight_profile("negative") == {
+        "technical": 0.35,
+        "sentinel": 0.50,
+        "risk": 0.15,
+    }
+
+
+def test_take_profit_review_holds_on_positive_news_and_intact_trend():
+    decision = OrderService._decide_take_profit_action(
+        technical_score=0.58,
+        news_bias="positive",
+        current_price=105.0,
+        ma5=103.0,
+        change_5d=4.0,
+    )
+
+    assert decision["action"] == "hold"
+
+
+def test_take_profit_review_sells_on_negative_news():
+    decision = OrderService._decide_take_profit_action(
+        technical_score=0.9,
+        news_bias="negative",
+        current_price=105.0,
+        ma5=103.0,
+        change_5d=4.0,
+    )
+
+    assert decision["action"] == "sell"
+
+
+def test_take_profit_review_holds_on_strong_technical_without_news():
+    decision = OrderService._decide_take_profit_action(
+        technical_score=0.75,
+        news_bias="neutral",
+        current_price=105.0,
+        ma5=103.0,
+        change_5d=4.0,
+    )
+
+    assert decision["action"] == "hold"
 
 
 def test_get_stock_data_refreshes_stale_daily_cache(monkeypatch):

@@ -33,6 +33,8 @@ _US_LOW_PRICE_MAX_BUY_CASH_PCT = 2.0
 _US_MAX_RECENT_AUTO_BUYS = 2
 _US_RECENT_BUY_LOOKBACK_HOURS = 48
 _US_ADD_LOSS_BLOCK_PCT = -0.5
+_TECHNICAL_PRIMARY_WEIGHTS = {'technical': 0.70, 'sentinel': 0.15, 'risk': 0.15}
+_SENTINEL_PRIMARY_WEIGHTS = {'technical': 0.35, 'sentinel': 0.50, 'risk': 0.15}
 
 
 def _parse_positive_int_env(name: str, default: int) -> int:
@@ -62,6 +64,7 @@ Current Position: {qty} shares at avg cost {avg_cost} (P&L: {pnl_pct}%)
 Portfolio: total equity ≈ {equity} CNY, available {currency} cash = {cash}
 Max position per stock: {max_pos}% of portfolio
 News sentiment: {sentiment_summary}
+Decision weight profile: technical={technical_weight}, sentinel={sentinel_weight}, risk={risk_weight}
 Auto-trade mode: {mode}
   - conservative: only trade at confidence>0.75, size ≤10%
   - balanced: confidence>0.65, size ≤20%
@@ -262,6 +265,7 @@ class SignalService:
 
         # ---- 新闻情绪 ----
         sentiment_summary, news_bias = self._get_sentiment(code)
+        context_weights = self._context_weight_profile(news_bias)
 
         # ---- 构建 Prompt ----
         prompt = _SIGNAL_PROMPT.format(
@@ -271,6 +275,9 @@ class SignalService:
             technical_score=technical_score,
             qty=qty, avg_cost=round(avg_cost, 3), pnl_pct=round(pnl_pct, 2),
             equity=round(total_equity, 2), cash=round(available_cash, 2),
+            technical_weight=context_weights['technical'],
+            sentinel_weight=context_weights['sentinel'],
+            risk_weight=context_weights['risk'],
             max_pos=max_pos, sentiment_summary=sentiment_summary, mode=mode,
         )
 
@@ -441,6 +448,7 @@ class SignalService:
                 'risk_flags': risk_flags,
                 'news_bias': news_bias,
                 'sentiment_summary': sentiment_summary,
+                'context_weights': context_weights,
                 'sell_review': sell_review,
                 'realtime_price': round(realtime_price, 4) if realtime_price else None,
                 'daily_price': round(daily_price, 4) if daily_price else None,
@@ -748,6 +756,13 @@ class SignalService:
             return f"{len(items)} 条近期新闻，正面 {pos} 条，负面 {neg} 条", bias
         except Exception:
             return "情报中心不可用", "unknown"
+
+    @staticmethod
+    def _context_weight_profile(news_bias: str) -> Dict[str, float]:
+        """Return the decision weights used to balance technicals and Sentinel news."""
+        if news_bias in ('positive', 'negative'):
+            return dict(_SENTINEL_PRIMARY_WEIGHTS)
+        return dict(_TECHNICAL_PRIMARY_WEIGHTS)
 
     @staticmethod
     def _infer_market(code: str) -> str:
