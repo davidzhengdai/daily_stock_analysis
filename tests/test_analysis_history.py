@@ -1096,6 +1096,14 @@ class HistoryItemSchemaNegativeSentimentTest(unittest.TestCase):
         item = self.HistoryItem(query_id="q3", stock_code="600519", sentiment_score=None)
         self.assertIsNone(item.sentiment_score)
 
+    def test_fractional_sentiment_score_is_scaled_for_history_item(self) -> None:
+        """Legacy 0-1 scores should not break history list schema validation."""
+        if self.HistoryItem is None:
+            self.skipTest("fastapi / pydantic not installed in this test environment")
+
+        item = self.HistoryItem(query_id="q4", stock_code="NEXT", sentiment_score=0.45)
+        self.assertEqual(item.sentiment_score, 45)
+
     def test_report_summary_negative_sentiment_score_does_not_raise(self) -> None:
         """ReportSummary.sentiment_score should also accept negative values from legacy DB rows."""
         if self.ReportSummary is None:
@@ -1119,6 +1127,14 @@ class HistoryItemSchemaNegativeSentimentTest(unittest.TestCase):
 
         summary = self.ReportSummary(sentiment_score=None)
         self.assertIsNone(summary.sentiment_score)
+
+    def test_report_summary_fractional_sentiment_score_is_scaled(self) -> None:
+        """History detail summary should tolerate legacy fractional scores."""
+        if self.ReportSummary is None:
+            self.skipTest("fastapi / pydantic not installed in this test environment")
+
+        summary = self.ReportSummary(sentiment_score=0.45)
+        self.assertEqual(summary.sentiment_score, 45)
 
 
 if __name__ == "__main__":

@@ -402,6 +402,29 @@ class SimTradeRepo:
                     return row.to_dict()
         return None
 
+    def count_recent_filled_auto_buys(
+        self,
+        account_id: int,
+        code: str,
+        market: str,
+        since: datetime,
+    ) -> int:
+        """Return recent filled automatic buy count for repeat-entry throttling."""
+        with self.db.get_session() as session:
+            rows = session.execute(
+                select(SimulatedOrder.id)
+                .where(
+                    SimulatedOrder.account_id == account_id,
+                    SimulatedOrder.code == code,
+                    SimulatedOrder.market == market,
+                    SimulatedOrder.side == 'buy',
+                    SimulatedOrder.status == 'filled',
+                    SimulatedOrder.source == 'auto',
+                    SimulatedOrder.filled_at >= since,
+                )
+            ).scalars().all()
+            return len(rows)
+
     # =========================================================
     # Positions
     # =========================================================

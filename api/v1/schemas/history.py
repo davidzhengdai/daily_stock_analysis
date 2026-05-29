@@ -11,7 +11,25 @@
 
 from typing import Optional, List, Any, Dict
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _normalize_history_sentiment_score(value: Any) -> Optional[int]:
+    """Coerce legacy fractional scores into the integer history API contract."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        numeric = float(value)
+    else:
+        try:
+            numeric = float(str(value).strip())
+        except (TypeError, ValueError):
+            return value
+    if 0 < numeric < 1:
+        numeric *= 100
+    return int(round(numeric))
 
 
 class HistoryItem(BaseModel):
@@ -28,6 +46,11 @@ class HistoryItem(BaseModel):
     )
     operation_advice: Optional[str] = Field(None, description="操作建议")
     created_at: Optional[str] = Field(None, description="创建时间")
+
+    @field_validator("sentiment_score", mode="before")
+    @classmethod
+    def normalize_sentiment_score(cls, value: Any) -> Optional[int]:
+        return _normalize_history_sentiment_score(value)
     
     model_config = ConfigDict(json_schema_extra={
         "example": {
@@ -131,6 +154,11 @@ class ReportSummary(BaseModel):
         description="情绪评分（历史数据可能超出 0-100 范围，读取时不做约束）",
     )
     sentiment_label: Optional[str] = Field(None, description="情绪标签")
+
+    @field_validator("sentiment_score", mode="before")
+    @classmethod
+    def normalize_sentiment_score(cls, value: Any) -> Optional[int]:
+        return _normalize_history_sentiment_score(value)
 
 
 class ReportStrategy(BaseModel):

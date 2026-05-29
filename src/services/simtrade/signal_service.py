@@ -24,6 +24,15 @@ logger = logging.getLogger(__name__)
 # 信号有效期（小时）
 _SIGNAL_TTL_HOURS = 4
 _PRICE_MISMATCH_LIMIT_PCT = 3.0
+_US_MIN_SIGNAL_CONFIDENCE = 0.75
+_US_LOW_PRICE_MIN_SIGNAL_CONFIDENCE = 0.82
+_US_LOW_PRICE_THRESHOLD = 5.0
+_US_MAX_BUY_CASH_PCT = 8.0
+_US_ADD_MAX_BUY_CASH_PCT = 3.0
+_US_LOW_PRICE_MAX_BUY_CASH_PCT = 2.0
+_US_MAX_RECENT_AUTO_BUYS = 2
+_US_RECENT_BUY_LOOKBACK_HOURS = 48
+_US_ADD_LOSS_BLOCK_PCT = -0.5
 
 
 def _parse_positive_int_env(name: str, default: int) -> int:
@@ -57,6 +66,12 @@ Auto-trade mode: {mode}
   - conservative: only trade at confidence>0.75, size ≤10%
   - balanced: confidence>0.65, size ≤20%
   - aggressive: confidence>0.55, size ≤30%
+
+US auto-trade guardrails:
+  - US buys require higher conviction than CN buys.
+  - Do not average down a losing US position.
+  - Keep US single-order size small; never use oversized position_size_pct.
+  - Treat low-priced/speculative US stocks as high risk.
 
 Respond with JSON ONLY (no markdown, no explanation):
 {{
@@ -239,6 +254,11 @@ class SignalService:
         recent_loss_order = self._recent_loss_sell_order(account_id, code)
         if recent_loss_order:
             risk_flags.append('recent_stop_loss')
+        recent_auto_buy_count = (
+            self._recent_auto_buy_count(account_id, code, market)
+            if market == 'US'
+            else 0
+        )
 
         # ---- 新闻情绪 ----
         sentiment_summary, news_bias = self._get_sentiment(code)
@@ -291,6 +311,11 @@ class SignalService:
             min_conf = min(min_conf, float(os.getenv('DISCOVERY_MIN_SIGNAL_CONFIDENCE', '0.55')))
         llm_risk_flags = self._parse_risk_flags(parsed.get('risk_flags'))
         risk_flags = sorted(set(risk_flags + llm_risk_flags))
+        if market == 'US':
+            min_conf = max(min_conf, _US_MIN_SIGNAL_CONFIDENCE)
+            if 0 < current_price < _US_LOW_PRICE_THRESHOLD:
+                min_conf = max(min_conf, _US_LOW_PRICE_MIN_SIGNAL_CONFIDENCE)
+                risk_flags = sorted(set(risk_flags + ['low_price_us_stock']))
 
         if signal in ('buy', 'sell') and 'realtime_price_unavailable' in risk_flags:
             signal = 'skip'
@@ -306,6 +331,19 @@ class SignalService:
             parsed['reasoning'] = (
                 f"最近 {_STOP_LOSS_COOLDOWN_MINUTES} 分钟内已亏损/止损卖出"
                 f"（{filled_at[:16]}），冷却期内禁止重新买入"
+            )
+
+        if signal == 'buy' and market == 'US' and qty > 0 and pnl_pct <= _US_ADD_LOSS_BLOCK_PCT:
+            signal = 'skip'
+            parsed['reasoning'] = (
+                f"美股持仓浮亏 {pnl_pct:.1f}%，禁止自动加仓摊平"
+            )
+
+        if signal == 'buy' and market == 'US' and recent_auto_buy_count >= _US_MAX_RECENT_AUTO_BUYS:
+            signal = 'skip'
+            parsed['reasoning'] = (
+                f"最近 {_US_RECENT_BUY_LOOKBACK_HOURS} 小时已自动买入 {recent_auto_buy_count} 次，"
+                "跳过重复追单"
             )
 
         # 仓位已满 → 禁止买入
@@ -327,6 +365,13 @@ class SignalService:
         suggested_qty = None
         sell_review: Dict[str, Any] = {}
         pos_size_pct = float(parsed.get('position_size_pct', 10.0) or 10.0)
+        if market == 'US':
+            pos_size_pct = self._clamp_us_position_size_pct(
+                pos_size_pct,
+                current_price=current_price,
+                has_position=qty > 0,
+                risk_flags=risk_flags,
+            )
         if signal == 'buy' and current_price > 0 and available_cash > 0:
             max_spend = available_cash * pos_size_pct / 100
             lot = 100 if market == 'CN' else 1
@@ -403,6 +448,7 @@ class SignalService:
                 'daily_data_source': stock_data.get('data_source'),
                 'daily_data_updated_at': stock_data.get('data_updated_at'),
                 'recent_loss_sell_order_id': recent_loss_order.get('id') if recent_loss_order else None,
+                'recent_auto_buy_count': recent_auto_buy_count,
             }, ensure_ascii=False),
             status='pending',
         )
@@ -655,6 +701,23 @@ class SignalService:
     def _recent_loss_sell_order(self, account_id: int, code: str) -> Optional[Dict[str, Any]]:
         cutoff = datetime.now() - timedelta(minutes=_STOP_LOSS_COOLDOWN_MINUTES)
         return self.repo.get_recent_loss_sell_order(account_id, code, cutoff)
+
+    def _recent_auto_buy_count(self, account_id: int, code: str, market: str) -> int:
+        cutoff = datetime.now() - timedelta(hours=_US_RECENT_BUY_LOOKBACK_HOURS)
+        return self.repo.count_recent_filled_auto_buys(account_id, code, market, cutoff)
+
+    @staticmethod
+    def _clamp_us_position_size_pct(
+        position_size_pct: float,
+        *,
+        current_price: float,
+        has_position: bool,
+        risk_flags: List[str],
+    ) -> float:
+        cap = _US_ADD_MAX_BUY_CASH_PCT if has_position else _US_MAX_BUY_CASH_PCT
+        if 0 < current_price < _US_LOW_PRICE_THRESHOLD or 'low_price_us_stock' in risk_flags:
+            cap = min(cap, _US_LOW_PRICE_MAX_BUY_CASH_PCT)
+        return max(0.0, min(position_size_pct, cap))
 
     @staticmethod
     def _parse_risk_flags(value: Any) -> List[str]:

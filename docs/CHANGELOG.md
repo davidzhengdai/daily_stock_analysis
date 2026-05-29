@@ -51,6 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - [测试] 执行 `python -c "import exchange_calendars as xcals; xcals.get_calendar('XSHG'); print('ok')"` 通过验证，以覆盖导入与交易日历初始化兼容性。
 - [修复] Docker Compose server 移除 `SIMTRADE_LLM_MODEL` 硬编码默认值，避免覆盖 `.env` 中的模拟交易模型配置。
 - [修复] Sentinel 综合情报选股限制为 A 股、港股、美股，并在触发深度分析前过滤非支持市场代码，避免自动分析误引入韩股、日股等市场标的。
+- [修复] 历史记录接口兼容旧数据中的 0-1 小数情绪评分，避免 `sentiment_score=0.45` 导致历史列表校验失败。
+- [修复] 美股模拟自动交易增加高置信度、低价股小仓位、亏损持仓禁止摊平和短期重复买入限制，降低 aggressive 模式下连续追单导致的已实现亏损风险。
 
 ## [3.18.0] - 2026-05-21
 

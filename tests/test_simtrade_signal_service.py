@@ -32,6 +32,36 @@ def test_parse_risk_flags_accepts_string_and_list():
     ]
 
 
+def test_clamp_us_position_size_limits_oversized_new_buys():
+    assert SignalService._clamp_us_position_size_pct(
+        100.0,
+        current_price=120.0,
+        has_position=False,
+        risk_flags=[],
+    ) == 8.0
+
+
+def test_clamp_us_position_size_limits_adds_and_low_price_buys():
+    assert SignalService._clamp_us_position_size_pct(
+        20.0,
+        current_price=120.0,
+        has_position=True,
+        risk_flags=[],
+    ) == 3.0
+    assert SignalService._clamp_us_position_size_pct(
+        20.0,
+        current_price=2.5,
+        has_position=False,
+        risk_flags=[],
+    ) == 2.0
+    assert SignalService._clamp_us_position_size_pct(
+        20.0,
+        current_price=120.0,
+        has_position=False,
+        risk_flags=["low_price_us_stock"],
+    ) == 2.0
+
+
 def test_get_stock_data_refreshes_stale_daily_cache(monkeypatch):
     DatabaseManager.reset_instance()
     db = DatabaseManager(db_url="sqlite:///:memory:")
